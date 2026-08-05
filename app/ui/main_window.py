@@ -30,7 +30,7 @@ from app.git.safety import (
     scan_pii_in_contents,
 )
 from app.git.url_utils import UrlError, normalize_github_clone_url
-from app.auth.token_store import load_token
+from app.auth.token_store import delete_token, load_token
 from app.ui.auth_status import AuthState, AuthStatusButton
 from app.ui.device_code_dialog import DeviceCodeOverlay
 from app.ui.publish_worker import LoginWorker, PublishWorker
@@ -345,12 +345,46 @@ class MainController(QObject):
             expires_in=expires_in,
             cancel_label=self._device_cancel_label,
         )
-        overlay.cancelled.connect(self.on_cancel)
+        overlay.cancelled.connect(self._on_device_overlay_cancelled)
         overlay.show()
         overlay.sync_geometry()
         overlay.raise_()
         self._device_overlay = overlay
         self._log(f"장치 코드 팝업: {user_code}")
+
+    def _perform_logout(self) -> None:
+        """Clear keyring token and refresh status (real logout)."""
+        delete_token()
+        self.auth_status.set_login_name(None)
+        self.auth_status.refresh()
+        self._log("로그아웃 완료 — 저장된 GitHub 토큰을 삭제했습니다.")
+
+    @Slot()
+    def _on_device_overlay_cancelled(self) -> None:
+        """
+        Device popup cancel button.
+        Label 「로그아웃」 → delete token + abort login.
+        Label 「로그인 취소」 → abort Device Flow only (keep session if any).
+        """
+        is_logout = self._device_cancel_label == "로그아웃"
+        if is_logout:
+            self._log("로그아웃 요청 (장치 코드 팝업)…")
+            if self._device_overlay is not None:
+                self._device_overlay.set_waiting_message("로그아웃 중…")
+            self._perform_logout()
+        else:
+            self._log("로그인 취소 요청…")
+            if self._device_overlay is not None:
+                self._device_overlay.set_waiting_message(
+                    "취소 중… 잠시만 기다려 주세요."
+                )
+
+        w = self._worker
+        if w is not None and w.isRunning():
+            w.requestInterruption()
+        else:
+            self._close_device_overlay()
+            self._refresh_status_bar()
 
     @Slot()
     def _on_worker_finished(self) -> None:
@@ -511,11 +545,12 @@ class MainController(QObject):
             reply = QMessageBox.warning(
                 self.window,
                 "재로그인 확인",
-                "저장된 GitHub 로그인 정보를 삭제하고\n"
-                "새 장치 코드 인증을 시작합니다.\n\n"
+                "새 장치 코드 인증을 시작합니다.\n"
                 "다른 계정으로 로그인할 수 있습니다.\n\n"
-                "확인을 누르면 현재 세션이 로그아웃됩니다.\n"
-                "취소를 누르면 현재 로그인을 유지합니다.",
+                "확인을 누르면 브라우저 인증이 시작됩니다.\n"
+                "(실패·취소 시 기존 로그인은 유지됩니다.\n"
+                "팝업의 「로그아웃」을 누르면 토큰이 삭제됩니다.)\n\n"
+                "대화상자 취소를 누르면 아무 것도 하지 않습니다.",
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Cancel,
             )

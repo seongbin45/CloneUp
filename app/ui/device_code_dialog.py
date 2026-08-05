@@ -314,7 +314,11 @@ class DeviceCodeOverlay(QWidget):
             self._status.setText(f"브라우저 열기 실패: {e}")
 
     def _on_cancel_clicked(self) -> None:
-        self._status.setText("취소 중…")
+        # Status text depends on button label (로그인 취소 vs 로그아웃)
+        if self._cancel_label == "로그아웃":
+            self._status.setText("로그아웃 중…")
+        else:
+            self._status.setText("취소 중…")
         for child in self.findChildren(QPushButton):
             if child.objectName() == "btnCancel":
                 child.setEnabled(False)
