@@ -19,7 +19,17 @@ def next_step_for_error(message: str) -> str | None:
         return None
     low = msg.lower()
 
-    # Auth / permission (push denied, 401, etc.)
+    # Device Flow specific
+    if "device" in low or "장치 코드" in msg or "장치 인증" in msg:
+        if "만료" in msg:
+            return "로그인 버튼을 눌러 새 장치 코드를 받으세요."
+        if "거부" in msg:
+            return "브라우저에서 Authorize 를 눌러 승인한 뒤 다시 시도하세요."
+        if "올바르지 않" in msg or "incorrect" in low:
+            return "팝업에 보이는 코드만 복사해 github.com/login/device 에 붙여넣으세요."
+        return "팝업 코드를 github.com/login/device 에 입력하고 승인을 완료하세요."
+
+    # Auth / permission (push denied, 401, etc.) — not Device Flow setup
     if (
         "denied" in low
         or "permission" in low
@@ -29,8 +39,7 @@ def next_step_for_error(message: str) -> str | None:
         or "could not read username" in low
         or "invalid credentials" in low
         or "로그인이 필요" in msg
-        or "권한" in msg
-        and ("없" in msg or "부족" in msg or "실패" in msg)
+        or ("권한" in msg and ("없" in msg or "부족" in msg or "실패" in msg))
     ):
         return "GitHub 로그인을 다시 하세요."
 

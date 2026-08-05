@@ -171,16 +171,27 @@ def poll_for_token(
             _interruptible_sleep(sleep_s, should_cancel=should_cancel)
             continue
         if err == "expired_token":
-            raise DeviceFlowError("인증 코드가 만료되었습니다. 다시 실행하세요.")
+            raise DeviceFlowError(
+                "장치 인증 코드가 만료되었습니다. 로그인 버튼을 눌러 새 코드를 받으세요."
+            )
         if err == "access_denied":
-            raise DeviceFlowError("사용자가 브라우저에서 승인을 거부했습니다.")
+            raise DeviceFlowError(
+                "브라우저에서 GitHub 승인을 거부했습니다. 다시 로그인해 주세요."
+            )
+        if err == "incorrect_device_code":
+            raise DeviceFlowError(
+                "장치 코드가 올바르지 않습니다. 팝업의 코드를 그대로 붙여넣으세요 "
+                "(URL에 미리 넣은 코드와 겹치면 실패할 수 있습니다)."
+            )
         if err == "unsupported_grant_type":
             raise DeviceFlowError(
                 "Device Flow grant가 거부되었습니다. OAuth App의 Device Flow 설정을 확인하세요."
             )
 
         desc = data.get("error_description") or data
-        raise DeviceFlowError(f"토큰 폴링 실패: {err or resp.status_code} — {desc}")
+        raise DeviceFlowError(
+            f"Device 인증 실패 (토큰 대기): {err or resp.status_code} — {desc}"
+        )
 
     raise DeviceFlowError("시간 초과: 브라우저에서 승인하지 않았습니다.")
 
@@ -212,15 +223,18 @@ def copy_text_to_clipboard(text: str) -> bool:
 
 def verification_open_url(verification_uri: str, user_code: str) -> str:
     """
-    Prefer a URL that may pre-fill the user code.
+    Open GitHub's device page *without* pre-filling the code in the URL.
 
-    GitHub's documented verification_uri is https://github.com/login/device only;
-    some clients append ?user_code= — if GitHub ignores it, user can still paste
-    from clipboard. We never drive github.com DOM (no webview automation).
+    GitHub documents verification_uri as https://github.com/login/device only.
+    Appending ?user_code= can surface "device authentication failed" / invalid code
+    (double-submit or unsupported prefill). Clipboard + paste is more reliable.
     """
-    base = (verification_uri or "https://github.com/login/device").rstrip("?&")
-    sep = "&" if "?" in base else "?"
-    return f"{base}{sep}user_code={quote(user_code, safe='-')}"
+    _ = user_code  # still shown/copied by the UI separately
+    base = (verification_uri or "https://github.com/login/device").strip()
+    # Strip any accidental query (e.g. old prefilled links)
+    if "?" in base:
+        base = base.split("?", 1)[0]
+    return base.rstrip("/") or "https://github.com/login/device"
 
 
 def run_device_flow(

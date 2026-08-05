@@ -71,7 +71,8 @@ def ensure_valid_token(
     )
 
     if force_login:
-        delete_token()
+        # Do NOT delete the old token first — if Device Flow fails/cancels,
+        # the user should keep the previous session.
         token = login_device_flow(scopes=scopes, **login_kw)
         user = get_authenticated_user(token)
         return token, user

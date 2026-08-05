@@ -95,7 +95,8 @@ class LoginWorker(QThread):
             if "취소" in msg:
                 self.failed.emit(msg)
             else:
-                self.failed.emit(f"인증 실패: {e}")
+                # Keep Device Flow detail (avoid opaque "인증 실패" only)
+                self.failed.emit(f"Device 인증 실패: {e}")
         except OSError as e:
             self.failed.emit(f"네트워크: {e}")
         except Exception as e:

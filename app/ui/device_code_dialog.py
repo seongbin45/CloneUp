@@ -164,7 +164,8 @@ class DeviceCodeOverlay(QWidget):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         hint = QLabel(
-            "브라우저에서 계정 선택 후, 아래 코드를 입력하세요.\n"
+            "브라우저에서 계정 선택 후, 아래 코드를 입력란에 붙여넣으세요.\n"
+            "(주소창에 코드가 미리 들어가 있지 않습니다 — 이 창의 코드를 쓰세요.)\n"
             "이 창은 로그인될 때까지 유지됩니다.",
             card,
         )
