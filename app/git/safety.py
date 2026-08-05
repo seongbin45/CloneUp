@@ -81,6 +81,17 @@ def find_secret_candidates(folder: Path) -> list[str]:
     return sorted(hits)
 
 
+def format_secret_list(secrets: list[str], *, limit: int = 20) -> str:
+    """Bullet list for UI dialogs (G3)."""
+    if not secrets:
+        return ""
+    head = secrets[:limit]
+    lines = "\n".join(f"  · {s}" for s in head)
+    if len(secrets) > limit:
+        lines += f"\n  · … 외 {len(secrets) - limit}개"
+    return lines
+
+
 def ensure_gitignore(folder: Path, *, write_if_missing: bool = True) -> bool:
     """Return True if a new .gitignore was written."""
     gi = folder / ".gitignore"

@@ -20,8 +20,9 @@ from PySide6.QtWidgets import (
     QRadioButton,
 )
 
+from app.git.publish import peek_commit_email
 from app.git.runner import GitError, require_git
-from app.git.safety import run_safety_checks
+from app.git.safety import find_secret_candidates, format_secret_list, run_safety_checks
 from app.git.url_utils import UrlError, normalize_github_clone_url
 from app.auth.token_store import load_token
 from app.ui.auth_status import AuthState, AuthStatusButton
@@ -537,6 +538,59 @@ class MainController(QObject):
         else:
             QMessageBox.critical(self.window, "실패", message)
 
+    def _confirm_upload_g3(
+        self,
+        folder: Path,
+        *,
+        allow_secrets: bool,
+        private: bool | None,
+        title: str = "올리기 전 확인",
+    ) -> bool:
+        """
+        G3 — plain-language preflight before commit/push.
+        Secrets list + commit email disclosure. Cancel = do not start worker.
+        """
+        parts: list[str] = []
+        secrets = find_secret_candidates(folder)
+        if secrets:
+            listing = format_secret_list(secrets)
+            if not allow_secrets:
+                QMessageBox.warning(
+                    self.window,
+                    "올릴 수 없음",
+                    "비밀 파일로 보이는 항목이 있습니다.\n\n"
+                    f"{listing}\n\n"
+                    "파일을 제거·이름 변경하거나, "
+                    "「비밀 파일로 보이는 항목이 있어도 진행」을 켠 뒤 다시 시도하세요.",
+                )
+                return False
+            vis = (
+                "비공개 저장소여도 협업자·유출 시 위험합니다."
+                if private
+                else "공개 저장소면 인터넷에 그대로 보일 수 있습니다."
+            )
+            parts.append(
+                "다음 파일이 포함될 수 있습니다:\n"
+                f"{listing}\n\n"
+                f"이대로 올리면 인터넷에 공개될 수 있습니다. ({vis})"
+            )
+
+        email = peek_commit_email(folder)
+        parts.append(
+            "이 이메일이 커밋에 기록되어 공개됩니다:\n"
+            f"  {email}"
+        )
+
+        body = "\n\n".join(parts) + "\n\n계속할까요?"
+        reply = QMessageBox.warning(
+            self.window,
+            title,
+            body,
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        return reply == QMessageBox.StandardButton.Ok
+
     @Slot()
     def on_publish(self) -> None:
         if self._busy() or not self.editFolder or not self.editRepoName:
@@ -565,7 +619,19 @@ class MainController(QObject):
             path.resolve(), allow_secrets=allow, write_gitignore=False
         )
         if not report.ok:
+            # Prefer G3-style secret listing when that is the only block
+            if report.secret_candidates and not allow:
+                self._confirm_upload_g3(
+                    path.resolve(), allow_secrets=False, private=private
+                )
+                return
             QMessageBox.warning(self.window, "올릴 수 없음", "\n".join(report.errors))
+            return
+
+        if not self._confirm_upload_g3(
+            path.resolve(), allow_secrets=allow, private=private
+        ):
+            self._log("Publish 취소 — 확인 대화상자")
             return
 
         remember_folder(str(path.resolve()))
@@ -756,6 +822,18 @@ class MainController(QObject):
             )
             if ans != QMessageBox.StandardButton.Yes:
                 return
+
+        if action == "push":
+            path = Path(folder.strip()).expanduser()
+            if path.is_dir():
+                if not self._confirm_upload_g3(
+                    path.resolve(),
+                    allow_secrets=allow,
+                    private=None,
+                    title="올리고 보내기 전 확인",
+                ):
+                    self._log("Sync push 취소 — 확인 대화상자")
+                    return
 
         self._log(f"--- Sync {action}: {folder} ---")
         w = SyncActionWorker(

@@ -58,6 +58,21 @@ def display_name(user: dict) -> str:
     return name or (user.get("login") or "CloneUp User")
 
 
+def peek_commit_email(folder: Path | None = None) -> str:
+    """
+    Email that will appear on the next commit (for UI G3 disclosure).
+
+    Does not invent noreply until login; if unset, returns a plain-language placeholder.
+    """
+    cwd = str(folder) if folder is not None and folder.is_dir() else None
+    email = git_config_get("user.email", cwd=cwd)
+    if email is None:
+        email = git_config_get("user.email", cwd=None, global_scope=True)
+    if email and email.strip():
+        return email.strip()
+    return "GitHub 로그인 후 부여되는 noreply 이메일 (git에 이메일이 없을 때)"
+
+
 def resolve_commit_identity(
     folder: Path,
     user: dict,
