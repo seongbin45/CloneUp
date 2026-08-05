@@ -204,6 +204,13 @@ class MainController(QObject):
                 self._closing = True
                 self._shutdown_workers()
                 self._close_device_overlay()
+        elif obj is self.window and et in (
+            QEvent.Type.Resize,
+            QEvent.Type.WindowStateChange,
+        ):
+            # Maximize / restore: keep device-code dim covering full client area
+            if self._device_overlay is not None:
+                self._device_overlay.sync_geometry()
         return False
 
     def _shutdown_workers(self) -> None:
@@ -235,6 +242,7 @@ class MainController(QObject):
         )
         overlay.cancelled.connect(self.on_cancel)
         overlay.show()
+        overlay.sync_geometry()
         overlay.raise_()
         self._device_overlay = overlay
         self._log(f"장치 코드 팝업: {user_code}")

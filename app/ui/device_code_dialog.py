@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import webbrowser
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -36,6 +37,7 @@ from app.ui.theme import (
 
 
 def _host_widget(parent: QWidget) -> QWidget:
+    """Prefer central widget so the dim covers tabs + form + log."""
     if isinstance(parent, QMainWindow) and parent.centralWidget() is not None:
         return parent.centralWidget()
     return parent
@@ -45,6 +47,7 @@ class DeviceCodeOverlay(QWidget):
     """
     Full-area dim overlay + centered card with copyable user code.
 
+    Tracks parent resizes (including maximize) so geometry stays correct.
     Non-blocking (show()) so the login QThread can keep polling.
     """
 
@@ -60,6 +63,7 @@ class DeviceCodeOverlay(QWidget):
     ) -> None:
         host = _host_widget(parent)
         super().__init__(host)
+        self._host = host
         self._user_code = str(user_code)
         self._verification_uri = str(verification_uri)
         self._deadline = time.monotonic() + max(1, int(expires_in))
@@ -67,14 +71,17 @@ class DeviceCodeOverlay(QWidget):
 
         self.setObjectName("deviceCodeOverlay")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # Cover children of host; intercept mouse so form is not clicked under dim
+        self.setAttribute(Qt.WidgetAttribute.WA_NoMouseReplay, True)
         self.setStyleSheet(
             "#deviceCodeOverlay { background-color: rgba(15, 18, 22, 160); }"
         )
-        self.setGeometry(host.rect())
-        self.raise_()
 
-        card = QFrame(self)
+        # --- card ---
+        card = QFrame()
         card.setObjectName("deviceCodeCard")
+        card.setFixedWidth(440)
+        card.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
         card.setStyleSheet(
             f"""
             #deviceCodeCard {{
@@ -152,7 +159,6 @@ class DeviceCodeOverlay(QWidget):
         self._code_label.setObjectName("code")
         self._code_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._code_label.setMinimumHeight(64)
-        self._code_label.setContentsMargins(8, 10, 8, 10)
         self._code_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
             | Qt.TextInteractionFlag.TextSelectableByKeyboard
@@ -161,8 +167,6 @@ class DeviceCodeOverlay(QWidget):
         mono.setStyleHint(QFont.StyleHint.Monospace)
         mono.setPointSize(24)
         mono.setBold(True)
-        # Extra line spacing so tall glyphs (digits) are not clipped top/bottom
-        mono.setStyleStrategy(QFont.StyleStrategy.PreferDefault)
         self._code_label.setFont(mono)
 
         self._timer_label = QLabel("", card)
@@ -184,7 +188,6 @@ class DeviceCodeOverlay(QWidget):
 
         btn_cancel = QPushButton("로그인 취소", card)
         btn_cancel.setObjectName("btnCancel")
-        btn_cancel.setEnabled(True)
         btn_cancel.clicked.connect(self._on_cancel_clicked)
 
         row = QHBoxLayout()
@@ -203,29 +206,58 @@ class DeviceCodeOverlay(QWidget):
         lay.addWidget(btn_cancel)
 
         self._card = card
-        self._layout_card()
+
+        # Layout keeps card centered on any size (maximize / restore)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addStretch(1)
+        mid = QHBoxLayout()
+        mid.addStretch(1)
+        mid.addWidget(card, 0, Qt.AlignmentFlag.AlignCenter)
+        mid.addStretch(1)
+        root.addLayout(mid)
+        root.addStretch(1)
+
+        # Follow host size changes (maximize sends Resize on host, not always on us)
+        self._host.installEventFilter(self)
+        self.sync_geometry()
 
         self._tick = QTimer(self)
         self._tick.timeout.connect(self._update_timer)
         self._tick.start(500)
         self._update_timer()
 
-        # After shown: copy + open browser on UI thread (avoid worker COM errors)
         QTimer.singleShot(0, self._copy_code)
         QTimer.singleShot(50, self._open_browser)
 
-    def _layout_card(self) -> None:
-        w, h = 440, 400
-        x = max(0, (self.width() - w) // 2)
-        y = max(0, (self.height() - h) // 2)
-        self._card.setGeometry(x, y, w, h)
+    def eventFilter(self, obj, event):  # noqa: N802
+        if obj is self._host and event.type() in (
+            QEvent.Type.Resize,
+            QEvent.Type.Show,
+            QEvent.Type.LayoutRequest,
+        ):
+            self.sync_geometry()
+        return False
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self.sync_geometry()
+        self.raise_()
+
+    def sync_geometry(self) -> None:
+        """Cover the entire host (tabs + form + log), even after maximize."""
+        if self._host is None:
+            return
+        # Use contents rect so we match client area after layout
+        r = self._host.rect()
+        self.setGeometry(0, 0, r.width(), r.height())
+        self.raise_()
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        p = self.parentWidget()
-        if p is not None:
-            self.setGeometry(p.rect())
-        self._layout_card()
+        # Card is layout-managed; just keep on top
+        self.raise_()
 
     def _update_timer(self) -> None:
         left = self._deadline - time.monotonic()
@@ -254,7 +286,6 @@ class DeviceCodeOverlay(QWidget):
 
     def _on_cancel_clicked(self) -> None:
         self._status.setText("취소 중…")
-        # Disable double-clicks while worker winds down
         for child in self.findChildren(QPushButton):
             if child.objectName() == "btnCancel":
                 child.setEnabled(False)
