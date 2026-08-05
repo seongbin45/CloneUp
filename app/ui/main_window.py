@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QObject, QUrl, Slot
+from PySide6.QtCore import QEvent, QFile, QObject, QUrl, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -24,6 +24,7 @@ from app.git.runner import GitError, require_git
 from app.git.safety import run_safety_checks
 from app.git.url_utils import UrlError, normalize_github_clone_url
 from app.ui.auth_status import AuthStatusButton
+from app.ui.device_code_dialog import DeviceCodeOverlay
 from app.ui.publish_worker import LoginWorker, PublishWorker
 from app.ui.settings_store import (
     load_last_commit_message,
