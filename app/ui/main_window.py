@@ -59,7 +59,8 @@ def load_main_window() -> QMainWindow:
         wrap.resize(760, 620)
         window = wrap
 
-    MainController(window)
+    ctrl = MainController(window)
+    window._cloneup_controller = ctrl  # keep strong ref
     return window
 
 
@@ -68,6 +69,8 @@ class MainController(QObject):
         super().__init__(window)
         self.window = window
         self._worker = None  # any QThread worker
+        self._device_overlay: DeviceCodeOverlay | None = None
+        self.window.installEventFilter(self)
 
         # --- shared ---
         self.labelStatusGit = window.findChild(QLabel, "labelStatusGit")
@@ -185,13 +188,60 @@ class MainController(QObject):
 
     def _start_worker(self, worker) -> None:
         self._worker = worker
-        worker.log_line.connect(self._log)
+        if hasattr(worker, "log_line"):
+            worker.log_line.connect(self._log)
+        if hasattr(worker, "user_code_ready"):
+            worker.user_code_ready.connect(self._show_device_code_overlay)
         worker.finished.connect(self._on_worker_finished)
         self._set_global_busy(True)
         worker.start()
 
+    def eventFilter(self, obj, event):  # noqa: N802
+        if obj is self.window and event.type() == QEvent.Type.Close:
+            self._shutdown_workers()
+            self._close_device_overlay()
+        elif obj is self.window and event.type() == QEvent.Type.Resize:
+            if self._device_overlay is not None:
+                self._device_overlay.setGeometry(self.window.rect())
+                self._device_overlay._layout_card()
+        return super().eventFilter(obj, event)
+
+    def _shutdown_workers(self) -> None:
+        w = self._worker
+        if w is not None and w.isRunning():
+            w.requestInterruption()
+            if not w.wait(8000):
+                w.terminate()
+                w.wait(2000)
+        self._worker = None
+
+    def _close_device_overlay(self) -> None:
+        if self._device_overlay is not None:
+            self._device_overlay.hide()
+            self._device_overlay.deleteLater()
+            self._device_overlay = None
+
+    @Slot(str, str, int)
+    def _show_device_code_overlay(
+        self, user_code: str, verification_uri: str, expires_in: int
+    ) -> None:
+        """UI thread: dim background + code popup until login finishes."""
+        self._close_device_overlay()
+        overlay = DeviceCodeOverlay(
+            self.window,
+            user_code=user_code,
+            verification_uri=verification_uri,
+            expires_in=expires_in,
+        )
+        overlay.cancelled.connect(self.on_cancel)
+        overlay.show()
+        overlay.raise_()
+        self._device_overlay = overlay
+        self._log(f"장치 코드 팝업: {user_code}")
+
     @Slot()
     def _on_worker_finished(self) -> None:
+        self._close_device_overlay()
         self._set_global_busy(False)
         self._worker = None
         self._refresh_status_bar()
@@ -322,6 +372,7 @@ class MainController(QObject):
 
     @Slot(dict)
     def _on_login_ok(self, info: dict) -> None:
+        self._close_device_overlay()
         login = info.get("login") or ""
         self.auth_status.set_login_name(str(login) if login else None)
         self.auth_status.refresh()
@@ -332,6 +383,7 @@ class MainController(QObject):
 
     @Slot(str)
     def _on_fail_msg(self, message: str) -> None:
+        self._close_device_overlay()
         self._log(f"ERROR: {message}")
         if message.startswith("취소"):
             QMessageBox.information(self.window, "취소됨", message)
@@ -389,6 +441,7 @@ class MainController(QObject):
 
     @Slot(dict)
     def _on_publish_ok(self, result: dict) -> None:
+        self._close_device_overlay()
         self._log(f"Publish 성공: {result.get('html_url')}")
         url = result.get("html_url") or ""
         QMessageBox.information(

@@ -45,6 +45,7 @@ class _SignalStdout(io.TextIOBase):
 
 class CloneWorker(QThread):
     log_line = Signal(str)
+    user_code_ready = Signal(str, str, int)
     succeeded = Signal(dict)
     failed = Signal(str)
 
@@ -76,7 +77,15 @@ class CloneWorker(QThread):
                 token = None
                 if self.use_token:
                     self._log("인증 확인 (비공개 clone 용)…")
-                    token, user = ensure_valid_token(open_browser=True)
+
+                    def on_user_code(code: str, uri: str, expires_in: int) -> None:
+                        self.user_code_ready.emit(code, uri, int(expires_in))
+
+                    token, user = ensure_valid_token(
+                        open_browser=False,
+                        copy_code=False,
+                        on_user_code=on_user_code,
+                    )
                     self._log(f"로그인: {user.get('login')} · {mask_token(token)}")
                 if self.isInterruptionRequested():
                     self.failed.emit("취소됨")
@@ -138,6 +147,7 @@ class SyncActionWorker(QThread):
     """pull | push | abort"""
 
     log_line = Signal(str)
+    user_code_ready = Signal(str, str, int)
     succeeded = Signal(str)
     failed = Signal(str)
 
@@ -164,14 +174,23 @@ class SyncActionWorker(QThread):
         try:
             with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
                 folder = Path(self.folder)
+
+                def on_user_code(code: str, uri: str, expires_in: int) -> None:
+                    self.user_code_ready.emit(code, uri, int(expires_in))
+
+                auth_kw = dict(
+                    open_browser=False,
+                    copy_code=False,
+                    on_user_code=on_user_code,
+                )
                 if self.action == "pull":
                     self._log("pull…")
-                    token, _user = ensure_valid_token(open_browser=True)
+                    token, _user = ensure_valid_token(**auth_kw)
                     msg = pull_repo(folder, token=token)
                     self.succeeded.emit(msg)
                 elif self.action == "push":
                     self._log("commit + push…")
-                    token, user = ensure_valid_token(open_browser=True)
+                    token, user = ensure_valid_token(**auth_kw)
                     msg = commit_and_push(
                         folder,
                         message=self.message,

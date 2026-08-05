@@ -48,6 +48,8 @@ class LoginWorker(QThread):
     """Force Device Flow login (browser)."""
 
     log_line = Signal(str)
+    # UI thread should show DeviceCodeOverlay (main-thread clipboard/browser).
+    user_code_ready = Signal(str, str, int)  # user_code, verification_uri, expires_in
     succeeded = Signal(dict)
     failed = Signal(str)
 
@@ -66,9 +68,16 @@ class LoginWorker(QThread):
                     self.failed.emit("취소됨")
                     return
                 self._log("GitHub 로그인 (Device Flow)…")
+
+                def on_user_code(code: str, uri: str, expires_in: int) -> None:
+                    self.user_code_ready.emit(code, uri, int(expires_in))
+
+                # Dialog owns browser + clipboard on UI thread.
                 token, user = ensure_valid_token(
                     force_login=self.force,
-                    open_browser=True,
+                    open_browser=False,
+                    copy_code=False,
+                    on_user_code=on_user_code,
                 )
                 if self.isInterruptionRequested():
                     self.failed.emit("취소됨")
@@ -92,6 +101,7 @@ class LoginWorker(QThread):
 
 class PublishWorker(QThread):
     log_line = Signal(str)
+    user_code_ready = Signal(str, str, int)
     succeeded = Signal(dict)
     failed = Signal(str)
 
@@ -152,8 +162,18 @@ class PublishWorker(QThread):
             return
 
         try:
-            self._log("인증 확인 (필요 시 브라우저 Device Flow)…")
-            token, user = ensure_valid_token(open_browser=True)
+            self._log("인증 확인 (필요 시 Device Flow + 코드 팝업)…")
+
+            def on_user_code(code: str, uri: str, expires_in: int) -> None:
+                # Re-use LoginWorker signal name via duck-typing on PublishWorker
+                if hasattr(self, "user_code_ready"):
+                    self.user_code_ready.emit(code, uri, int(expires_in))  # type: ignore[attr-defined]
+
+            token, user = ensure_valid_token(
+                open_browser=False,
+                copy_code=False,
+                on_user_code=on_user_code,
+            )
             self._log(f"로그인: {user.get('login')} · scope={load_scope()!r}")
             self._log(f"토큰: {mask_token(token)}")
         except AuthError as e:

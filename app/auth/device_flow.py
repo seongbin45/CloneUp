@@ -203,11 +203,26 @@ def run_device_flow(
     *,
     open_browser: bool = True,
     copy_code: bool = True,
+    on_user_code: Callable[[str, str, int], None] | None = None,
 ) -> TokenResponse:
-    """Full Device Flow: code → browser → poll → access token."""
+    """
+    Full Device Flow: code → browser → poll → access token.
+
+    on_user_code(user_code, verification_uri, expires_in):
+        Called on the same thread as run_device_flow (often a QThread).
+        GUI should emit a Qt signal from here to show a modal on the UI thread.
+        When provided, GUI typically sets open_browser=False and copy_code=False
+        so the dialog can open the browser and copy on the main thread.
+    """
     dc = request_device_code(client_id, scope)
     open_url = verification_open_url(dc.verification_uri, dc.user_code)
-    copied = copy_text_to_clipboard(dc.user_code) if copy_code else False
+
+    if on_user_code is not None:
+        on_user_code(dc.user_code, dc.verification_uri, dc.expires_in)
+
+    copied = False
+    if copy_code:
+        copied = copy_text_to_clipboard(dc.user_code)
 
     print()
     print("=" * 50)
@@ -218,10 +233,13 @@ def run_device_flow(
     print()
     print(f"      >>>  {dc.user_code}  <<<")
     print()
-    if copied:
-        print("  (코드가 클립보드에 복사되었습니다 → 입력란에서 Ctrl+V)")
+    if copy_code:
+        if copied:
+            print("  (코드가 클립보드에 복사되었습니다 → 입력란에서 Ctrl+V)")
+        else:
+            print("  (클립보드 복사 실패 — 위 코드를 직접 입력하세요)")
     else:
-        print("  (클립보드 복사 실패 — 위 코드를 직접 입력하세요)")
+        print("  (GUI 팝업에서 복사·브라우저 열기를 처리합니다)")
     print()
     print(f"  확인 URL: {dc.verification_uri}")
     print(f"  연 주소(코드 포함 시도): {open_url}")
@@ -236,6 +254,7 @@ def run_device_flow(
     try:
         from app.auth.playwright_device import playwright_enabled, try_playwright_device_fill
 
+        # Only auto-run Playwright when we're also driving the browser ourselves.
         if playwright_enabled() and open_browser:
             print("CLONEUP_PLAYWRIGHT=1 — Playwright 실험 경로 시도…")
             used_playwright = try_playwright_device_fill(
