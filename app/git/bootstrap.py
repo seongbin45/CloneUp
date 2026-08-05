@@ -19,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.util.winproc import hidden_run_kwargs
+
 GIT_DOWNLOAD_URL = "https://git-scm.com/download/win"
 GITHUB_RELEASES_API = (
     "https://api.github.com/repos/git-for-windows/git/releases/latest"
@@ -119,6 +121,7 @@ def try_install_git_via_winget(*, timeout: int = 600) -> tuple[bool, str]:
             timeout=timeout,
             encoding="utf-8",
             errors="replace",
+            **hidden_run_kwargs(),
         )
         out = ((r.stdout or "") + "\n" + (r.stderr or "")).strip()
         if r.returncode == 0:
@@ -254,10 +257,17 @@ def run_git_installer(installer: Path, *, silent: bool = False) -> tuple[bool, s
     try:
         # Don't wait forever on GUI installer — start process
         if silent:
-            r = subprocess.run(args, timeout=900, capture_output=True, text=True)
+            r = subprocess.run(
+                args,
+                timeout=900,
+                capture_output=True,
+                text=True,
+                **hidden_run_kwargs(),
+            )
             ok = r.returncode == 0
             msg = (r.stdout or "") + (r.stderr or "") or f"exit {r.returncode}"
             return ok, msg.strip()
+        # GUI installer must show its own window — do not CREATE_NO_WINDOW
         subprocess.Popen(args, shell=False)
         return True, f"설치 프로그램을 실행했습니다: {installer.name}"
     except Exception as e:

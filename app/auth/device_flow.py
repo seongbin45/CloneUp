@@ -206,13 +206,16 @@ def copy_text_to_clipboard(text: str) -> bool:
     except Exception:
         pass
     try:
-        # Windows: clip.exe reads stdin
+        # Windows: clip.exe reads stdin (hide console under windowed .exe)
+        from app.util.winproc import hidden_run_kwargs
+
         r = subprocess.run(
             ["clip"],
             input=text,
             text=True,
             check=False,
             capture_output=True,
+            **hidden_run_kwargs(),
         )
         return r.returncode == 0
     except Exception:

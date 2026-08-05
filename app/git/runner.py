@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from app.git.env import noninteractive_git_env
 from app.util.log_mask import mask_secrets_in_text
+from app.util.winproc import hidden_run_kwargs
 
 
 class GitError(Exception):
@@ -89,6 +90,7 @@ def run_git(
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            **hidden_run_kwargs(),  # no black console flash under windowed .exe
         )
     except subprocess.TimeoutExpired as e:
         raise GitError(

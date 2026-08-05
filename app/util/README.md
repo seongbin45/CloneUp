@@ -8,6 +8,7 @@
 |------|------|
 | `log_mask.py` | 로그에 토큰이 찍히지 않게 마스킹 |
 | `next_action.py` | 실패 메시지 → 「다음: …」 한 줄 (G4) |
+| `winproc.py` | Windows에서 git/clip 등 실행 시 검은 콘솔 창 숨김 |
 
 ## 초심자
 
