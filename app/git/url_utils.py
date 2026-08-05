@@ -37,16 +37,20 @@ def normalize_github_clone_url(raw: str) -> NormalizedCloneUrl:
 
     warnings: list[str] = []
 
-    # SSH form
-    m = re.match(r"^git@([^:]+):(.+?)(?:\.git)?$", s)
+    # SSH form: nina.v@example.com:owner/repo.git
+    m = re.match(r"^git@([^:]+):(.+)$", s)
     if m:
-        host, path = m.group(1), m.group(2).strip("/")
-        if host not in _GITHUB_HOSTS and host != "github.com":
-            # still allow other hosts later; for now GitHub-focused
-            pass
+        host, path = m.group(1).lower(), m.group(2).strip().strip("/")
+        if host not in _GITHUB_HOSTS:
+            raise UrlError(
+                "지금은 github.com SSH 주소만 지원합니다. "
+                "예: nina.v@example.com:owner/repo.git"
+            )
         parts = [p for p in path.split("/") if p]
         if len(parts) < 2:
-            raise UrlError("SSH 주소 형식이 올바르지 않습니다. 예: nina.v@example.com:owner/repo.git")
+            raise UrlError(
+                "SSH 주소 형식이 올바르지 않습니다. 예: nina.v@example.com:owner/repo.git"
+            )
         owner, repo = parts[0], parts[1].removesuffix(".git")
         clone = f"https://github.com/{owner}/{repo}.git"
         if len(parts) > 2:
