@@ -1,66 +1,267 @@
 """
-CloneUp design tokens — from desin/CloneUp Window.dc.html
+CloneUp design tokens.
 
-Warm paper UI + teal accent. Use these constants everywhere (QSS, dialogs)
-so colors stay unified.
+Light:  desin/CloneUp Window.dc.html
+Dark:   desin/dark/CloneUp Window Dark.dc.html
+
+Module-level aliases (BG_WINDOW, PRIMARY, …) always reflect the *active*
+palette so dialogs/auth can import them. Call apply_palette() when switching.
+Default active palette is LIGHT.
 """
 
 from __future__ import annotations
 
-# --- Surfaces ---
-BG_APP = "#e8e6e1"  # window chrome / outside (if shown)
-BG_WINDOW = "#fbfaf8"  # main content
-BG_BAR = "#f2efe9"  # title / tab rail
-BG_INPUT = "#ffffff"
-BG_MUTED = "#f2efe9"
-BG_HINT = "#f4f1e8"
-BG_LOG = "#2c2925"
+from dataclasses import dataclass
+from typing import Literal
 
-# --- Borders ---
-BORDER = "#c9c5bd"
-BORDER_SOFT = "#ddd8d0"
-BORDER_INPUT = "#cdc8bf"
-BORDER_DIVIDER = "#e6e1d8"
-
-# --- Text ---
-TEXT = "#2f2b24"
-TEXT_SECONDARY = "#4a453b"
-TEXT_MUTED = "#6d675c"
-TEXT_FAINT = "#8b8477"
-TEXT_DISABLED = "#b3ac9e"
-TEXT_ON_PRIMARY = "#ffffff"
-TEXT_LOG = "#d6d0c4"
-TEXT_LOG_DIM = "#8f887c"
-TEXT_LOG_OK = "#7fc9a8"
-TEXT_LOG_ERR = "#e0a3a3"
-
-# --- Accent (teal) ---
-PRIMARY = "#1f6f5c"
-PRIMARY_HOVER = "#185b4b"
-PRIMARY_SOFT = "#14503f"
-SUCCESS_DOT = "#2f8f6d"
-
-# --- Status ---
-WARN_DOT = "#c4a94e"
-WARN_BORDER = "#c4a94e"
-WARN_TEXT = "#9a6700"  # amber body (timer, soft warnings)
-DANGER = "#cf222e"
-DANGER_HOVER = "#a40e26"
-DANGER_SOFT_BG = "#fff5f5"
-HOVER_MUTED = "#e9e5dd"
-HOVER_PRESSED = "#e0dbd2"
-
-# --- Tabs ---
-TAB_ACTIVE_FG = PRIMARY
-TAB_INACTIVE_FG = "#7c766a"
-TAB_ACTIVE_BG = BG_WINDOW
-TAB_RAIL_BG = BG_BAR
+ThemeName = Literal["light", "dark"]
 
 
-def app_stylesheet() -> str:
-    """Global QSS applied to QApplication — Phase 1 color unification."""
+@dataclass(frozen=True)
+class Palette:
+    name: ThemeName
+    # Surfaces
+    bg_app: str
+    bg_window: str
+    bg_bar: str
+    bg_input: str
+    bg_muted: str
+    bg_hint: str
+    bg_log: str
+    # Borders
+    border: str
+    border_soft: str
+    border_input: str
+    border_divider: str
+    border_outline: str  # secondary outline buttons (pull)
+    # Text
+    text: str
+    text_secondary: str
+    text_muted: str
+    text_faint: str
+    text_disabled: str
+    text_on_primary: str
+    text_log: str
+    text_log_dim: str
+    text_log_ok: str
+    text_log_err: str
+    text_log_warn: str
+    # Accent
+    primary: str
+    primary_hover: str
+    primary_soft: str
+    success_dot: str
+    # Status
+    warn_dot: str
+    warn_border: str
+    warn_text: str
+    danger: str
+    danger_hover: str
+    danger_soft_bg: str
+    hover_muted: str
+    hover_pressed: str
+    # Tabs
+    tab_inactive_fg: str
+
+
+# --- Light (desin/CloneUp Window.dc.html) ---
+LIGHT = Palette(
+    name="light",
+    bg_app="#e8e6e1",
+    bg_window="#fbfaf8",
+    bg_bar="#f2efe9",
+    bg_input="#ffffff",
+    bg_muted="#f2efe9",
+    bg_hint="#f4f1e8",
+    bg_log="#2c2925",  # mock terminal (UI uses light log body by preference)
+    border="#c9c5bd",
+    border_soft="#ddd8d0",
+    border_input="#cdc8bf",
+    border_divider="#e6e1d8",
+    border_outline="#b7b1a5",
+    text="#2f2b24",
+    text_secondary="#4a453b",
+    text_muted="#6d675c",
+    text_faint="#8b8477",
+    text_disabled="#b3ac9e",
+    text_on_primary="#ffffff",
+    text_log="#d6d0c4",
+    text_log_dim="#8f887c",
+    text_log_ok="#7fc9a8",
+    text_log_err="#e0a3a3",
+    text_log_warn="#c9ad5c",
+    primary="#1f6f5c",
+    primary_hover="#185b4b",
+    primary_soft="#14503f",
+    success_dot="#2f8f6d",
+    warn_dot="#c4a94e",
+    warn_border="#c4a94e",
+    warn_text="#9a6700",
+    danger="#cf222e",
+    danger_hover="#a40e26",
+    danger_soft_bg="#fff5f5",
+    hover_muted="#e9e5dd",
+    hover_pressed="#e0dbd2",
+    tab_inactive_fg="#7c766a",
+)
+
+# --- Dark (desin/dark/CloneUp Window Dark.dc.html) ---
+DARK = Palette(
+    name="dark",
+    bg_app="#111009",
+    bg_window="#232019",
+    bg_bar="#2b2821",
+    bg_input="#1b1915",
+    bg_muted="#2b2821",
+    bg_hint="#2c2921",
+    bg_log="#15140f",
+    border="#3b372e",
+    border_soft="#38342b",
+    border_input="#443f35",
+    border_divider="#333026",
+    border_outline="#4f4a3f",
+    text="#efeade",
+    text_secondary="#bab3a3",
+    text_muted="#a39c8c",
+    text_faint="#8b8477",
+    text_disabled="#5b564c",
+    text_on_primary="#0f231c",  # dark teal button label on bright accent
+    text_log="#d6d0c4",
+    text_log_dim="#8f887c",
+    text_log_ok="#7fc9a8",
+    text_log_err="#e0a3a3",
+    text_log_warn="#c9ad5c",
+    primary="#46a685",
+    primary_hover="#57bd99",
+    primary_soft="#14503f",
+    success_dot="#4fb68f",
+    warn_dot="#d3b862",
+    warn_border="#d3b862",
+    warn_text="#c9ad5c",
+    danger="#e07070",
+    danger_hover="#f09090",
+    danger_soft_bg="#3a2424",
+    hover_muted="#343128",
+    hover_pressed="#3a362e",
+    tab_inactive_fg="#8b8477",
+)
+
+_active: Palette = LIGHT
+
+
+def active_palette() -> Palette:
+    return _active
+
+
+def apply_palette(palette: Palette) -> None:
+    """Set module-level color aliases to *palette* (for dialogs/auth imports)."""
+    global _active
+    global BG_APP, BG_WINDOW, BG_BAR, BG_INPUT, BG_MUTED, BG_HINT, BG_LOG
+    global BORDER, BORDER_SOFT, BORDER_INPUT, BORDER_DIVIDER, BORDER_OUTLINE
+    global TEXT, TEXT_SECONDARY, TEXT_MUTED, TEXT_FAINT, TEXT_DISABLED
+    global TEXT_ON_PRIMARY, TEXT_LOG, TEXT_LOG_DIM, TEXT_LOG_OK, TEXT_LOG_ERR, TEXT_LOG_WARN
+    global PRIMARY, PRIMARY_HOVER, PRIMARY_SOFT, SUCCESS_DOT
+    global WARN_DOT, WARN_BORDER, WARN_TEXT
+    global DANGER, DANGER_HOVER, DANGER_SOFT_BG, HOVER_MUTED, HOVER_PRESSED
+    global TAB_ACTIVE_FG, TAB_INACTIVE_FG, TAB_ACTIVE_BG, TAB_RAIL_BG
+
+    _active = palette
+    BG_APP = palette.bg_app
+    BG_WINDOW = palette.bg_window
+    BG_BAR = palette.bg_bar
+    BG_INPUT = palette.bg_input
+    BG_MUTED = palette.bg_muted
+    BG_HINT = palette.bg_hint
+    BG_LOG = palette.bg_log
+    BORDER = palette.border
+    BORDER_SOFT = palette.border_soft
+    BORDER_INPUT = palette.border_input
+    BORDER_DIVIDER = palette.border_divider
+    BORDER_OUTLINE = palette.border_outline
+    TEXT = palette.text
+    TEXT_SECONDARY = palette.text_secondary
+    TEXT_MUTED = palette.text_muted
+    TEXT_FAINT = palette.text_faint
+    TEXT_DISABLED = palette.text_disabled
+    TEXT_ON_PRIMARY = palette.text_on_primary
+    TEXT_LOG = palette.text_log
+    TEXT_LOG_DIM = palette.text_log_dim
+    TEXT_LOG_OK = palette.text_log_ok
+    TEXT_LOG_ERR = palette.text_log_err
+    TEXT_LOG_WARN = palette.text_log_warn
+    PRIMARY = palette.primary
+    PRIMARY_HOVER = palette.primary_hover
+    PRIMARY_SOFT = palette.primary_soft
+    SUCCESS_DOT = palette.success_dot
+    WARN_DOT = palette.warn_dot
+    WARN_BORDER = palette.warn_border
+    WARN_TEXT = palette.warn_text
+    DANGER = palette.danger
+    DANGER_HOVER = palette.danger_hover
+    DANGER_SOFT_BG = palette.danger_soft_bg
+    HOVER_MUTED = palette.hover_muted
+    HOVER_PRESSED = palette.hover_pressed
+    TAB_ACTIVE_FG = palette.primary
+    TAB_INACTIVE_FG = palette.tab_inactive_fg
+    TAB_ACTIVE_BG = palette.bg_window
+    TAB_RAIL_BG = palette.bg_bar
+
+
+def palette_by_name(name: ThemeName | str) -> Palette:
+    key = str(name).strip().lower()
+    if key == "dark":
+        return DARK
+    return LIGHT
+
+
+# Initialize module-level aliases (light default)
+apply_palette(LIGHT)
+
+
+def app_stylesheet(palette: Palette | None = None) -> str:
+    """Global QSS. Uses *palette* or the active palette."""
+    p = palette or _active
+    # Local names for f-string clarity
+    BG_WINDOW = p.bg_window
+    BG_BAR = p.bg_bar
+    BG_INPUT = p.bg_input
+    BG_MUTED = p.bg_muted
+    BG_HINT = p.bg_hint
+    BG_LOG = p.bg_log
+    BORDER = p.border
+    BORDER_SOFT = p.border_soft
+    BORDER_INPUT = p.border_input
+    BORDER_DIVIDER = p.border_divider
+    BORDER_OUTLINE = p.border_outline
+    TEXT = p.text
+    TEXT_SECONDARY = p.text_secondary
+    TEXT_MUTED = p.text_muted
+    TEXT_FAINT = p.text_faint
+    TEXT_DISABLED = p.text_disabled
+    TEXT_ON_PRIMARY = p.text_on_primary
+    PRIMARY = p.primary
+    PRIMARY_HOVER = p.primary_hover
+    HOVER_MUTED = p.hover_muted
+    HOVER_PRESSED = p.hover_pressed
+    WARN_DOT = p.warn_dot
+    TAB_ACTIVE_FG = p.primary
+    TAB_INACTIVE_FG = p.tab_inactive_fg
+    TAB_ACTIVE_BG = p.bg_window
+    TAB_RAIL_BG = p.bg_bar
+
+    # Light mode: user preferred light log body over mock dark terminal.
+    # Dark mode: use mock log panel (#15140f) from desin/dark.
+    if p.name == "dark":
+        log_bg = BG_LOG
+        log_fg = p.text_log
+        log_border = BORDER_SOFT
+    else:
+        log_bg = BG_INPUT
+        log_fg = TEXT
+        log_border = BORDER_INPUT
+
     return f"""
-    /* ===== CloneUp global theme (Phase 1) ===== */
+    /* ===== CloneUp global theme ({p.name}) ===== */
     QMainWindow, QWidget {{
         background-color: {BG_WINDOW};
         color: {TEXT};
@@ -173,7 +374,7 @@ def app_stylesheet() -> str:
     QPushButton#btnSyncPull {{
         background-color: {BG_INPUT};
         color: {TEXT};
-        border: 1px solid #b7b1a5;
+        border: 1px solid {BORDER_OUTLINE};
         font-weight: 500;
         min-height: 36px;
     }}
@@ -213,7 +414,7 @@ def app_stylesheet() -> str:
         color: {TEXT_SECONDARY};
     }}
 
-    /* Phase 4 — log panel header + light log body */
+    /* Log panel header + body */
     QWidget#logPanel {{
         background-color: {BG_WINDOW};
         border-top: 1px solid {BORDER_DIVIDER};
@@ -232,9 +433,9 @@ def app_stylesheet() -> str:
         padding: 0;
     }}
     QPlainTextEdit#textLog {{
-        background-color: {BG_INPUT};
-        color: {TEXT};
-        border: 1px solid {BORDER_INPUT};
+        background-color: {log_bg};
+        color: {log_fg};
+        border: 1px solid {log_border};
         border-radius: 5px;
         padding: 8px 10px;
         font-family: Consolas, "IBM Plex Mono", monospace;
@@ -250,7 +451,7 @@ def app_stylesheet() -> str:
         border-top: 1px solid {BORDER_SOFT};
     }}
 
-    /* Phase 2 — top status row (design: Git + GitHub dots) */
+    /* Top status row (Git + GitHub dots) */
     QWidget#statusBarFrame {{
         background-color: {BG_WINDOW};
         border-bottom: 1px solid {BORDER_DIVIDER};
@@ -282,7 +483,7 @@ def app_stylesheet() -> str:
         border: none;
     }}
 
-    /* Phase 3 — form label grid (~92px, design mock) */
+    /* Form label grid (~92px) */
     QLabel#labelFolder,
     QLabel#labelRecent,
     QLabel#labelRepoName,
