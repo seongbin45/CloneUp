@@ -208,15 +208,17 @@ def app_stylesheet() -> str:
         color: {TEXT_SECONDARY};
     }}
 
-    /* Log */
+    /* Log — prefer light panel (user preferred pre-dark-terminal look) */
     QPlainTextEdit#textLog {{
-        background-color: {BG_LOG};
-        color: {TEXT_LOG};
-        border: none;
-        border-radius: 6px;
-        padding: 12px 14px;
+        background-color: {BG_INPUT};
+        color: {TEXT};
+        border: 1px solid {BORDER_INPUT};
+        border-radius: 5px;
+        padding: 10px 12px;
         font-family: Consolas, "IBM Plex Mono", monospace;
-        font-size: 11.5px;
+        font-size: 12px;
+        selection-background-color: {PRIMARY};
+        selection-color: {TEXT_ON_PRIMARY};
     }}
 
     QStatusBar {{
