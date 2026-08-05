@@ -29,6 +29,7 @@ from app.ui.device_code_dialog import DeviceCodeOverlay
 from app.ui.publish_worker import LoginWorker, PublishWorker
 from app.ui.settings_store import (
     load_last_commit_message,
+    load_last_github_login,
     load_last_private,
     load_recent_folders,
     remember_folder,
@@ -417,12 +418,28 @@ class MainController(QObject):
     def on_login(self) -> None:
         if self._busy():
             return
-        # Re-login (already had a session) → cancel acts as logout
+        # Re-login (already had a session) → cancel on popup acts as logout
         had_session = (
             self.auth_status.state
             in (AuthState.LOGGED_IN, AuthState.SCOPE_INSUFFICIENT)
             or bool(load_token())
         )
+        if had_session:
+            who = load_last_github_login() or "현재 계정"
+            reply = QMessageBox.warning(
+                self.window,
+                "재로그인 확인",
+                f"GitHub 계정 ({who}) 으로 다시 로그인합니다.\n\n"
+                "확인을 누르면 저장된 로그인 정보가 삭제되고\n"
+                "장치 코드 인증이 시작됩니다.\n\n"
+                "취소를 누르면 현재 로그인을 유지합니다.",
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if reply != QMessageBox.StandardButton.Ok:
+                self._log("재로그인 취소됨 — 기존 로그인 유지")
+                return
+
         self._device_cancel_label = "로그아웃" if had_session else "로그인 취소"
         self._log("--- GitHub 로그인 ---")
         w = LoginWorker(force=True, parent=self)
