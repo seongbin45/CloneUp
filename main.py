@@ -22,11 +22,17 @@ def main() -> int:
         )
         return 2
 
+    from app.ui.icons import load_app_icon
     from app.ui.main_window import load_main_window
     from app.ui.theme import apply_system_theme
 
     app = QApplication(sys.argv)
     app.setApplicationName("CloneUp")
+
+    # I3 — window / taskbar icon (assets/icons from desin/icon)
+    app_icon = load_app_icon()
+    if not app_icon.isNull():
+        app.setWindowIcon(app_icon)
 
     # D1 — OS light/dark → desin LIGHT / DARK stylesheet (no manual toggle yet)
     apply_system_theme(app)
@@ -39,6 +45,8 @@ def main() -> int:
         pass
 
     win = load_main_window()
+    if not app_icon.isNull():
+        win.setWindowIcon(app_icon)
     win.show()
     return app.exec()
 
