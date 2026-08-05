@@ -556,6 +556,17 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         border: none;
     }}
 
+    /* G1 — tab purpose one-liner (always visible under tab bar) */
+    QLabel#labelTabIntroPublish,
+    QLabel#labelTabIntroClone,
+    QLabel#labelTabIntroSync {{
+        color: {TEXT_MUTED};
+        font-size: 12.5px;
+        background: transparent;
+        padding: 0 0 4px 0;
+        margin: 0;
+    }}
+
     /* Form label grid (~92px) */
     QLabel#labelFolder,
     QLabel#labelRecent,

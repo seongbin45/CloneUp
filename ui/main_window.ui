@@ -119,6 +119,16 @@
          <number>22</number>
         </property>
         <item>
+         <widget class="QLabel" name="labelTabIntroPublish">
+          <property name="text">
+           <string>내 컴퓨터 폴더를 GitHub에 처음 올립니다.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
          <layout class="QHBoxLayout" name="folderLayout">
           <property name="spacing">
            <number>10</number>
@@ -320,6 +330,16 @@
          <number>22</number>
         </property>
         <item>
+         <widget class="QLabel" name="labelTabIntroClone">
+          <property name="text">
+           <string>GitHub에 있는 폴더를 내 컴퓨터로 복사합니다.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
          <layout class="QHBoxLayout" name="cloneUrlLayout">
           <property name="spacing">
            <number>10</number>
@@ -480,6 +500,16 @@
         <property name="bottomMargin">
          <number>22</number>
         </property>
+        <item>
+         <widget class="QLabel" name="labelTabIntroSync">
+          <property name="text">
+           <string>이미 연결된 폴더의 변경사항을 주고받습니다.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
         <item>
          <layout class="QHBoxLayout" name="syncFolderLayout">
           <property name="spacing">
