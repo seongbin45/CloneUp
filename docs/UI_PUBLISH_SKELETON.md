@@ -1,7 +1,7 @@
 # CloneUp UI — Publish 탭 골격
 
-**범위:** 화면 배치 + 위젯 이름 + 진입점만.  
-**아직 안 함:** Device Flow UI, 실제 publish 연결, QThread/QProcess, Clone/Sync 탭 동작.
+**범위:** Publish 탭 UI + **백그라운드 업로드 연결 완료**.  
+**아직 안 함:** 전용 Device Flow 화면(필요 시 브라우저 자동 오픈), Clone/Sync 탭.
 
 ---
 
@@ -71,10 +71,10 @@ ui/main_window.ui  → Qt Designer에서 연 뒤 저장 → main.py 재실행
 
 ---
 
-## 다음 연결 순서 (골격 이후)
+## 연결 상태 (구현됨)
 
-1. `btnBrowseFolder` → `QFileDialog.getExistingDirectory`  
-2. `btnPublish` → 입력 검증 + `docs/FAILURE_CASES.md` S1/S3 선검사  
-3. `QThread`/`QProcess` 로 `publish_*` 호출 (UI 스레드 금지)  
-4. 로그 시그널 → `textLog` (토큰 마스킹)  
-5. 성공 시 `QDesktopServices.openUrl(html_url)`  
+1. `btnBrowseFolder` → 폴더 선택 + 저장소 이름 자동 채움  
+2. `btnPublish` → S1/S3 선검사 → `PublishWorker(QThread)`  
+3. Worker → `ensure_valid_token` + `publish_folder_to_new_repo`  
+4. 로그 → `textLog` (토큰 마스킹)  
+5. 성공 → 메시지 박스 + 브라우저로 `html_url`  
