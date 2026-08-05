@@ -10,4 +10,7 @@ PySide6>=6.6.0
 #   pip install playwright && playwright install chromium
 # playwright>=1.40.0
 
-# Later (packaging): pyinstaller
+# Packaging (optional):
+#   pip install pyinstaller
+#   powershell -File scripts\build_exe.ps1
+# pyinstaller>=6.0

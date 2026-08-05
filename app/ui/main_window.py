@@ -31,6 +31,7 @@ from app.git.safety import (
 )
 from app.git.url_utils import UrlError, normalize_github_clone_url
 from app.auth.token_store import delete_token, load_token
+from app.paths import app_root
 from app.ui.auth_status import AuthState, AuthStatusButton
 from app.ui.device_code_dialog import DeviceCodeOverlay
 from app.ui.publish_worker import LoginWorker, PublishWorker
@@ -47,23 +48,26 @@ from app.ui.settings_store import (
 from app.ui.tab_workers import CloneWorker, SyncActionWorker, SyncStatusWorker
 from app.ui.theme import active_palette
 
-_UI_PATH = Path(__file__).resolve().parents[2] / "ui" / "main_window.ui"
+
+def _ui_path() -> Path:
+    return app_root() / "ui" / "main_window.ui"
 
 
 def load_main_window() -> QMainWindow:
-    if not _UI_PATH.is_file():
-        raise FileNotFoundError(f"UI file missing: {_UI_PATH}")
+    ui_path = _ui_path()
+    if not ui_path.is_file():
+        raise FileNotFoundError(f"UI file missing: {ui_path}")
 
-    ui_file = QFile(str(_UI_PATH))
+    ui_file = QFile(str(ui_path))
     if not ui_file.open(QFile.OpenModeFlag.ReadOnly):
-        raise RuntimeError(f"Cannot open UI: {_UI_PATH}")
+        raise RuntimeError(f"Cannot open UI: {ui_path}")
 
     loader = QUiLoader()
     window = loader.load(ui_file)
     ui_file.close()
 
     if window is None:
-        raise RuntimeError(f"QUiLoader failed: {_UI_PATH}")
+        raise RuntimeError(f"QUiLoader failed: {ui_path}")
     if not isinstance(window, QMainWindow):
         wrap = QMainWindow()
         wrap.setCentralWidget(window)

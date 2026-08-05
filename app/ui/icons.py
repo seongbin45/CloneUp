@@ -6,13 +6,11 @@ from pathlib import Path
 
 from PySide6.QtGui import QIcon
 
-# CloneUp/ root (…/app/ui/icons.py → parents[2])
-_ROOT = Path(__file__).resolve().parents[2]
-_ICONS_DIR = _ROOT / "assets" / "icons"
+from app.paths import app_root
 
 
 def icons_dir() -> Path:
-    return _ICONS_DIR
+    return app_root() / "assets" / "icons"
 
 
 def load_app_icon() -> QIcon:
@@ -22,7 +20,8 @@ def load_app_icon() -> QIcon:
     Prefer multi-size CloneUp.ico; fall back to PNG set if ico missing.
     """
     icon = QIcon()
-    ico = _ICONS_DIR / "CloneUp.ico"
+    base = icons_dir()
+    ico = base / "CloneUp.ico"
     if ico.is_file():
         icon = QIcon(str(ico))
         if not icon.isNull():
@@ -30,7 +29,7 @@ def load_app_icon() -> QIcon:
 
     # Fallback: individual PNGs (development / incomplete assets)
     for size in (16, 24, 32, 48, 64, 128, 256, 512):
-        png = _ICONS_DIR / f"icon-{size}.png"
+        png = base / f"icon-{size}.png"
         if png.is_file():
             icon.addFile(str(png))
     return icon

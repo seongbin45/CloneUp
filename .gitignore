@@ -47,6 +47,8 @@ htmlcov/
 # --- Packaging / PyInstaller ---
 *.manifest
 *.spec
+!cloneup.spec
+installer/Output/
 
 # --- IDE / editor ---
 .idea/
