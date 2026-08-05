@@ -214,7 +214,57 @@ def palette_by_name(name: ThemeName | str) -> Palette:
     return LIGHT
 
 
-# Initialize module-level aliases (light default)
+def system_color_scheme_is_dark() -> bool:
+    """
+    True when the OS reports a dark color scheme (Qt 6 StyleHints).
+
+    Unknown / light → False (keep light as safe default).
+    Requires a QGuiApplication (or QApplication) instance.
+    """
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+    except ImportError:
+        return False
+
+    app = QGuiApplication.instance()
+    if app is None:
+        return False
+    try:
+        scheme = app.styleHints().colorScheme()
+    except Exception:
+        return False
+    return scheme == Qt.ColorScheme.Dark
+
+
+def palette_from_system() -> Palette:
+    """Pick LIGHT or DARK from the current OS color scheme."""
+    return DARK if system_color_scheme_is_dark() else LIGHT
+
+
+def apply_system_theme(app=None) -> Palette:
+    """
+    Apply system light/dark palette to module aliases + app stylesheet.
+
+    Call after QApplication is created. Safe to call again on
+    styleHints().colorSchemeChanged.
+    """
+    if app is None:
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            app = QApplication.instance()
+        except ImportError:
+            app = None
+
+    palette = palette_from_system()
+    apply_palette(palette)
+    if app is not None:
+        app.setStyleSheet(app_stylesheet(palette))
+    return palette
+
+
+# Initialize module-level aliases (light default until apply_system_theme)
 apply_palette(LIGHT)
 
 

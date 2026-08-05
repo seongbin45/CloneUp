@@ -23,12 +23,21 @@ def main() -> int:
         return 2
 
     from app.ui.main_window import load_main_window
+    from app.ui.theme import apply_system_theme
 
     app = QApplication(sys.argv)
     app.setApplicationName("CloneUp")
-    from app.ui.theme import app_stylesheet
 
-    app.setStyleSheet(app_stylesheet())
+    # D1 — OS light/dark → desin LIGHT / DARK stylesheet (no manual toggle yet)
+    apply_system_theme(app)
+    try:
+        app.styleHints().colorSchemeChanged.connect(
+            lambda _scheme=None: apply_system_theme(app)
+        )
+    except Exception:
+        # Older Qt / platform without colorSchemeChanged — keep startup theme only
+        pass
+
     win = load_main_window()
     win.show()
     return app.exec()
