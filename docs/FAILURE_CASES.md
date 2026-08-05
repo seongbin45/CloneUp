@@ -134,6 +134,25 @@ echo SECRET=1 > $env:TEMP\cloneup-secret\.env
 
 ---
 
+## 7b. Clone 탭
+
+| ID | 상황 | 기대 |
+|----|------|------|
+| C1 | 정상 public URL | 폴더 생성 + `.git` |
+| C2 | `/tree/main` 등 웹 URL | 루트로 정규화 + 안내 |
+| C3 | 대상 경로 이미 존재 | 중단 |
+| C4 | private + 토큰 | credential helper clone, remote 깨끗 |
+| C5 | github.com 아님 | 거절 |
+
+## 7c. Sync 탭
+
+| ID | 상황 | 기대 |
+|----|------|------|
+| Y1 | `.git` 없음 | 중단 |
+| Y2 | pull 충돌 | 안내 + 「충돌 취소」 |
+| Y3 | commit+push | identity -c / clean remote |
+| Y4 | origin 없음 | 중단 |
+
 ## 8. 스파이크 통과 기준 (요약)
 
 - [ ] S1 빈 폴더 → 실패 메시지  

@@ -10,12 +10,15 @@ Security rules:
 
 from __future__ import annotations
 
-import os
 import re
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.git.credentials import (
+    credential_helper_configs,
+    delete_credential_file,
+    write_credential_file,
+)
 from app.git.runner import GitError, git_config_get, require_git, run_git
 from app.git.safety import SafetyReport, run_safety_checks
 from app.util.log_mask import mask_secrets_in_text
@@ -94,45 +97,9 @@ def assert_git_config_has_no_token(folder: Path, token: str) -> None:
         raise PublishError("보안 실패: remote URL 에 x-access-token 이 있습니다.")
 
 
-def _write_credential_file(token: str) -> str:
-    """
-    git-credential-store format (one line).
-
-    Trailing slash after host is required for reliable matching on Windows Git
-    (credential fill fails without it; see spike verification):
-
-      https://x-access-token:TOKEN@github.com/
-
-    Use mkstemp (system temp). Path is passed to git as posix path inside a
-    single -c value so backslashes never break parsing.
-    """
-    fd, path = tempfile.mkstemp(prefix="cloneup-git-cred-", suffix=".txt")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            # username x-access-token is GitHub's documented HTTPS token auth form
-            f.write(f"https://x-access-token:{token}@github.com/\n")
-    except Exception:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-        raise
-    return path
-
-
-def _credential_helper_configs(cred_path: str) -> list[tuple[str, str]]:
-    """
-    Disable inherited helpers (GCM etc.), then use store --file=<path>.
-
-    Order matters: empty helper first clears the chain for this invocation.
-    Paths: use as_posix() so git's config parser is not confused by backslashes.
-    """
-    posix = Path(cred_path).resolve().as_posix()
-    # Single -c value: store --file=C:/Users/.../file.txt
-    return [
-        ("credential.helper", ""),
-        ("credential.helper", f"store --file={posix}"),
-    ]
+# Back-compat aliases for spikes / older imports
+_write_credential_file = write_credential_file
+_credential_helper_configs = credential_helper_configs
 
 
 def _init_repo_main(folder: Path) -> None:
@@ -230,8 +197,8 @@ def publish_local_to_existing_remote(
 
     cred_path: str | None = None
     try:
-        cred_path = _write_credential_file(token)
-        helper_cfg = _credential_helper_configs(cred_path)
+        cred_path = write_credential_file(token)
+        helper_cfg = credential_helper_configs(cred_path)
         print("push (임시 credential.helper store 파일, 종료 후 삭제)…")
         try:
             run_git(
@@ -248,11 +215,7 @@ def publish_local_to_existing_remote(
                 + " (자격증명이 필요하면 재로그인: spike_device_flow.py --force)"
             ) from e
     finally:
-        if cred_path:
-            try:
-                os.unlink(cred_path)
-            except OSError:
-                pass
+        delete_credential_file(cred_path)
 
     assert_git_config_has_no_token(folder, token)
     # also assert remote url is clean via git remote -v

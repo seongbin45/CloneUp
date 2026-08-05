@@ -1,7 +1,7 @@
 # CloneUp UI — Publish 탭 골격
 
-**범위:** Publish 탭 UI + **백그라운드 업로드 연결 완료**.  
-**아직 안 함:** 전용 Device Flow 화면(필요 시 브라우저 자동 오픈), Clone/Sync 탭.
+**범위:** Publish / Clone / Sync 탭 UI + 백그라운드 작업 연결.  
+**아직 안 함:** PyInstaller exe, PAT 폴백, 파일별 add UI.
 
 ---
 
