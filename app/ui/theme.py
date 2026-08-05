@@ -43,7 +43,12 @@ SUCCESS_DOT = "#2f8f6d"
 # --- Status ---
 WARN_DOT = "#c4a94e"
 WARN_BORDER = "#c4a94e"
+WARN_TEXT = "#9a6700"  # amber body (timer, soft warnings)
 DANGER = "#cf222e"
+DANGER_HOVER = "#a40e26"
+DANGER_SOFT_BG = "#fff5f5"
+HOVER_MUTED = "#e9e5dd"
+HOVER_PRESSED = "#e0dbd2"
 
 # --- Tabs ---
 TAB_ACTIVE_FG = PRIMARY
@@ -126,7 +131,7 @@ def app_stylesheet() -> str:
         min-height: 28px;
     }}
     QPushButton:hover {{
-        background-color: #e9e5dd;
+        background-color: {HOVER_MUTED};
         color: {TEXT_SECONDARY};
     }}
     QPushButton:disabled {{
@@ -135,7 +140,7 @@ def app_stylesheet() -> str:
         border-color: {BORDER_SOFT};
     }}
     QPushButton:pressed {{
-        background-color: #e0dbd2;
+        background-color: {HOVER_PRESSED};
     }}
 
     /* Primary actions */
@@ -164,17 +169,17 @@ def app_stylesheet() -> str:
         color: {TEXT_DISABLED};
     }}
 
-    /* Secondary outline (pull) */
+    /* Secondary outline (pull) — desin mock outline button */
     QPushButton#btnSyncPull {{
         background-color: {BG_INPUT};
-        color: #3d382f;
+        color: {TEXT};
         border: 1px solid #b7b1a5;
         font-weight: 500;
         min-height: 36px;
     }}
     QPushButton#btnSyncPull:hover {{
         background-color: {BG_MUTED};
-        color: #3d382f;
+        color: {TEXT};
     }}
 
     /* Tabs */

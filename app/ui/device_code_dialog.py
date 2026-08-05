@@ -23,19 +23,26 @@ from app.ui.theme import (
     BG_HINT,
     BG_INPUT,
     BG_MUTED,
+    BG_WINDOW,
+    BORDER,
     BORDER_INPUT,
     BORDER_SOFT,
     DANGER,
+    DANGER_HOVER,
+    DANGER_SOFT_BG,
+    HOVER_MUTED,
     PRIMARY,
     PRIMARY_HOVER,
     TEXT,
+    TEXT_DISABLED,
     TEXT_MUTED,
     TEXT_ON_PRIMARY,
     TEXT_SECONDARY,
     WARN_DOT,
+    WARN_TEXT,
 )
 
-# Dim color (not relying only on QSS rgba, which can clip oddly on maximize)
+# Dim scrim (paintEvent — more reliable than QSS rgba on Windows maximize)
 _DIM = QColor(15, 18, 22, 170)
 
 
@@ -81,15 +88,23 @@ class DeviceCodeOverlay(QWidget):
         card.setObjectName("deviceCodeCard")
         card.setFixedWidth(440)
         card.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
+        # Phase 5 — warm paper card, same tokens as main window (desin palette)
         card.setStyleSheet(
             f"""
             #deviceCodeCard {{
-                background: #fbfaf8;
+                background: {BG_WINDOW};
                 border-radius: 10px;
-                border: 1px solid #c9c5bd;
+                border: 1px solid {BORDER};
             }}
-            QLabel#title {{ font-size: 16px; font-weight: 600; color: #3d382f; }}
-            QLabel#hint {{ color: {TEXT_MUTED}; font-size: 13px; }}
+            QLabel#title {{
+                font-size: 16px;
+                font-weight: 600;
+                color: {TEXT};
+            }}
+            QLabel#hint {{
+                color: {TEXT_MUTED};
+                font-size: 13px;
+            }}
             QLabel#code {{
                 font-size: 28px;
                 font-weight: 700;
@@ -101,7 +116,10 @@ class DeviceCodeOverlay(QWidget):
                 border-radius: 8px;
                 border: 1px dashed {WARN_DOT};
             }}
-            QLabel#timer {{ color: #9a6700; font-size: 12px; }}
+            QLabel#timer {{
+                color: {WARN_TEXT};
+                font-size: 12px;
+            }}
             QPushButton {{
                 padding: 8px 14px;
                 border-radius: 6px;
@@ -109,6 +127,7 @@ class DeviceCodeOverlay(QWidget):
                 color: {TEXT_SECONDARY};
                 background: {BG_MUTED};
                 border: 1px solid {BORDER_INPUT};
+                min-height: 32px;
             }}
             QPushButton#btnCopy {{
                 background: {PRIMARY};
@@ -126,17 +145,23 @@ class DeviceCodeOverlay(QWidget):
                 border: 1px solid {BORDER_INPUT};
             }}
             QPushButton#btnOpen:hover {{
-                background: #e9e5dd;
+                background: {HOVER_MUTED};
                 color: {TEXT};
             }}
             QPushButton#btnCancel {{
                 background: {BG_INPUT};
                 border: 1px solid {BORDER_SOFT};
                 color: {DANGER};
+                font-weight: 500;
             }}
             QPushButton#btnCancel:hover {{
-                background: #fff5f5;
-                color: #a40e26;
+                background: {DANGER_SOFT_BG};
+                color: {DANGER_HOVER};
+            }}
+            QPushButton:disabled {{
+                color: {TEXT_DISABLED};
+                background: {BG_MUTED};
+                border-color: {BORDER_SOFT};
             }}
             """
         )
