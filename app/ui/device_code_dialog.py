@@ -19,31 +19,92 @@ from PySide6.QtWidgets import (
 )
 
 from app.auth.device_flow import format_remaining, verification_open_url
-from app.ui.theme import (
-    BG_HINT,
-    BG_INPUT,
-    BG_MUTED,
-    BG_WINDOW,
-    BORDER,
-    BORDER_INPUT,
-    BORDER_SOFT,
-    DANGER,
-    DANGER_HOVER,
-    DANGER_SOFT_BG,
-    HOVER_MUTED,
-    PRIMARY,
-    PRIMARY_HOVER,
-    TEXT,
-    TEXT_DISABLED,
-    TEXT_MUTED,
-    TEXT_ON_PRIMARY,
-    TEXT_SECONDARY,
-    WARN_DOT,
-    WARN_TEXT,
-)
+from app.ui.theme import Palette, active_palette
 
-# Dim scrim (paintEvent — more reliable than QSS rgba on Windows maximize)
-_DIM = QColor(15, 18, 22, 170)
+
+def _dim_for(palette: Palette) -> QColor:
+    """Scrim behind the card — slightly stronger on dark UI."""
+    if palette.name == "dark":
+        return QColor(8, 7, 5, 200)
+    return QColor(15, 18, 22, 170)
+
+
+def _card_stylesheet(p: Palette) -> str:
+    """Build card QSS from the *active* palette (not import-time light constants)."""
+    return f"""
+    #deviceCodeCard {{
+        background: {p.bg_window};
+        border-radius: 10px;
+        border: 1px solid {p.border};
+    }}
+    QLabel#title {{
+        font-size: 16px;
+        font-weight: 600;
+        color: {p.text};
+    }}
+    QLabel#hint {{
+        color: {p.text_muted};
+        font-size: 13px;
+    }}
+    QLabel#code {{
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: 3px;
+        color: {p.primary};
+        padding: 18px 16px;
+        min-height: 56px;
+        background: {p.bg_hint};
+        border-radius: 8px;
+        border: 1px dashed {p.warn_dot};
+    }}
+    QLabel#timer {{
+        color: {p.warn_text};
+        font-size: 12px;
+    }}
+    QPushButton {{
+        padding: 8px 14px;
+        border-radius: 6px;
+        font-weight: 600;
+        color: {p.text_secondary};
+        background: {p.bg_muted};
+        border: 1px solid {p.border_input};
+        min-height: 32px;
+    }}
+    QPushButton#btnCopy {{
+        background: {p.primary};
+        color: {p.text_on_primary};
+        border: 1px solid {p.primary};
+    }}
+    QPushButton#btnCopy:hover {{
+        background: {p.primary_hover};
+        color: {p.text_on_primary};
+        border-color: {p.primary_hover};
+    }}
+    QPushButton#btnOpen {{
+        background: {p.bg_input};
+        color: {p.text};
+        border: 1px solid {p.border_input};
+    }}
+    QPushButton#btnOpen:hover {{
+        background: {p.hover_muted};
+        color: {p.text};
+    }}
+    QPushButton#btnCancel {{
+        background: {p.bg_input};
+        border: 1px solid {p.border_soft};
+        color: {p.danger};
+        font-weight: 500;
+    }}
+    QPushButton#btnCancel:hover {{
+        background: {p.danger_soft_bg};
+        color: {p.danger_hover};
+    }}
+    QPushButton:disabled {{
+        color: {p.text_disabled};
+        background: {p.bg_muted};
+        border-color: {p.border_soft};
+    }}
+    """
 
 
 class DeviceCodeOverlay(QWidget):
@@ -52,6 +113,8 @@ class DeviceCodeOverlay(QWidget):
 
     Parented to QMainWindow (not only centralWidget) so maximize covers
     the entire client area. Geometry is re-synced on every resize/state change.
+
+    Colors come from active_palette() at open time (follows OS dark/light).
     """
 
     cancelled = Signal()
@@ -76,6 +139,8 @@ class DeviceCodeOverlay(QWidget):
         self._user_code = str(user_code)
         self._deadline = time.monotonic() + max(1, int(expires_in))
         self._open_url = verification_open_url(verification_uri, user_code)
+        self._palette = active_palette()
+        self._dim = _dim_for(self._palette)
 
         self.setObjectName("deviceCodeOverlay")
         # Paint dim ourselves — more reliable than stylesheet on Windows maximize
@@ -88,83 +153,8 @@ class DeviceCodeOverlay(QWidget):
         card.setObjectName("deviceCodeCard")
         card.setFixedWidth(440)
         card.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
-        # Phase 5 — warm paper card, same tokens as main window (desin palette)
-        card.setStyleSheet(
-            f"""
-            #deviceCodeCard {{
-                background: {BG_WINDOW};
-                border-radius: 10px;
-                border: 1px solid {BORDER};
-            }}
-            QLabel#title {{
-                font-size: 16px;
-                font-weight: 600;
-                color: {TEXT};
-            }}
-            QLabel#hint {{
-                color: {TEXT_MUTED};
-                font-size: 13px;
-            }}
-            QLabel#code {{
-                font-size: 28px;
-                font-weight: 700;
-                letter-spacing: 3px;
-                color: {PRIMARY};
-                padding: 18px 16px;
-                min-height: 56px;
-                background: {BG_HINT};
-                border-radius: 8px;
-                border: 1px dashed {WARN_DOT};
-            }}
-            QLabel#timer {{
-                color: {WARN_TEXT};
-                font-size: 12px;
-            }}
-            QPushButton {{
-                padding: 8px 14px;
-                border-radius: 6px;
-                font-weight: 600;
-                color: {TEXT_SECONDARY};
-                background: {BG_MUTED};
-                border: 1px solid {BORDER_INPUT};
-                min-height: 32px;
-            }}
-            QPushButton#btnCopy {{
-                background: {PRIMARY};
-                color: {TEXT_ON_PRIMARY};
-                border: 1px solid {PRIMARY};
-            }}
-            QPushButton#btnCopy:hover {{
-                background: {PRIMARY_HOVER};
-                color: {TEXT_ON_PRIMARY};
-                border-color: {PRIMARY_HOVER};
-            }}
-            QPushButton#btnOpen {{
-                background: {BG_INPUT};
-                color: {TEXT};
-                border: 1px solid {BORDER_INPUT};
-            }}
-            QPushButton#btnOpen:hover {{
-                background: {HOVER_MUTED};
-                color: {TEXT};
-            }}
-            QPushButton#btnCancel {{
-                background: {BG_INPUT};
-                border: 1px solid {BORDER_SOFT};
-                color: {DANGER};
-                font-weight: 500;
-            }}
-            QPushButton#btnCancel:hover {{
-                background: {DANGER_SOFT_BG};
-                color: {DANGER_HOVER};
-            }}
-            QPushButton:disabled {{
-                color: {TEXT_DISABLED};
-                background: {BG_MUTED};
-                border-color: {BORDER_SOFT};
-            }}
-            """
-        )
+        card.setStyleSheet(_card_stylesheet(self._palette))
+        self._card = card
 
         title = QLabel("GitHub 장치 코드", card)
         title.setObjectName("title")
@@ -290,7 +280,7 @@ class DeviceCodeOverlay(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802
         # Full-rect dim — avoids QSS background clipping on maximize
         p = QPainter(self)
-        p.fillRect(self.rect(), _DIM)
+        p.fillRect(self.rect(), self._dim)
         p.end()
 
     # ----- actions -----
