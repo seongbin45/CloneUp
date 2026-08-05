@@ -208,10 +208,23 @@ def app_stylesheet() -> str:
         color: {TEXT_SECONDARY};
     }}
 
-    /* Log panel — fixed height strip, side margins via logPanel layout */
+    /* Phase 4 — log panel header + light log body */
     QWidget#logPanel {{
         background-color: {BG_WINDOW};
         border-top: 1px solid {BORDER_DIVIDER};
+    }}
+    QLabel#labelLog {{
+        color: {TEXT_SECONDARY};
+        font-size: 12px;
+        font-weight: 600;
+        background: transparent;
+        padding: 0;
+    }}
+    QLabel#labelLogHint {{
+        color: {TEXT_FAINT};
+        font-size: 11.5px;
+        background: transparent;
+        padding: 0;
     }}
     QPlainTextEdit#textLog {{
         background-color: {BG_INPUT};
@@ -306,14 +319,5 @@ def app_stylesheet() -> str:
         padding: 8px 13px;
         margin-left: 102px;
         font-size: 12px;
-    }}
-    QLabel#labelLogTitle {{
-        color: {TEXT_SECONDARY};
-        font-size: 12px;
-        font-weight: 600;
-    }}
-    QLabel#labelLogHint {{
-        color: {TEXT_FAINT};
-        font-size: 11.5px;
     }}
     """

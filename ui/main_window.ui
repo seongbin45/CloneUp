@@ -618,22 +618,25 @@
      <widget class="QWidget" name="logPanel">
       <layout class="QVBoxLayout" name="logPanelLayout">
        <property name="spacing">
-        <number>6</number>
+        <number>7</number>
        </property>
        <property name="leftMargin">
-        <number>16</number>
+        <number>20</number>
        </property>
        <property name="topMargin">
-        <number>10</number>
+        <number>9</number>
        </property>
        <property name="rightMargin">
-        <number>16</number>
+        <number>20</number>
        </property>
        <property name="bottomMargin">
         <number>16</number>
        </property>
        <item>
         <layout class="QHBoxLayout" name="logHeaderLayout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
          <item>
           <widget class="QLabel" name="labelLog">
            <property name="text">
@@ -649,7 +652,7 @@
            <property name="sizeHint" stdset="0">
             <size>
              <width>40</width>
-             <height>20</height>
+             <height>12</height>
             </size>
            </property>
           </spacer>
@@ -658,6 +661,9 @@
           <widget class="QLabel" name="labelLogHint">
            <property name="text">
             <string>토큰은 마스킹됩니다</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
            </property>
           </widget>
          </item>
