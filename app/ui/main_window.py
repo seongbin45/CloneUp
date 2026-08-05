@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QObject, QUrl, Slot
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QColor, QDesktopServices, QTextCharFormat, QTextCursor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -141,8 +141,47 @@ class MainController(QObject):
 
     # ----- helpers -----
     def _log(self, message: str) -> None:
+        """Append a log line; color by kind for dark terminal contrast (desin D4)."""
         assert self.textLog is not None
-        self.textLog.appendPlainText(message)
+        p = active_palette()
+        if p.name == "dark":
+            base, dim, ok, err, warn = (
+                p.text_log,
+                p.text_log_dim,
+                p.text_log_ok,
+                p.text_log_err,
+                p.text_log_warn,
+            )
+        else:
+            base, dim, ok, err, warn = (
+                p.text,
+                p.text_muted,
+                p.success_dot,
+                p.danger,
+                p.warn_text,
+            )
+
+        color = base
+        msg = message or ""
+        low = msg.lower()
+        if msg.startswith("ERROR") or "실패" in msg or "✗" in msg:
+            color = err
+        elif "성공" in msg or "✓" in msg or msg.startswith("Clone 성공") or msg.startswith("Publish 성공"):
+            color = ok
+        elif "안내" in msg or "경고" in msg or "비권장" in msg:
+            color = warn
+        elif msg.startswith("---") or msg.startswith(">") or low.startswith("git "):
+            color = dim
+
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(color))
+        cursor = self.textLog.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        if self.textLog.toPlainText():
+            cursor.insertText("\n")
+        cursor.insertText(msg, fmt)
+        self.textLog.setTextCursor(cursor)
+        self.textLog.ensureCursorVisible()
 
     def _busy(self) -> bool:
         return self._worker is not None and self._worker.isRunning()

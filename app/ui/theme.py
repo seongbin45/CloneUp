@@ -337,9 +337,29 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         color: {TEXT_DISABLED};
         background: {BG_MUTED};
     }}
+    /* D4 — placeholders / popup lists readable on dark surfaces */
+    QLineEdit::placeholder,
+    QComboBox::placeholder,
+    QPlainTextEdit::placeholder {{
+        color: {TEXT_DISABLED};
+    }}
     QComboBox::drop-down {{
         border: none;
         width: 22px;
+    }}
+    QComboBox QAbstractItemView {{
+        background-color: {BG_INPUT};
+        color: {TEXT};
+        border: 1px solid {BORDER_INPUT};
+        selection-background-color: {PRIMARY};
+        selection-color: {TEXT_ON_PRIMARY};
+        outline: 0;
+    }}
+    QToolTip {{
+        background-color: {BG_BAR};
+        color: {TEXT};
+        border: 1px solid {BORDER_SOFT};
+        padding: 4px 8px;
     }}
     QCheckBox, QRadioButton {{
         color: {TEXT_SECONDARY};
@@ -493,6 +513,9 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         max-height: 130px;
         selection-background-color: {PRIMARY};
         selection-color: {TEXT_ON_PRIMARY};
+    }}
+    QPlainTextEdit#textLog::placeholder {{
+        color: {TEXT_FAINT};
     }}
 
     QStatusBar {{
