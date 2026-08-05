@@ -126,6 +126,7 @@ class DeviceCodeOverlay(QWidget):
         user_code: str,
         verification_uri: str,
         expires_in: int,
+        cancel_label: str = "로그인 취소",
     ) -> None:
         # Always attach to top-level main window so we cover status + tabs + log
         main = parent
@@ -141,6 +142,8 @@ class DeviceCodeOverlay(QWidget):
         self._open_url = verification_open_url(verification_uri, user_code)
         self._palette = active_palette()
         self._dim = _dim_for(self._palette)
+        # Re-login: "로그아웃" (force login already cleared the old token)
+        self._cancel_label = (cancel_label or "로그인 취소").strip() or "로그인 취소"
 
         self.setObjectName("deviceCodeOverlay")
         # Paint dim ourselves — more reliable than stylesheet on Windows maximize
@@ -200,7 +203,7 @@ class DeviceCodeOverlay(QWidget):
         btn_open.setObjectName("btnOpen")
         btn_open.clicked.connect(self._open_browser)
 
-        btn_cancel = QPushButton("로그인 취소", card)
+        btn_cancel = QPushButton(self._cancel_label, card)
         btn_cancel.setObjectName("btnCancel")
         btn_cancel.clicked.connect(self._on_cancel_clicked)
 

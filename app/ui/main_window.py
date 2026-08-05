@@ -23,7 +23,8 @@ from PySide6.QtWidgets import (
 from app.git.runner import GitError, require_git
 from app.git.safety import run_safety_checks
 from app.git.url_utils import UrlError, normalize_github_clone_url
-from app.ui.auth_status import AuthStatusButton
+from app.auth.token_store import load_token
+from app.ui.auth_status import AuthState, AuthStatusButton
 from app.ui.device_code_dialog import DeviceCodeOverlay
 from app.ui.publish_worker import LoginWorker, PublishWorker
 from app.ui.settings_store import (
@@ -72,6 +73,8 @@ class MainController(QObject):
         self.window = window
         self._worker = None  # any QThread worker
         self._device_overlay: DeviceCodeOverlay | None = None
+        # Device popup cancel button: "로그아웃" when re-login, else "로그인 취소"
+        self._device_cancel_label = "로그인 취소"
         self.window.installEventFilter(self)
 
         # --- shared ---
@@ -203,6 +206,9 @@ class MainController(QObject):
 
     def _start_worker(self, worker) -> None:
         self._worker = worker
+        # Non-login workers: mid-flow first auth keeps "로그인 취소"
+        if not isinstance(worker, LoginWorker):
+            self._device_cancel_label = "로그인 취소"
         if hasattr(worker, "log_line"):
             worker.log_line.connect(self._log)
         if hasattr(worker, "user_code_ready"):
@@ -253,6 +259,7 @@ class MainController(QObject):
             user_code=user_code,
             verification_uri=verification_uri,
             expires_in=expires_in,
+            cancel_label=self._device_cancel_label,
         )
         overlay.cancelled.connect(self.on_cancel)
         overlay.show()
@@ -410,6 +417,13 @@ class MainController(QObject):
     def on_login(self) -> None:
         if self._busy():
             return
+        # Re-login (already had a session) → cancel acts as logout
+        had_session = (
+            self.auth_status.state
+            in (AuthState.LOGGED_IN, AuthState.SCOPE_INSUFFICIENT)
+            or bool(load_token())
+        )
+        self._device_cancel_label = "로그아웃" if had_session else "로그인 취소"
         self._log("--- GitHub 로그인 ---")
         w = LoginWorker(force=True, parent=self)
         w.succeeded.connect(self._on_login_ok)
