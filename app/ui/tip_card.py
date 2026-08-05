@@ -49,7 +49,7 @@ class TipCard(QFrame):
 
     def _sync_header(self) -> None:
         chevron = "▾" if self._expanded else "▸"
-        action = "접기" if self._expanded else "도움 보기"
+        action = "접기" if self._expanded else "도움말 보기"
         self._btn.setText(f"{chevron}  {self._summary}   ·  {action}")
         self._btn.setToolTip(
             "클릭하면 이 탭에서 자주 막히는 점을 펼치거나 접습니다."
