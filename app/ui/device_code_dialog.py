@@ -85,11 +85,12 @@ class DeviceCodeOverlay(QWidget):
             QLabel#title {{ font-size: 16px; font-weight: 600; color: #3d382f; }}
             QLabel#hint {{ color: {TEXT_MUTED}; font-size: 13px; }}
             QLabel#code {{
-                font-size: 32px;
+                font-size: 28px;
                 font-weight: 700;
                 letter-spacing: 3px;
                 color: {PRIMARY};
-                padding: 12px;
+                padding: 18px 16px;
+                min-height: 56px;
                 background: {BG_HINT};
                 border-radius: 8px;
                 border: 1px dashed {WARN_DOT};
@@ -150,14 +151,18 @@ class DeviceCodeOverlay(QWidget):
         self._code_label = QLabel(self._user_code, card)
         self._code_label.setObjectName("code")
         self._code_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._code_label.setMinimumHeight(64)
+        self._code_label.setContentsMargins(8, 10, 8, 10)
         self._code_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
             | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
         mono = QFont("Consolas")
         mono.setStyleHint(QFont.StyleHint.Monospace)
-        mono.setPointSize(26)
+        mono.setPointSize(24)
         mono.setBold(True)
+        # Extra line spacing so tall glyphs (digits) are not clipped top/bottom
+        mono.setStyleStrategy(QFont.StyleStrategy.PreferDefault)
         self._code_label.setFont(mono)
 
         self._timer_label = QLabel("", card)
@@ -210,7 +215,7 @@ class DeviceCodeOverlay(QWidget):
         QTimer.singleShot(50, self._open_browser)
 
     def _layout_card(self) -> None:
-        w, h = 440, 360
+        w, h = 440, 400
         x = max(0, (self.width() - w) // 2)
         y = max(0, (self.height() - h) // 2)
         self._card.setGeometry(x, y, w, h)

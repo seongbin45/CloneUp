@@ -208,15 +208,20 @@ def app_stylesheet() -> str:
         color: {TEXT_SECONDARY};
     }}
 
-    /* Log — prefer light panel (user preferred pre-dark-terminal look) */
+    /* Log panel — fixed height strip, side margins via logPanel layout */
+    QWidget#logPanel {{
+        background-color: {BG_WINDOW};
+        border-top: 1px solid {BORDER_DIVIDER};
+    }}
     QPlainTextEdit#textLog {{
         background-color: {BG_INPUT};
         color: {TEXT};
         border: 1px solid {BORDER_INPUT};
         border-radius: 5px;
-        padding: 10px 12px;
+        padding: 8px 10px;
         font-family: Consolas, "IBM Plex Mono", monospace;
         font-size: 12px;
+        max-height: 130px;
         selection-background-color: {PRIMARY};
         selection-color: {TEXT_ON_PRIMARY};
     }}
