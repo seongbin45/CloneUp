@@ -1,0 +1,58 @@
+"""Persist lightweight UI prefs (recent folders, last visibility)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import QSettings
+
+ORG = "CloneUp"
+APP = "CloneUp"
+MAX_RECENT = 12
+
+
+def _settings() -> QSettings:
+    return QSettings(ORG, APP)
+
+
+def load_recent_folders() -> list[str]:
+    raw = _settings().value("recent_folders", [])
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        items = [raw] if raw else []
+    else:
+        items = [str(x) for x in raw]
+    # keep existing dirs first
+    out: list[str] = []
+    for p in items:
+        if p and p not in out:
+            out.append(p)
+    return out[:MAX_RECENT]
+
+
+def remember_folder(folder: str) -> list[str]:
+    path = str(Path(folder).expanduser().resolve())
+    items = load_recent_folders()
+    items = [path] + [x for x in items if x != path]
+    items = items[:MAX_RECENT]
+    _settings().setValue("recent_folders", items)
+    return items
+
+
+def load_last_private() -> bool:
+    return bool(_settings().value("last_private", False, type=bool))
+
+
+def save_last_private(private: bool) -> None:
+    _settings().setValue("last_private", bool(private))
+
+
+def load_last_commit_message() -> str:
+    val = _settings().value("last_commit_message", "Initial commit")
+    return str(val) if val else "Initial commit"
+
+
+def save_last_commit_message(msg: str) -> None:
+    if msg.strip():
+        _settings().setValue("last_commit_message", msg.strip())

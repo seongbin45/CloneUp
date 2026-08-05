@@ -1,4 +1,4 @@
-"""Main window — Publish tab wired to background publish worker."""
+"""Main window — Publish tab with recent folders, cancel, and login."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QLabel,
     QLineEdit,
@@ -22,7 +23,15 @@ from PySide6.QtWidgets import (
 from app.auth.token_store import has_scope, load_scope, load_token
 from app.git.runner import GitError, require_git
 from app.git.safety import run_safety_checks
-from app.ui.publish_worker import PublishWorker
+from app.ui.publish_worker import LoginWorker, PublishWorker
+from app.ui.settings_store import (
+    load_last_commit_message,
+    load_last_private,
+    load_recent_folders,
+    remember_folder,
+    save_last_commit_message,
+    save_last_private,
+)
 from app.util.log_mask import mask_token
 
 _UI_PATH = Path(__file__).resolve().parents[2] / "ui" / "main_window.ui"
@@ -54,23 +63,26 @@ def load_main_window() -> QMainWindow:
 
 
 class PublishController(QObject):
-    """Wires main_window.ui and runs publish off the UI thread."""
+    """Wires main_window.ui and runs publish/login off the UI thread."""
 
     def __init__(self, window: QMainWindow) -> None:
         super().__init__(window)
         self.window = window
-        self._worker: PublishWorker | None = None
+        self._worker: PublishWorker | LoginWorker | None = None
 
         self.labelStatusGit = window.findChild(QLabel, "labelStatusGit")
         self.labelStatusAuth = window.findChild(QLabel, "labelStatusAuth")
         self.editFolder = window.findChild(QLineEdit, "editFolder")
         self.btnBrowseFolder = window.findChild(QPushButton, "btnBrowseFolder")
+        self.comboRecent = window.findChild(QComboBox, "comboRecent")
         self.editRepoName = window.findChild(QLineEdit, "editRepoName")
         self.radioPublic = window.findChild(QRadioButton, "radioPublic")
         self.radioPrivate = window.findChild(QRadioButton, "radioPrivate")
         self.editCommitMessage = window.findChild(QLineEdit, "editCommitMessage")
         self.checkAllowSecrets = window.findChild(QCheckBox, "checkAllowSecrets")
         self.btnPublish = window.findChild(QPushButton, "btnPublish")
+        self.btnCancel = window.findChild(QPushButton, "btnCancel")
+        self.btnLogin = window.findChild(QPushButton, "btnLogin")
         self.textLog = window.findChild(QPlainTextEdit, "textLog")
 
         required = {
@@ -89,24 +101,65 @@ class PublishController(QObject):
         assert self.btnPublish is not None
         self.btnBrowseFolder.clicked.connect(self.on_browse_folder)
         self.btnPublish.clicked.connect(self.on_publish)
+        if self.btnCancel is not None:
+            self.btnCancel.clicked.connect(self.on_cancel)
+        if self.btnLogin is not None:
+            self.btnLogin.clicked.connect(self.on_login)
         if self.editFolder is not None:
             self.editFolder.editingFinished.connect(self._maybe_fill_repo_name)
+        if self.comboRecent is not None:
+            self.comboRecent.activated.connect(self._on_recent_activated)
 
+        self._load_prefs()
         self._refresh_status_bar()
         self._log(
             "CloneUp 준비됨. 폴더를 고르고 「GitHub에 만들고 올리기」를 누르세요."
         )
-        self._log("실패 케이스 표: docs/FAILURE_CASES.md")
 
     def _log(self, message: str) -> None:
         assert self.textLog is not None
         self.textLog.appendPlainText(message)
+
+    def _load_prefs(self) -> None:
+        if self.editCommitMessage is not None:
+            self.editCommitMessage.setText(load_last_commit_message())
+        if load_last_private() and self.radioPrivate is not None:
+            self.radioPrivate.setChecked(True)
+        elif self.radioPublic is not None:
+            self.radioPublic.setChecked(True)
+        self._reload_recent_combo()
+
+        recent = load_recent_folders()
+        if recent and self.editFolder is not None and not self.editFolder.text():
+            # restore last folder if it still exists
+            for p in recent:
+                if Path(p).is_dir():
+                    self.editFolder.setText(p)
+                    self._maybe_fill_repo_name()
+                    break
+
+    def _reload_recent_combo(self) -> None:
+        if self.comboRecent is None:
+            return
+        self.comboRecent.blockSignals(True)
+        self.comboRecent.clear()
+        self.comboRecent.addItem("(최근 폴더 선택)")
+        for p in load_recent_folders():
+            self.comboRecent.addItem(p)
+        self.comboRecent.setCurrentIndex(0)
+        self.comboRecent.blockSignals(False)
 
     def _set_busy(self, busy: bool) -> None:
         assert self.btnPublish is not None
         assert self.btnBrowseFolder is not None
         self.btnPublish.setEnabled(not busy)
         self.btnBrowseFolder.setEnabled(not busy)
+        if self.btnLogin is not None:
+            self.btnLogin.setEnabled(not busy)
+        if self.btnCancel is not None:
+            self.btnCancel.setEnabled(busy)
+        if self.comboRecent is not None:
+            self.comboRecent.setEnabled(not busy)
         for w in (
             self.editFolder,
             self.editRepoName,
@@ -121,7 +174,7 @@ class PublishController(QObject):
             "올리는 중…" if busy else "GitHub에 만들고 올리기"
         )
 
-    def _refresh_status_bar(self) -> None:
+    def _refresh_status_bar(self, *, log_token: bool = False) -> None:
         assert self.labelStatusGit is not None
         try:
             _exe, ver = require_git()
@@ -140,9 +193,9 @@ class PublishController(QObject):
                 )
             else:
                 self.labelStatusAuth.setText(
-                    f"GitHub: 권한 부족 (scope={load_scope()!r} → 재로그인 필요)"
+                    f"GitHub: 권한 부족 (scope={load_scope()!r})"
                 )
-            if token:
+            if log_token and token:
                 self._log(f"keyring 토큰: {mask_token(token)}")
 
     @Slot()
@@ -156,14 +209,69 @@ class PublishController(QObject):
             return
         self.editRepoName.setText(Path(folder).name)
 
+    @Slot(int)
+    def _on_recent_activated(self, index: int) -> None:
+        if self.comboRecent is None or index <= 0:
+            return
+        path = self.comboRecent.itemText(index)
+        if self.editFolder is not None:
+            self.editFolder.setText(path)
+            self._log(f"최근 폴더: {path}")
+            self._maybe_fill_repo_name()
+
     @Slot()
     def on_browse_folder(self) -> None:
         assert self.editFolder is not None
-        path = QFileDialog.getExistingDirectory(self.window, "올릴 폴더 선택")
+        start = (self.editFolder.text() or "").strip() or str(Path.home())
+        path = QFileDialog.getExistingDirectory(self.window, "올릴 폴더 선택", start)
         if path:
             self.editFolder.setText(path)
+            remember_folder(path)
+            self._reload_recent_combo()
             self._log(f"폴더 선택: {path}")
             self._maybe_fill_repo_name()
+
+    @Slot()
+    def on_cancel(self) -> None:
+        if self._worker is None or not self._worker.isRunning():
+            return
+        self._log("취소 요청… (단계 경계에서 중단)")
+        self._worker.requestInterruption()
+        if self.btnCancel is not None:
+            self.btnCancel.setEnabled(False)
+
+    @Slot()
+    def on_login(self) -> None:
+        if self._worker is not None and self._worker.isRunning():
+            return
+        self._log("--- GitHub 로그인 ---")
+        self._set_busy(True)
+        worker = LoginWorker(force=True, parent=self)
+        worker.log_line.connect(self._log)
+        worker.succeeded.connect(self._on_login_ok)
+        worker.failed.connect(self._on_login_err)
+        worker.finished.connect(self._on_worker_finished)
+        self._worker = worker
+        worker.start()
+
+    @Slot(dict)
+    def _on_login_ok(self, info: dict) -> None:
+        self._log(
+            f"로그인 완료: {info.get('login')} scope={info.get('scope')!r} "
+            f"token={info.get('token_masked')}"
+        )
+        self._refresh_status_bar()
+        QMessageBox.information(
+            self.window,
+            "로그인 완료",
+            f"{info.get('login')}\nscope={info.get('scope')!r}",
+        )
+
+    @Slot(str)
+    def _on_login_err(self, message: str) -> None:
+        self._log(f"ERROR: {message}")
+        if message != "취소됨":
+            QMessageBox.critical(self.window, "로그인 실패", message)
 
     @Slot()
     def on_publish(self) -> None:
@@ -192,11 +300,10 @@ class PublishController(QObject):
             name = path.name
             self.editRepoName.setText(name)
 
-        # Preflight on UI thread (fast) — S1 / S3
         report = run_safety_checks(
             path.resolve(),
             allow_secrets=allow,
-            write_gitignore=False,  # worker/publish will write if needed
+            write_gitignore=False,
         )
         if not report.ok:
             detail = "\n".join(report.errors)
@@ -224,6 +331,11 @@ class PublishController(QObject):
             )
             if ans != QMessageBox.StandardButton.Yes:
                 return
+
+        remember_folder(str(path.resolve()))
+        self._reload_recent_combo()
+        save_last_private(private)
+        save_last_commit_message(msg)
 
         self._log("--- Publish 시작 ---")
         self._log(f"  folder={path}")
@@ -266,7 +378,10 @@ class PublishController(QObject):
     @Slot(str)
     def _on_publish_err(self, message: str) -> None:
         self._log(f"ERROR: {message}")
-        QMessageBox.critical(self.window, "업로드 실패", message)
+        if message.startswith("취소"):
+            QMessageBox.information(self.window, "취소됨", message)
+        else:
+            QMessageBox.critical(self.window, "업로드 실패", message)
 
     @Slot()
     def _on_worker_finished(self) -> None:

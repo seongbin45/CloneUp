@@ -1,12 +1,10 @@
-"""Background publish job — never run git/network on the UI thread."""
+"""Background publish / login jobs — never run git/network on the UI thread."""
 
 from __future__ import annotations
 
 import contextlib
 import io
 import re
-import sys
-from dataclasses import asdict
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -46,6 +44,52 @@ class _SignalStdout(io.TextIOBase):
         self._buf = ""
 
 
+class LoginWorker(QThread):
+    """Force Device Flow login (browser)."""
+
+    log_line = Signal(str)
+    succeeded = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, *, force: bool = True, parent=None) -> None:
+        super().__init__(parent)
+        self.force = force
+
+    def _log(self, msg: str) -> None:
+        self.log_line.emit(mask_secrets_in_text(msg))
+
+    def run(self) -> None:
+        sink = _SignalStdout(self._log)
+        try:
+            with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+                if self.isInterruptionRequested():
+                    self.failed.emit("취소됨")
+                    return
+                self._log("GitHub 로그인 (Device Flow)…")
+                token, user = ensure_valid_token(
+                    force_login=self.force,
+                    open_browser=True,
+                )
+                if self.isInterruptionRequested():
+                    self.failed.emit("취소됨")
+                    return
+                self.succeeded.emit(
+                    {
+                        "login": user.get("login"),
+                        "scope": load_scope(),
+                        "token_masked": mask_token(token),
+                    }
+                )
+        except AuthError as e:
+            self.failed.emit(f"인증 실패: {e}")
+        except OSError as e:
+            self.failed.emit(f"네트워크: {e}")
+        except Exception as e:
+            self.failed.emit(mask_secrets_in_text(f"예상치 못한 오류: {e}"))
+        finally:
+            sink.flush()
+
+
 class PublishWorker(QThread):
     log_line = Signal(str)
     succeeded = Signal(dict)
@@ -71,12 +115,20 @@ class PublishWorker(QThread):
     def _log(self, msg: str) -> None:
         self.log_line.emit(mask_secrets_in_text(msg))
 
-    def run(self) -> None:  # noqa: PLR0911
+    def _cancelled(self) -> bool:
+        if self.isInterruptionRequested():
+            self.failed.emit(
+                "취소됨. (이미 push가 시작된 경우 원격에 일부 반영됐을 수 있습니다)"
+            )
+            return True
+        return False
+
+    def run(self) -> None:
         sink = _SignalStdout(self._log)
         try:
             with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
                 self._run_body()
-        except Exception as e:  # last-resort — keep UI alive
+        except Exception as e:
             self.failed.emit(mask_secrets_in_text(f"예상치 못한 오류: {e}"))
         finally:
             sink.flush()
@@ -96,6 +148,8 @@ class PublishWorker(QThread):
 
         vis = "private" if self.private else "public"
         self._log(f"시작: {folder} → GitHub/{name} ({vis})")
+        if self._cancelled():
+            return
 
         try:
             self._log("인증 확인 (필요 시 브라우저 Device Flow)…")
@@ -107,6 +161,9 @@ class PublishWorker(QThread):
             return
         except OSError as e:
             self.failed.emit(f"네트워크: {e}")
+            return
+
+        if self._cancelled():
             return
 
         try:
@@ -122,13 +179,19 @@ class PublishWorker(QThread):
                 private=self.private,
             )
         except PublishError as e:
-            self.failed.emit(str(e))
+            if self.isInterruptionRequested():
+                self.failed.emit("취소됨")
+            else:
+                self.failed.emit(str(e))
             return
         except GitError as e:
             self.failed.emit(f"git: {e}")
             return
         except OSError as e:
             self.failed.emit(f"네트워크: {e}")
+            return
+
+        if self._cancelled():
             return
 
         payload = {
