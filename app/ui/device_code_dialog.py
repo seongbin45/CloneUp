@@ -80,25 +80,42 @@ class DeviceCodeOverlay(QWidget):
                 border: 1px dashed #d0d7de;
             }
             QLabel#timer { color: #9a6700; font-size: 12px; }
+            /* Explicit colors — Windows dark-mode inheritance can force light text. */
             QPushButton {
                 padding: 8px 14px;
                 border-radius: 6px;
                 font-weight: 600;
-            }
-            QPushButton#btnCopy {
-                background: #0969da;
-                color: white;
-                border: none;
-            }
-            QPushButton#btnCopy:hover { background: #0860ca; }
-            QPushButton#btnOpen {
+                color: #1f2328;
                 background: #f6f8fa;
                 border: 1px solid #d0d7de;
             }
+            QPushButton#btnCopy {
+                background: #0969da;
+                color: #ffffff;
+                border: 1px solid #0969da;
+            }
+            QPushButton#btnCopy:hover {
+                background: #0860ca;
+                color: #ffffff;
+                border-color: #0860ca;
+            }
+            QPushButton#btnOpen {
+                background: #ffffff;
+                color: #1f2328;
+                border: 1px solid #d0d7de;
+            }
+            QPushButton#btnOpen:hover {
+                background: #f3f4f6;
+                color: #1f2328;
+            }
             QPushButton#btnCancel {
-                background: transparent;
+                background: #ffffff;
                 border: 1px solid #d0d7de;
                 color: #cf222e;
+            }
+            QPushButton#btnCancel:hover {
+                background: #fff5f5;
+                color: #a40e26;
             }
             """
         )
