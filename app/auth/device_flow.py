@@ -227,13 +227,30 @@ def run_device_flow(
     print(f"  연 주소(코드 포함 시도): {open_url}")
     print(f"  유효 시간: 약 {format_remaining(dc.expires_in)}")
     print()
-    print("  참고: GitHub 페이지에 앱이 대신 타이핑할 수는 없습니다.")
-    print("        (보안상 github.com 입력란은 우리 앱이 제어하지 않음)")
+    print("  기본: 수동 승인 (권장).")
+    print("  실험: CLONEUP_PLAYWRIGHT=1 이면 Playwright가 Continue/코드 입력을 시도.")
     print("=" * 50)
     print()
 
-    if open_browser:
-        # System browser only — no embedded webview, no DOM automation.
+    used_playwright = False
+    try:
+        from app.auth.playwright_device import playwright_enabled, try_playwright_device_fill
+
+        if playwright_enabled() and open_browser:
+            print("CLONEUP_PLAYWRIGHT=1 — Playwright 실험 경로 시도…")
+            used_playwright = try_playwright_device_fill(
+                dc.user_code,
+                dc.verification_uri,
+                headless=False,
+            )
+            if not used_playwright:
+                print("Playwright 실패 → 기본 브라우저 + 수동 입력으로 폴백")
+    except Exception as e:
+        print(f"Playwright 경로 예외 → 폴백: {e}")
+        used_playwright = False
+
+    if open_browser and not used_playwright:
+        # System browser only — no embedded webview.
         webbrowser.open(open_url)
 
     def _pending(remaining: float) -> None:

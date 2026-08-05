@@ -6,4 +6,8 @@ requests==2.34.2
 keyring==25.7.0
 PySide6>=6.6.0
 
+# Optional experimental Device Flow helper (CLONEUP_PLAYWRIGHT=1):
+#   pip install playwright && playwright install chromium
+# playwright>=1.40.0
+
 # Later (packaging): pyinstaller
