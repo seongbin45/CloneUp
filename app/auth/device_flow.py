@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import subprocess
 import time
 import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import requests
 
@@ -157,32 +159,82 @@ def poll_for_token(
     raise DeviceFlowError("시간 초과: 브라우저에서 승인하지 않았습니다.")
 
 
+def copy_text_to_clipboard(text: str) -> bool:
+    """Best-effort clipboard copy (Windows clip.exe, or Qt if an app exists)."""
+    try:
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            app.clipboard().setText(text)
+            return True
+    except Exception:
+        pass
+    try:
+        # Windows: clip.exe reads stdin
+        r = subprocess.run(
+            ["clip"],
+            input=text,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def verification_open_url(verification_uri: str, user_code: str) -> str:
+    """
+    Prefer a URL that may pre-fill the user code.
+
+    GitHub's documented verification_uri is https://github.com/login/device only;
+    some clients append ?user_code= — if GitHub ignores it, user can still paste
+    from clipboard. We never drive github.com DOM (no webview automation).
+    """
+    base = (verification_uri or "https://github.com/login/device").rstrip("?&")
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}user_code={quote(user_code, safe='-')}"
+
+
 def run_device_flow(
     client_id: str,
     scope: str = "repo",
     *,
     open_browser: bool = True,
+    copy_code: bool = True,
 ) -> TokenResponse:
     """Full Device Flow: code → browser → poll → access token."""
     dc = request_device_code(client_id, scope)
+    open_url = verification_open_url(dc.verification_uri, dc.user_code)
+    copied = copy_text_to_clipboard(dc.user_code) if copy_code else False
 
     print()
     print("=" * 50)
     print("  GitHub 로그인 (Device Flow)")
     print("=" * 50)
-    print("  1) 브라우저가 열리면 로그인하세요 (이미 되어 있으면 바로 다음).")
-    print("  2) 아래 코드를 입력하세요:")
+    print("  1) 브라우저가 열리면 계정 선택·로그인하세요.")
+    print("  2) 장치 코드 입력란에 아래 코드를 넣으세요:")
     print()
     print(f"      >>>  {dc.user_code}  <<<")
     print()
+    if copied:
+        print("  (코드가 클립보드에 복사되었습니다 → 입력란에서 Ctrl+V)")
+    else:
+        print("  (클립보드 복사 실패 — 위 코드를 직접 입력하세요)")
+    print()
     print(f"  확인 URL: {dc.verification_uri}")
+    print(f"  연 주소(코드 포함 시도): {open_url}")
     print(f"  유효 시간: 약 {format_remaining(dc.expires_in)}")
+    print()
+    print("  참고: GitHub 페이지에 앱이 대신 타이핑할 수는 없습니다.")
+    print("        (보안상 github.com 입력란은 우리 앱이 제어하지 않음)")
     print("=" * 50)
     print()
 
     if open_browser:
-        # App only opens the system browser — no password, no webview.
-        webbrowser.open(dc.verification_uri)
+        # System browser only — no embedded webview, no DOM automation.
+        webbrowser.open(open_url)
 
     def _pending(remaining: float) -> None:
         print(f"  승인 대기 중… ({format_remaining(remaining)} 남음)", flush=True)
