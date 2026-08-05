@@ -1,4 +1,8 @@
-"""Pre-publish safety checks for beginner-friendly defaults."""
+"""Pre-publish safety checks for beginner-friendly defaults.
+
+Secret *filenames* + file-*content* PII patterns (cross-check:
+Command-to-commit-changes-from-Git README / anonymize.py).
+"""
 
 from __future__ import annotations
 
@@ -45,6 +49,86 @@ _SECRET_NAME_RE = re.compile(
     """
 )
 
+# --- Content PII (from Command-to-commit-changes-from-Git README §1-4) ---
+# phone: 01[0-9]-?[0-9]{3,4}-?[0-9]{4}
+# email: standard address shape
+_PHONE_RE = re.compile(r"01[0-9]-?[0-9]{3,4}-?[0-9]{4}")
+_EMAIL_RE = re.compile(
+    r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+)
+
+# Same spirit as anonymize.py BINARY_EXTENSIONS + SKIP_DIRS
+_BINARY_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".ico",
+    ".bmp",
+    ".zip",
+    ".rar",
+    ".7z",
+    ".pdf",
+    ".exe",
+    ".dll",
+    ".mp3",
+    ".mp4",
+    ".mov",
+    ".wav",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".pyc",
+    ".pyo",
+    ".so",
+    ".dylib",
+    ".class",
+    ".jar",
+    ".svg",  # often large; skip content scan
+}
+_SKIP_DIRS = {
+    ".git",
+    "__pycache__",
+    "node_modules",
+    ".venv",
+    "venv",
+    ".tox",
+    "dist",
+    "build",
+    ".idea",
+    ".vs",
+}
+
+# Cap work for large trees
+_MAX_FILE_BYTES = 512 * 1024
+_MAX_FILES_SCANNED = 2000
+_MAX_PII_HITS = 40
+
+# Soft-ignore obvious non-personal emails (examples / tooling)
+_EMAIL_IGNORE_SUBSTR = (
+    "example.com",
+    "example.org",
+    "test.com",
+    "localhost",
+    "noreply",
+    "no-reply",
+    "users.noreply.github.com",
+    "sentry.io",
+    "w3.org",
+    "schema.org",
+    "github.com",
+    "githubusercontent.com",
+)
+
+
+@dataclass(frozen=True)
+class PiiHit:
+    path: str  # relative posix
+    kind: str  # "phone" | "email"
+    sample: str  # matched text (masked for display if needed)
+
 
 @dataclass
 class SafetyReport:
@@ -52,6 +136,7 @@ class SafetyReport:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     secret_candidates: list[str] = field(default_factory=list)
+    pii_hits: list[PiiHit] = field(default_factory=list)
     wrote_gitignore: bool = False
 
 
@@ -92,6 +177,97 @@ def format_secret_list(secrets: list[str], *, limit: int = 20) -> str:
     return lines
 
 
+def _should_skip_dir(name: str) -> bool:
+    return name in _SKIP_DIRS or name.startswith(".")
+
+
+def _email_ignored(addr: str) -> bool:
+    low = addr.lower()
+    return any(s in low for s in _EMAIL_IGNORE_SUBSTR)
+
+
+def scan_pii_in_contents(folder: Path) -> list[PiiHit]:
+    """
+    Scan text file bodies for phone/email (reference project grep patterns).
+
+    Does not replace strings (that is anonymize.py's job). Returns hits for UI.
+    """
+    root = folder.resolve()
+    hits: list[PiiHit] = []
+    seen: set[tuple[str, str, str]] = set()
+    files_seen = 0
+
+    for dirpath, dirnames, filenames in os_walk_skip(root):
+        # prune skip dirs in-place
+        dirnames[:] = [d for d in dirnames if not _should_skip_dir(d)]
+        for name in filenames:
+            if files_seen >= _MAX_FILES_SCANNED or len(hits) >= _MAX_PII_HITS:
+                return hits
+            ext = Path(name).suffix.lower()
+            if ext in _BINARY_EXTENSIONS:
+                continue
+            path = Path(dirpath) / name
+            if not path.is_file():
+                continue
+            try:
+                if path.stat().st_size > _MAX_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
+            files_seen += 1
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                continue
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+
+            rel = path.relative_to(root).as_posix()
+            for m in _PHONE_RE.finditer(text):
+                sample = m.group(0)
+                key = (rel, "phone", sample)
+                if key in seen:
+                    continue
+                seen.add(key)
+                hits.append(PiiHit(path=rel, kind="phone", sample=sample))
+                if len(hits) >= _MAX_PII_HITS:
+                    return hits
+            for m in _EMAIL_RE.finditer(text):
+                sample = m.group(0)
+                if _email_ignored(sample):
+                    continue
+                key = (rel, "email", sample)
+                if key in seen:
+                    continue
+                seen.add(key)
+                hits.append(PiiHit(path=rel, kind="email", sample=sample))
+                if len(hits) >= _MAX_PII_HITS:
+                    return hits
+    return hits
+
+
+def os_walk_skip(root: Path):
+    """os.walk from root (pathlib)."""
+    import os
+
+    return os.walk(root)
+
+
+def format_pii_list(hits: list[PiiHit], *, limit: int = 15) -> str:
+    if not hits:
+        return ""
+    kind_ko = {"phone": "전화", "email": "이메일"}
+    lines: list[str] = []
+    for h in hits[:limit]:
+        label = kind_ko.get(h.kind, h.kind)
+        lines.append(f"  · [{label}] {h.sample}  ← {h.path}")
+    if len(hits) > limit:
+        lines.append(f"  · … 외 {len(hits) - limit}건")
+    return "\n".join(lines)
+
+
 def ensure_gitignore(folder: Path, *, write_if_missing: bool = True) -> bool:
     """Return True if a new .gitignore was written."""
     gi = folder / ".gitignore"
@@ -108,6 +284,7 @@ def run_safety_checks(
     *,
     allow_secrets: bool = False,
     write_gitignore: bool = True,
+    scan_pii: bool = True,
 ) -> SafetyReport:
     report = SafetyReport(ok=True)
     if not folder.is_dir():
@@ -139,5 +316,14 @@ def run_safety_checks(
         report.warnings.append(
             f"--allow-secrets: 다음 파일이 포함될 수 있습니다: {', '.join(secrets)}"
         )
+
+    if scan_pii:
+        pii = scan_pii_in_contents(folder)
+        report.pii_hits = pii
+        if pii:
+            report.warnings.append(
+                f"파일 내용에서 개인정보로 보이는 패턴 {len(pii)}건 "
+                f"(전화/이메일). 업로드 전 확인하세요."
+            )
 
     return report

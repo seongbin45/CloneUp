@@ -22,7 +22,13 @@ from PySide6.QtWidgets import (
 
 from app.git.publish import peek_commit_email
 from app.git.runner import GitError, require_git
-from app.git.safety import find_secret_candidates, format_secret_list, run_safety_checks
+from app.git.safety import (
+    find_secret_candidates,
+    format_pii_list,
+    format_secret_list,
+    run_safety_checks,
+    scan_pii_in_contents,
+)
 from app.git.url_utils import UrlError, normalize_github_clone_url
 from app.auth.token_store import load_token
 from app.ui.auth_status import AuthState, AuthStatusButton
@@ -573,6 +579,18 @@ class MainController(QObject):
                 "다음 파일이 포함될 수 있습니다:\n"
                 f"{listing}\n\n"
                 f"이대로 올리면 인터넷에 공개될 수 있습니다. ({vis})"
+            )
+
+        # Content PII (phone/email) — Command-to-commit-changes-from-Git patterns
+        pii_hits = scan_pii_in_contents(folder)
+        if pii_hits:
+            listing = format_pii_list(pii_hits)
+            parts.append(
+                "파일 내용에서 개인정보로 보이는 값이 있습니다 "
+                "(전화·이메일 패턴):\n"
+                f"{listing}\n\n"
+                "이대로 올리면 인터넷에 공개될 수 있습니다. "
+                "필요하면 올리기 전에 지우거나 가리세요."
             )
 
         email = peek_commit_email(folder)
