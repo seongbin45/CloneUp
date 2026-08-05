@@ -197,14 +197,13 @@ class MainController(QObject):
         worker.start()
 
     def eventFilter(self, obj, event):  # noqa: N802
-        if obj is self.window and event.type() == QEvent.Type.Close:
-            self._shutdown_workers()
-            self._close_device_overlay()
-        elif obj is self.window and event.type() == QEvent.Type.Resize:
-            if self._device_overlay is not None:
-                self._device_overlay.setGeometry(self.window.rect())
-                self._device_overlay._layout_card()
-        return super().eventFilter(obj, event)
+        et = event.type()
+        if obj is self.window and et == QEvent.Type.Close:
+            if not getattr(self, "_closing", False):
+                self._closing = True
+                self._shutdown_workers()
+                self._close_device_overlay()
+        return False
 
     def _shutdown_workers(self) -> None:
         w = self._worker
