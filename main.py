@@ -22,12 +22,14 @@ def main() -> int:
         )
         return 2
 
+    from app import __version__
     from app.ui.icons import load_app_icon
     from app.ui.main_window import load_main_window
     from app.ui.theme import apply_system_theme
 
     app = QApplication(sys.argv)
     app.setApplicationName("CloneUp")
+    app.setApplicationVersion(__version__)
 
     # I3 — window / taskbar icon (assets/icons from desin/icon)
     app_icon = load_app_icon()
