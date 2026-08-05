@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QPushButton
 
 from app.auth.token_store import has_scope, load_scope, load_token
 from app.ui.settings_store import load_last_github_login, save_last_github_login
-from app.ui.theme import PRIMARY, SUCCESS_DOT, TEXT_SECONDARY, WARN_DOT
+from app.ui.theme import Palette, active_palette
 from app.util.log_mask import mask_token
 
 
@@ -19,13 +19,19 @@ class AuthState(Enum):
     SCOPE_INSUFFICIENT = "scope_insufficient"
 
 
-def _dot_style(dot_color: str, text_color: str = TEXT_SECONDARY) -> str:
-    """Status-row look: no heavy button chrome (matches desin mock)."""
+def _status_button_style(p: Palette, *, emphasis: str | None = None) -> str:
+    """
+    Status-row look: no heavy button chrome (matches desin mock).
+
+    Uses active palette at call time so OS dark/light is respected
+    (import-time PRIMARY/TEXT_SECONDARY would stay stuck on light).
+    """
+    body = emphasis or p.text_secondary
     return f"""
     QPushButton#btnAuthStatus {{
         background: transparent;
         border: none;
-        color: {text_color};
+        color: {body};
         font-size: 12.5px;
         font-weight: 500;
         padding: 2px 4px;
@@ -33,16 +39,15 @@ def _dot_style(dot_color: str, text_color: str = TEXT_SECONDARY) -> str:
         min-height: 0;
     }}
     QPushButton#btnAuthStatus:hover {{
-        color: {PRIMARY};
+        color: {p.primary};
         background: transparent;
         border: none;
     }}
     QPushButton#btnAuthStatus:disabled {{
-        color: #b3ac9e;
+        color: {p.text_disabled};
         background: transparent;
         border: none;
     }}
-    /* Dot color is part of the label text (●) — keep fg readable */
     """
 
 
@@ -80,16 +85,16 @@ class AuthStatusButton(QObject):
         self.refresh()
 
     def refresh(self) -> None:
+        p = active_palette()
         token = load_token()
         scope = load_scope()
         if not token:
             self._state = AuthState.LOGGED_OUT
             # Amber status (design authDot when logged out)
-            self.button.setText(f"●  GitHub: 로그인 필요")
+            self.button.setText("●  GitHub: 로그인 필요")
             self.button.setStyleSheet(
-                _dot_style(WARN_DOT) + f" QPushButton#btnAuthStatus {{ color: {TEXT_SECONDARY}; }}"
+                _status_button_style(p, emphasis=p.warn_dot)
             )
-            # Color the bullet via rich-ish unicode; keep plain text for reliability
             self.button.setToolTip("클릭하여 GitHub 로그인 (Device Flow)")
             return
 
@@ -98,8 +103,7 @@ class AuthStatusButton(QObject):
             who = self._login or "계정"
             self.button.setText(f"●  GitHub: 로그인됨 ({who})")
             self.button.setStyleSheet(
-                _dot_style(SUCCESS_DOT)
-                + f" QPushButton#btnAuthStatus {{ color: {TEXT_SECONDARY}; }}"
+                _status_button_style(p, emphasis=p.success_dot)
             )
             self.button.setToolTip(
                 f"scope={scope!r}\n토큰={mask_token(token)}\n클릭하면 재로그인합니다."
@@ -110,7 +114,7 @@ class AuthStatusButton(QObject):
         who = self._login or "계정"
         self.button.setText(f"●  GitHub: 권한 부족 ({who})")
         self.button.setStyleSheet(
-            _dot_style(WARN_DOT) + f" QPushButton#btnAuthStatus {{ color: {TEXT_SECONDARY}; }}"
+            _status_button_style(p, emphasis=p.warn_dot)
         )
         self.button.setToolTip(
             f"현재 scope={scope!r}. repo 권한이 필요합니다. 클릭하여 재로그인."

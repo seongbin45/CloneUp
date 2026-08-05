@@ -35,6 +35,7 @@ from app.ui.settings_store import (
     save_last_private,
 )
 from app.ui.tab_workers import CloneWorker, SyncActionWorker, SyncStatusWorker
+from app.ui.theme import active_palette
 
 _UI_PATH = Path(__file__).resolve().parents[2] / "ui" / "main_window.ui"
 
@@ -81,6 +82,19 @@ class MainController(QObject):
         if btn_auth is None:
             raise RuntimeError("btnAuthStatus 위젯 없음 — UI에 상태형 로그인 버튼이 필요합니다")
         self.auth_status = AuthStatusButton(btn_auth, parent=self)
+
+        # D2 — recolor status-row widgets when OS light/dark flips
+        # (inline setStyleSheet overrides global QSS and would stay light)
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            app = QApplication.instance()
+            if app is not None:
+                app.styleHints().colorSchemeChanged.connect(
+                    self._on_color_scheme_changed
+                )
+        except Exception:
+            pass
 
         # --- publish ---
         self.editFolder = window.findChild(QLineEdit, "editFolder")
@@ -318,21 +332,27 @@ class MainController(QObject):
         self.comboRecent.setCurrentIndex(0)
         self.comboRecent.blockSignals(False)
 
+    def _on_color_scheme_changed(self, *_args) -> None:
+        """OS theme changed — main.py already reapplied QSS; refresh inline styles."""
+        self._refresh_status_bar()
+
     def _refresh_status_bar(self) -> None:
         # Design: green status dot + "Git: x.y.z" (desin status row)
+        p = active_palette()
         if self.labelStatusGit is not None:
             try:
                 _e, ver = require_git()
                 self.labelStatusGit.setText(
                     f"●  Git: {ver[0]}.{ver[1]}.{ver[2]}"
                 )
+                # success_dot for ● (desin green); whole label one color
                 self.labelStatusGit.setStyleSheet(
-                    "color: #4a453b; font-size: 12.5px;"
+                    f"color: {p.success_dot}; font-size: 12.5px;"
                 )
             except GitError:
                 self.labelStatusGit.setText("●  Git: 없음")
                 self.labelStatusGit.setStyleSheet(
-                    "color: #8b8477; font-size: 12.5px;"
+                    f"color: {p.text_faint}; font-size: 12.5px;"
                 )
         self.auth_status.refresh()
 
