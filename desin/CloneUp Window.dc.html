@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #e8e6e1; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 48px; display: flex; justify-content: center; align-items: flex-start;">
+  <div style="width: 760px; background: #fbfaf8; border: 1px solid #c9c5bd; border-radius: 10px; box-shadow: 0 18px 48px rgba(40,36,30,.18); overflow: hidden;">
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+      <div style="display: flex; gap: 7px;">
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+      </div>
+      <div style="font-size: 13px; font-weight: 600; color: #3d382f; letter-spacing: .01em;">클론업 (CloneUp)</div>
+      <div style="margin-left: auto; font-size: 12px; color: #8b8477;">도움말</div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 20px; padding: 11px 20px; background: #fbfaf8; border-bottom: 1px solid #e6e1d8;">
+      <div style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #4a453b;">
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: #2f8f6d;"></span>
+        <span>Git: 2.45.1</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #4a453b;">
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: {{ authDot }};"></span>
+        <span>GitHub: {{ authLabel }}</span>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 2px; padding: 0 16px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+      <sc-for list="{{ tabs }}" as="tab" hint-placeholder-count="3">
+        <div onClick="{{ tab.select }}" style="padding: 10px 18px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; margin-bottom: -1px; background: {{ tab.bg }}; color: {{ tab.fg }}; border-color: {{ tab.border }};">{{ tab.label }}</div>
+      </sc-for>
+    </div>
+
+    <div style="padding: 26px 24px 22px; display: flex; flex-direction: column; gap: 18px; min-height: 268px;">
+
+      <sc-if value="{{ isPublish }}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: grid; grid-template-columns: 92px 1fr auto; gap: 10px; align-items: center;">
+            <label style="font-size: 13px; color: #4a453b;">로컬 폴더</label>
+            <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">C:\Users\seong\Downloads\my-project</div>
+            <div style="height: 32px; padding: 0 14px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #4a453b; cursor: pointer;" style-hover="background: #e9e5dd;">찾아보기…</div>
+          </div>
+          <div style="display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center;">
+            <label style="font-size: 13px; color: #4a453b;">최근 폴더</label>
+            <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; justify-content: space-between; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #6d675c;">
+              <span>최근에 사용한 폴더 선택</span>
+              <span style="font-size: 9px; color: #9a9385;">▼</span>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 92px 1fr auto; gap: 10px; align-items: center;">
+            <label style="font-size: 13px; color: #4a453b;">저장소 이름</label>
+            <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24;">my-project</div>
+            <div style="display: flex; gap: 16px; align-items: center; font-size: 13px; color: #4a453b;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="width: 13px; height: 13px; border-radius: 50%; border: 1px solid #1f6f5c; background: radial-gradient(circle, #1f6f5c 0 3.5px, #fff 4px);"></span>
+                <span>공개</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="width: 13px; height: 13px; border-radius: 50%; border: 1px solid #cdc8bf; background: #fff;"></span>
+                <span>비공개</span>
+              </div>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center;">
+            <label style="font-size: 13px; color: #4a453b;">커밋 메시지</label>
+            <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24;">Initial commit</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; padding-left: 102px; font-size: 12.5px; color: #8b8477;">
+            <span style="width: 13px; height: 13px; border: 1px solid #cdc8bf; border-radius: 3px; background: #fff;"></span>
+            <span>비밀 파일로 보이는 항목이 있어도 진행 (고급 · 비권장)</span>
+          </div>
+          <div style="display: flex; gap: 10px; padding-top: 4px;">
+            <div style="flex: 1; height: 40px; display: flex; align-items: center; justify-content: center; background: #1f6f5c; color: #fff; font-size: 13.5px; font-weight: 600; border-radius: 6px; cursor: pointer;" style-hover="background: #185b4b;">GitHub에 만들고 올리기</div>
+            <div style="width: 100px; height: 40px; display: flex; align-items: center; justify-content: center; background: #f2efe9; border: 1px solid #ddd8d0; color: #b3ac9e; font-size: 13px; border-radius: 6px;">취소</div>
+            <div style="width: 120px; height: 40px; display: flex; align-items: center; justify-content: center; background: #f2efe9; border: 1px solid #cdc8bf; color: #4a453b; font-size: 13px; border-radius: 6px; cursor: pointer;" style-hover="background: #e9e5dd;">GitHub 로그인</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isClone }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center;">
+            <label style="font-size: 13px; color: #4a453b;">GitHub 주소</label>
+            <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">https://github.com/owner/repo</div>
+          </div>
+          <div style="padding: 11px 13px; background: #f4f1e8; border-left: 3px solid #c4a94e; border-radius: 0 5px 5px 0; font-size: 12.5px; color: #6d675c; line-height: 1.55;">저장소 <strong style="color: #4a453b;">루트 주소</strong>를 붙여넣으세요. <span style="font-family: 'IBM Plex Mono', monospace;">/tree/main</span> 이 붙은 주소는 자동으로 정리됩니다.</div>
+          <div style="display: grid; grid-template-columns: 92px 1fr auto; gap: 10px; align-items: center;">
+            <label style="font-size: 13px; color: #4a453b;">저장 위치</label>
+            <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">C:\Users\seong\Desktop</div>
+            <div style="height: 32px; padding: 0 14px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #4a453b; cursor: pointer;" style-hover="background: #e9e5dd;">찾아보기…</div>
+          </div>
+          <div style="display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center;">
+            <label style="font-size: 13px; color: #4a453b;">폴더 이름</label>
+            <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #9a9385;">(비우면 저장소 이름)</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; padding-left: 102px; font-size: 12.5px; color: #4a453b;">
+            <span style="width: 13px; height: 13px; border: 1px solid #1f6f5c; border-radius: 3px; background: #1f6f5c; color: #fff; font-size: 9px; display: flex; align-items: center; justify-content: center;">✓</span>
+            <span>로그인 토큰 사용 (비공개 저장소)</span>
+          </div>
+          <div style="display: flex; gap: 10px; padding-top: 4px;">
+            <div style="flex: 1; height: 40px; display: flex; align-items: center; justify-content: center; background: #1f6f5c; color: #fff; font-size: 13.5px; font-weight: 600; border-radius: 6px; cursor: pointer;" style-hover="background: #185b4b;">저장소 받기</div>
+            <div style="width: 100px; height: 40px; display: flex; align-items: center; justify-content: center; background: #f2efe9; border: 1px solid #ddd8d0; color: #b3ac9e; font-size: 13px; border-radius: 6px;">취소</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSync }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div style="display: grid; grid-template-columns: 92px 1fr auto auto; gap: 10px; align-items: center;">
+            <label style="font-size: 13px; color: #4a453b;">로컬 저장소</label>
+            <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">C:\Users\seong\Desktop\my-project</div>
+            <div style="height: 32px; padding: 0 14px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #4a453b; cursor: pointer;" style-hover="background: #e9e5dd;">찾아보기…</div>
+            <div style="height: 32px; padding: 0 14px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #4a453b; cursor: pointer;" style-hover="background: #e9e5dd;">상태 새로고침</div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; padding-left: 102px;">
+            <div style="display: flex; align-items: baseline; gap: 7px; padding: 8px 13px; background: #f2efe9; border-radius: 5px;">
+              <span style="font-size: 17px; font-weight: 600; color: #2f2b24;">3</span>
+              <span style="font-size: 12px; color: #6d675c;">개 파일 변경</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 7px; padding: 8px 13px; background: #f2efe9; border-radius: 5px; font-size: 12px; color: #6d675c;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: #2f8f6d;"></span>
+              <span>원격 연결됨 · <span style="font-family: 'IBM Plex Mono', monospace; color: #4a453b;">origin/main</span></span>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center;">
+            <label style="font-size: 13px; color: #4a453b;">커밋 메시지</label>
+            <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24;">Update</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; padding-left: 102px; font-size: 12.5px; color: #8b8477;">
+            <span style="width: 13px; height: 13px; border: 1px solid #cdc8bf; border-radius: 3px; background: #fff;"></span>
+            <span>비밀 파일로 보이는 항목이 있어도 커밋 (고급 · 비권장)</span>
+          </div>
+          <div style="display: flex; gap: 10px; padding-top: 4px;">
+            <div style="flex: 1.4; height: 40px; display: flex; align-items: center; justify-content: center; background: #1f6f5c; color: #fff; font-size: 13.5px; font-weight: 600; border-radius: 6px; cursor: pointer;" style-hover="background: #185b4b;">올리고 보내기 (commit+push)</div>
+            <div style="flex: 1; height: 40px; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #b7b1a5; color: #3d382f; font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer;" style-hover="background: #f2efe9;">받아오기 (pull)</div>
+            <div style="height: 40px; padding: 0 14px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; color: #6d675c; font-size: 12.5px; border-radius: 6px; cursor: pointer;" style-hover="background: #e9e5dd;">충돌 취소</div>
+            <div style="height: 40px; padding: 0 14px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #ddd8d0; color: #b3ac9e; font-size: 12.5px; border-radius: 6px;">작업 취소</div>
+          </div>
+        </div>
+      </sc-if>
+
+    </div>
+
+    <div style="border-top: 1px solid #e6e1d8;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 20px 7px;">
+        <span style="font-size: 12px; font-weight: 600; color: #4a453b;">실행 로그</span>
+        <span style="font-size: 11.5px; color: #8b8477;">토큰은 마스킹됩니다</span>
+      </div>
+      <div style="margin: 0 16px 16px; padding: 12px 14px; background: #2c2925; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; line-height: 1.75; height: 116px; overflow: hidden;">
+        <div style="color: #8f887c;">&gt; git clone https://x-access-token:***@github.com/owner/repo.git</div>
+        <div style="color: #d6d0c4;">Cloning into 'repo'...</div>
+        <div style="color: #7fc9a8;">✓ 성공 · Desktop\repo 에 저장됨</div>
+        <div style="color: #8f887c;">&gt; git push -u origin main</div>
+        <div style="color: #e0a3a3;">✗ 실패 · 로그인이 필요합니다 (권한 없음)</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:856,&quot;height&quot;:800},&quot;loggedIn&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  state = { tab: 0 };
+  renderVals() {
+    const labels = ["만들고 올리기", "받기", "동기화"];
+    const loggedIn = this.props.loggedIn ?? true;
+    return {
+      tabs: labels.map((label, i) => ({
+        label,
+        bg: this.state.tab === i ? "#fbfaf8" : "transparent",
+        fg: this.state.tab === i ? "#1f6f5c" : "#7c766a",
+        border: this.state.tab === i ? "#ddd8d0" : "transparent",
+        select: () => this.setState({ tab: i }),
+      })),
+      isPublish: this.state.tab === 0,
+      isClone: this.state.tab === 1,
+      isSync: this.state.tab === 2,
+      authDot: loggedIn ? "#2f8f6d" : "#c4a94e",
+      authLabel: loggedIn ? "로그인됨 (seong)" : "로그인 필요",
+    };
+  }
+}
+</script>
+</body>
+</html>

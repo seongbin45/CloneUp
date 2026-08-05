@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #16150f; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #46a685; }
+  a:hover { color: #57bd99; }
+</style>
+</helmet>
+<x-import component-from-global-scope="deck-stage" from="./deck-stage.js" width="1920" height="1080" hint-size="100%,100%">
+
+  <section data-label="표지" data-screen-label="01" data-speaker-notes="클론업 아이덴티티 개요. 심볼은 로컬 폴더에서 위로 올라가는 화살표." style="background: #232019; padding: 120px 140px; display: flex; flex-direction: column; justify-content: center; gap: 56px;">
+    <div style="display: flex; align-items: center; gap: 48px;">
+      <img src="assets/icon-512-dark.png" alt="클론업 심볼" style="width: 200px; height: 200px; border-radius: 45px; display: block;">
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 108px; font-weight: 600; color: #f6f2e8; letter-spacing: -0.025em; line-height: 1;">CloneUp</div>
+        <div style="font-size: 40px; font-weight: 500; color: #46a685; letter-spacing: 0.16em;">클론업</div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 28px; align-items: center; font-size: 26px; color: #a39c8c; font-family: 'IBM Plex Mono', monospace; padding-top: 40px; border-top: 2px solid #3b372e;">
+      <span>아이덴티티 가이드</span>
+      <span style="color: #6f6a5d;">·</span>
+      <span>#1f6f5c</span>
+      <span>#46a685</span>
+      <span>#f6f2e8</span>
+      <span>#2b2821</span>
+    </div>
+  </section>
+
+  <section data-label="기본 가로 조합" data-screen-label="02" data-speaker-notes="기본 조합. 여백은 심볼 높이의 25퍼센트 이상." style="background: #fbfaf8; padding: 110px 140px; display: flex; flex-direction: column; gap: 64px;">
+    <div style="font-size: 30px; font-weight: 600; color: #6d675c; letter-spacing: 0.04em;">기본 가로 조합</div>
+    <div style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 56px; background: #f2efe9; border-radius: 20px;">
+      <img src="assets/icon-512.png" alt="클론업 심볼" style="width: 208px; height: 208px; border-radius: 47px; display: block;">
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 104px; font-weight: 600; color: #232019; letter-spacing: -0.025em; line-height: 1;">CloneUp</div>
+        <div style="font-size: 38px; font-weight: 500; color: #1f6f5c; letter-spacing: 0.16em;">클론업</div>
+      </div>
+    </div>
+    <div style="font-size: 28px; color: #4a453b; line-height: 1.6;">워드마크는 IBM Plex Sans KR SemiBold. 심볼과 글자 사이 간격은 심볼 높이의 4분의 1을 유지합니다.</div>
+  </section>
+
+  <section data-label="변형 조합" data-screen-label="03" data-speaker-notes="세로 조합은 좁은 자리에. 심볼 단독은 단색으로만." style="background: #fbfaf8; padding: 110px 140px; display: flex; flex-direction: column; gap: 56px;">
+    <div style="font-size: 30px; font-weight: 600; color: #6d675c; letter-spacing: 0.04em;">변형 조합</div>
+    <div style="flex: 1; display: flex; gap: 48px;">
+      <div style="flex: 1; background: #16150f; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 40px;">
+        <img src="assets/icon-512-dark.png" alt="클론업 심볼, 다크" style="width: 168px; height: 168px; border-radius: 38px; display: block;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+          <div style="font-size: 66px; font-weight: 600; color: #f6f2e8; letter-spacing: -0.02em; line-height: 1;">CloneUp</div>
+          <div style="font-size: 28px; font-weight: 500; color: #46a685; letter-spacing: 0.16em;">클론업</div>
+        </div>
+        <div style="font-size: 26px; color: #a39c8c;">세로 조합 · 다크</div>
+      </div>
+      <div style="flex: 1; background: #f2efe9; border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 40px;">
+        <img src="assets/mark-glyph.png" alt="클론업 심볼 단독" style="width: 168px; height: 168px; display: block;">
+        <div style="font-size: 28px; color: #4a453b; text-align: center; line-height: 1.6;">타일 없는 단독 심볼<br>단색으로만 사용</div>
+        <div style="font-size: 26px; color: #6d675c;">심볼 단독</div>
+      </div>
+    </div>
+  </section>
+
+  <section data-label="아이콘 크기" data-screen-label="04" data-speaker-notes="ico 파일에 7개 크기가 들어 있고 16에서 32는 단순화 버전." style="background: #fbfaf8; padding: 110px 140px; display: flex; flex-direction: column; gap: 56px;">
+    <div style="display: flex; align-items: baseline; gap: 24px;">
+      <div style="font-size: 30px; font-weight: 600; color: #6d675c; letter-spacing: 0.04em;">아이콘 크기</div>
+      <div style="font-size: 26px; color: #8b8477; font-family: 'IBM Plex Mono', monospace;">CloneUp.ico</div>
+    </div>
+    <div style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 64px; background: #f2efe9; border-radius: 20px; padding: 0 60px;">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <img src="assets/icon-16.png" alt="16px" style="display: block; width: 16px; height: 16px;">
+        <div style="font-size: 24px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">16</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <img src="assets/icon-24.png" alt="24px" style="display: block; width: 24px; height: 24px;">
+        <div style="font-size: 24px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">24</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <img src="assets/icon-32.png" alt="32px" style="display: block; width: 32px; height: 32px;">
+        <div style="font-size: 24px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">32</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <img src="assets/icon-48.png" alt="48px" style="display: block; width: 48px; height: 48px;">
+        <div style="font-size: 24px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">48</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <img src="assets/icon-64.png" alt="64px" style="display: block; width: 64px; height: 64px;">
+        <div style="font-size: 24px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">64</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <img src="assets/icon-128.png" alt="128px" style="display: block; width: 128px; height: 128px;">
+        <div style="font-size: 24px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">128</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
+        <img src="assets/icon-256.png" alt="256px" style="display: block; width: 256px; height: 256px;">
+        <div style="font-size: 24px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">256</div>
+      </div>
+    </div>
+    <div style="font-size: 28px; color: #4a453b; line-height: 1.6;">16에서 32픽셀은 폴더 탭을 뺀 단순화 버전입니다. 작은 크기에서 화살표와 폴더가 붙어 보이지 않게 하기 위한 것입니다.</div>
+  </section>
+
+  <section data-label="쓰는 법" data-screen-label="05" data-speaker-notes="피할 것 네 가지를 강조." style="background: #fbfaf8; padding: 110px 140px; display: flex; flex-direction: column; gap: 56px;">
+    <div style="font-size: 30px; font-weight: 600; color: #6d675c; letter-spacing: 0.04em;">쓰는 법</div>
+    <div style="flex: 1; display: flex; gap: 40px;">
+      <div style="flex: 1; padding: 56px 48px; background: #f2efe9; border-radius: 20px; display: flex; flex-direction: column; gap: 28px;">
+        <div style="font-size: 34px; font-weight: 600; color: #232019;">지킬 것</div>
+        <div style="font-size: 28px; color: #4a453b; line-height: 1.75;">여백은 심볼 높이의 25% 이상<br>워드마크는 IBM Plex Sans KR SemiBold<br>다크 배경에서는 강조색을 #46a685 로<br>작은 크기는 단순화 버전 사용</div>
+      </div>
+      <div style="flex: 1; padding: 56px 48px; background: #fbf6ee; border-left: 6px solid #c4a94e; border-radius: 0 20px 20px 0; display: flex; flex-direction: column; gap: 28px;">
+        <div style="font-size: 34px; font-weight: 600; color: #232019;">피할 것</div>
+        <div style="font-size: 28px; color: #4a453b; line-height: 1.75;">심볼 비율 변형<br>그라디언트<br>타일 위 그림자<br>초록 외 다른 강조색</div>
+      </div>
+    </div>
+  </section>
+
+</x-import>
+
+</x-dc>
+</body>
+</html>
