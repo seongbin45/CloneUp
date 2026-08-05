@@ -1,0 +1,125 @@
+"""Minimal GitHub REST helpers (spike)."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import requests
+
+API_BASE = "https://api.github.com"
+DEFAULT_HEADERS = {
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "CloneUp-spike/0.1",
+}
+
+
+class GitHubAPIError(Exception):
+    def __init__(self, status: int, message: str, *, body: dict[str, Any] | None = None):
+        super().__init__(f"HTTP {status}: {message}")
+        self.status = status
+        self.message = message
+        self.body = body or {}
+
+
+def _auth_headers(access_token: str) -> dict[str, str]:
+    return {
+        **DEFAULT_HEADERS,
+        "Authorization": f"Bearer {access_token}",
+    }
+
+
+def _raise_for_status(resp: requests.Response) -> None:
+    if resp.ok:
+        return
+    body: dict[str, Any] = {}
+    text = resp.text[:500]
+    try:
+        parsed = resp.json()
+        if isinstance(parsed, dict):
+            body = parsed
+            text = parsed.get("message", text)
+            errors = parsed.get("errors")
+            if errors:
+                text = f"{text} | errors={errors}"
+    except ValueError:
+        pass
+    raise GitHubAPIError(resp.status_code, text, body=body)
+
+
+def get_authenticated_user(access_token: str) -> dict[str, Any]:
+    """
+    GET /user.
+
+    Also attaches `_oauth_scopes` from the X-OAuth-Scopes response header when
+    present, so callers can persist granted scopes without re-login.
+    """
+    resp = requests.get(
+        f"{API_BASE}/user",
+        headers=_auth_headers(access_token),
+        timeout=30,
+    )
+    _raise_for_status(resp)
+    data = resp.json()
+    scopes = resp.headers.get("X-OAuth-Scopes") or resp.headers.get("x-oauth-scopes")
+    if scopes is not None:
+        data["_oauth_scopes"] = scopes
+    return data
+
+
+def create_repo(
+    access_token: str,
+    name: str,
+    *,
+    private: bool = False,
+    description: str = "",
+    auto_init: bool = False,
+) -> dict[str, Any]:
+    """
+    POST /user/repos
+
+    Never enable auto_init for CloneUp publish flow: a remote initial commit
+    causes non-fast-forward rejection when pushing a fresh local history.
+    """
+    if private:
+        raise ValueError(
+            "public_repo scope path only supports public repos. "
+            "Private repos need re-auth with `repo` scope later."
+        )
+    if auto_init:
+        raise ValueError(
+            "auto_init must stay False: remote README commit breaks first push "
+            "from a new local repo (non-fast-forward)."
+        )
+
+    # Omit auto_init entirely (GitHub default is false) — do not send true.
+    payload: dict[str, Any] = {
+        "name": name,
+        "private": False,
+        "description": description,
+    }
+    resp = requests.post(
+        f"{API_BASE}/user/repos",
+        headers=_auth_headers(access_token),
+        json=payload,
+        timeout=30,
+    )
+    _raise_for_status(resp)
+    return resp.json()
+
+
+def delete_repo(access_token: str, owner: str, repo: str) -> None:
+    """
+    DELETE /repos/{owner}/{repo}
+
+    Requires delete_repo scope — NOT included in public_repo.
+    Kept for future use after broader auth; expect 403 with current spike grants.
+    """
+    resp = requests.delete(
+        f"{API_BASE}/repos/{owner}/{repo}",
+        headers=_auth_headers(access_token),
+        timeout=30,
+    )
+    if resp.status_code == 204:
+        return
+    _raise_for_status(resp)
