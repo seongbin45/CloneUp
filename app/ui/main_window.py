@@ -84,6 +84,8 @@ class MainController(QObject):
         self._device_overlay: DeviceCodeOverlay | None = None
         # Device popup cancel button: "로그아웃" when re-login, else "로그인 취소"
         self._device_cancel_label = "로그인 취소"
+        # After popup Logout, worker cancel should not look like a failed login
+        self._expect_logout_ack = False
         self.window.installEventFilter(self)
 
         # --- shared ---
@@ -359,6 +361,16 @@ class MainController(QObject):
         self.auth_status.refresh()
         self._log("로그아웃 완료 — 저장된 GitHub 토큰을 삭제했습니다.")
 
+    def _notify_logout_done(self) -> None:
+        """Friendly ack instead of '로그인이 취소되었습니다' failure dialog."""
+        self._expect_logout_ack = False
+        QMessageBox.information(
+            self.window,
+            "로그아웃 완료",
+            "로그아웃이 완료되었습니다.\n"
+            "저장된 GitHub 로그인 정보가 삭제되었습니다.",
+        )
+
     @Slot()
     def _on_device_overlay_cancelled(self) -> None:
         """
@@ -372,7 +384,9 @@ class MainController(QObject):
             if self._device_overlay is not None:
                 self._device_overlay.set_waiting_message("로그아웃 중…")
             self._perform_logout()
+            self._expect_logout_ack = True
         else:
+            self._expect_logout_ack = False
             self._log("로그인 취소 요청…")
             if self._device_overlay is not None:
                 self._device_overlay.set_waiting_message(
@@ -385,6 +399,8 @@ class MainController(QObject):
         else:
             self._close_device_overlay()
             self._refresh_status_bar()
+            if is_logout:
+                self._notify_logout_done()
 
     @Slot()
     def _on_worker_finished(self) -> None:
@@ -579,6 +595,22 @@ class MainController(QObject):
     @Slot(str)
     def _on_fail_msg(self, message: str) -> None:
         self._close_device_overlay()
+        # Logout from device popup interrupts the login worker — treat as success
+        if self._expect_logout_ack:
+            self._expect_logout_ack = False
+            msg = message or ""
+            if "취소" in msg or not msg.strip():
+                self._log("로그아웃이 완료되었습니다.")
+                QMessageBox.information(
+                    self.window,
+                    "로그아웃 완료",
+                    "로그아웃이 완료되었습니다.\n"
+                    "저장된 GitHub 로그인 정보가 삭제되었습니다.",
+                )
+                return
+            # Unexpected error after logout click — still show it, token already cleared
+            self._log(f"ERROR: {message}")
+
         self._log(f"ERROR: {message}")
         # G4 — one next-step line under the raw/Korean error
         next_line = format_next_step_line(message)
