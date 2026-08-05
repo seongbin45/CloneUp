@@ -66,14 +66,15 @@
 
 | 단계 | 내용 | 상태 |
 |------|------|------|
-| **I1** | 마스터 자산 (`icon-512`, `icon-512-dark`, `mark-glyph`) | 완료 |
-| **I2** | 크기 세트 16–256 + `CloneUp.ico` | 완료 |
-| **I3** | 런타임 `setWindowIcon` (창/작업표시줄) | 완료 |
+| **I1** | 마스터 자산 (`icon-512`, `icon-512-dark`, `mark-glyph`) | **차단** — 원본 비트맵 부재, 플레이스홀더만 있음 |
+| **I2** | 크기 세트 16–256 + `CloneUp.ico` (마스터 파생) | 파이프라인 준비 · 원본 대기 |
+| **I3** | 런타임 `setWindowIcon` (창/작업표시줄) | 완료 (플레이스홀더 연결) |
 | **I4** | (선택) About 등 UI 내 마크 | 대기 |
 | **I5** | exe 패키징 아이콘 연동 | 대기 |
-| **I6** | 문서·경로 정리 | 대기 |
+| **I6** | 문서·경로 정리 | 진행 (`ICON_CROSS_VERIFY.md`) |
 
-자산 경로: `assets/icons/` (앱 로드) · 시안 미리보기용 `desin/icon/assets/` 동기화 가능  
-생성 스크립트: `scripts/generate_icons.py`
+자산 경로: `assets/icons/` (앱) · `assets/icons/masters/` (**원본 export**) · `desin/icon/assets/` 미러  
+생성: `scripts/generate_icons.py` (기본=마스터 파생만, `--invent-placeholder` 는 임시)  
+교차검증: `docs/ICON_CROSS_VERIFY.md`
 
 각 단계 후: 앱 기동 → 탭 전환 → 버튼 가독성 확인 → 필요 시 커밋.
