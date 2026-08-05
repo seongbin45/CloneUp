@@ -25,13 +25,6 @@
        </widget>
       </item>
       <item>
-       <widget class="QLabel" name="labelStatusAuth">
-        <property name="text">
-         <string>GitHub: (확인 전)</string>
-        </property>
-       </widget>
-      </item>
-      <item>
        <spacer name="horizontalSpacerStatus">
         <property name="orientation">
          <enum>Qt::Orientation::Horizontal</enum>
@@ -43,6 +36,22 @@
          </size>
         </property>
        </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnAuthStatus">
+        <property name="text">
+         <string>GitHub: (확인 전)</string>
+        </property>
+        <property name="flat">
+         <bool>false</bool>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>280</width>
+          <height>32</height>
+         </size>
+        </property>
+       </widget>
       </item>
      </layout>
     </item>
@@ -191,19 +200,6 @@
             <property name="minimumSize">
              <size>
               <width>100</width>
-              <height>36</height>
-             </size>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="btnLogin">
-            <property name="text">
-             <string>GitHub 로그인</string>
-            </property>
-            <property name="minimumSize">
-             <size>
-              <width>120</width>
               <height>36</height>
              </size>
             </property>

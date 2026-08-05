@@ -40,7 +40,7 @@
 | objectName | 종류 | 용도 |
 |------------|------|------|
 | `labelStatusGit` | QLabel | Git 설치 여부 |
-| `labelStatusAuth` | QLabel | 로그인 상태 |
+| `btnAuthStatus` | QPushButton | `AuthStatusButton` — 미로그인/로그인됨 표시 + 클릭 로그인 |
 | `tabWidget` | QTabWidget | 탭 컨테이너 |
 | `tabPublish` | QWidget | Publish 탭 |
 | `editFolder` | QLineEdit | 로컬 폴더 경로 |

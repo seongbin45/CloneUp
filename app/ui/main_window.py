@@ -20,10 +20,10 @@ from PySide6.QtWidgets import (
     QRadioButton,
 )
 
-from app.auth.token_store import has_scope, load_scope, load_token
 from app.git.runner import GitError, require_git
 from app.git.safety import run_safety_checks
 from app.git.url_utils import UrlError, normalize_github_clone_url
+from app.ui.auth_status import AuthStatusButton
 from app.ui.publish_worker import LoginWorker, PublishWorker
 from app.ui.settings_store import (
     load_last_commit_message,
@@ -34,7 +34,6 @@ from app.ui.settings_store import (
     save_last_private,
 )
 from app.ui.tab_workers import CloneWorker, SyncActionWorker, SyncStatusWorker
-from app.util.log_mask import mask_token
 
 _UI_PATH = Path(__file__).resolve().parents[2] / "ui" / "main_window.ui"
 
@@ -72,10 +71,12 @@ class MainController(QObject):
 
         # --- shared ---
         self.labelStatusGit = window.findChild(QLabel, "labelStatusGit")
-        self.labelStatusAuth = window.findChild(QLabel, "labelStatusAuth")
         self.textLog = window.findChild(QPlainTextEdit, "textLog")
-        self.btnLogin = window.findChild(QPushButton, "btnLogin")
         self.btnCancel = window.findChild(QPushButton, "btnCancel")
+        btn_auth = window.findChild(QPushButton, "btnAuthStatus")
+        if btn_auth is None:
+            raise RuntimeError("btnAuthStatus 위젯 없음 — UI에 상태형 로그인 버튼이 필요합니다")
+        self.auth_status = AuthStatusButton(btn_auth, parent=self)
 
         # --- publish ---
         self.editFolder = window.findChild(QLineEdit, "editFolder")
@@ -130,7 +131,6 @@ class MainController(QObject):
         for w in (
             self.btnPublish,
             self.btnBrowseFolder,
-            self.btnLogin,
             self.comboRecent,
             self.editFolder,
             self.editRepoName,
@@ -141,6 +141,7 @@ class MainController(QObject):
         ):
             if w is not None:
                 w.setEnabled(not busy)
+        self.auth_status.set_enabled(not busy)
         if self.btnPublish is not None:
             self.btnPublish.setText(
                 "올리는 중…" if busy else "GitHub에 만들고 올리기"
@@ -202,8 +203,7 @@ class MainController(QObject):
             self.btnPublish.clicked.connect(self.on_publish)
         if self.btnCancel:
             self.btnCancel.clicked.connect(self.on_cancel)
-        if self.btnLogin:
-            self.btnLogin.clicked.connect(self.on_login)
+        self.auth_status.login_requested.connect(self.on_login)
         if self.editFolder:
             self.editFolder.editingFinished.connect(self._maybe_fill_repo_name)
         if self.comboRecent:
@@ -267,14 +267,7 @@ class MainController(QObject):
                 self.labelStatusGit.setText(f"Git: {ver[0]}.{ver[1]}.{ver[2]}")
             except GitError:
                 self.labelStatusGit.setText("Git: 없음")
-        if self.labelStatusAuth is not None:
-            token = load_token()
-            if not token:
-                self.labelStatusAuth.setText("GitHub: 미로그인")
-            elif has_scope("repo"):
-                self.labelStatusAuth.setText(f"GitHub: 로그인 (scope={load_scope()!r})")
-            else:
-                self.labelStatusAuth.setText(f"GitHub: 권한 부족 ({load_scope()!r})")
+        self.auth_status.refresh()
 
     # ----- publish -----
     @Slot()
@@ -329,9 +322,12 @@ class MainController(QObject):
 
     @Slot(dict)
     def _on_login_ok(self, info: dict) -> None:
-        self._log(f"로그인 완료: {info.get('login')} {info.get('token_masked')}")
+        login = info.get("login") or ""
+        self.auth_status.set_login_name(str(login) if login else None)
+        self.auth_status.refresh()
+        self._log(f"로그인 완료: {login} {info.get('token_masked')}")
         QMessageBox.information(
-            self.window, "로그인 완료", f"{info.get('login')}\nscope={info.get('scope')!r}"
+            self.window, "로그인 완료", f"{login}\nscope={info.get('scope')!r}"
         )
 
     @Slot(str)

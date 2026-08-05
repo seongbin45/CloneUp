@@ -56,3 +56,14 @@ def load_last_commit_message() -> str:
 def save_last_commit_message(msg: str) -> None:
     if msg.strip():
         _settings().setValue("last_commit_message", msg.strip())
+
+
+def load_last_github_login() -> str | None:
+    val = _settings().value("last_github_login", "")
+    s = str(val).strip() if val else ""
+    return s or None
+
+
+def save_last_github_login(login: str) -> None:
+    if login.strip():
+        _settings().setValue("last_github_login", login.strip())
