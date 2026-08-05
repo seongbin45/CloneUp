@@ -150,6 +150,20 @@ class MainController(QObject):
         self._load_prefs()
         self._refresh_status_bar()
         self._log("CloneUp — 만들고 올리기 / 받기 / 동기화 탭 사용 가능")
+        # DG1 — first-run Git check (plan D): after UI is up
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, self._ensure_git_bootstrap)
+
+    def _ensure_git_bootstrap(self) -> None:
+        """Plan D / DG1: if Git missing, offer download page or winget install."""
+        from app.git.bootstrap import probe_git
+        from app.ui.git_setup import ensure_git_or_offer_setup
+
+        if probe_git().ok:
+            return
+        ensure_git_or_offer_setup(self.window, log=self._log)
+        self._refresh_status_bar()
 
     def _install_tab_tip_cards(self) -> None:
         """G1/G2 — collapsible tip cards (folded by default to save space)."""
