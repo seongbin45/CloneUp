@@ -355,10 +355,19 @@ class MainController(QObject):
 
     @Slot()
     def on_cancel(self) -> None:
-        if not self._busy():
-            return
+        """Cancel login / publish / clone / sync worker and close code popup."""
         self._log("취소 요청…")
-        self._worker.requestInterruption()
+        # Close popup immediately so the UI feels responsive.
+        if self._device_overlay is not None:
+            self._device_overlay.set_waiting_message(
+                "취소 중… 잠시만 기다려 주세요."
+            )
+        w = self._worker
+        if w is not None and w.isRunning():
+            w.requestInterruption()
+        else:
+            # No worker — still dismiss overlay if any
+            self._close_device_overlay()
 
     @Slot()
     def on_login(self) -> None:

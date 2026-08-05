@@ -23,6 +23,13 @@ class DeviceFlowError(Exception):
     """Device Flow failed in a way the user should see."""
 
 
+class DeviceFlowCancelled(DeviceFlowError):
+    """User cancelled login (UI or interruption)."""
+
+    def __init__(self, message: str = "로그인이 취소되었습니다.") -> None:
+        super().__init__(message)
+
+
 @dataclass(frozen=True)
 class DeviceCodeResponse:
     device_code: str
@@ -88,6 +95,20 @@ def request_device_code(client_id: str, scope: str) -> DeviceCodeResponse:
     )
 
 
+def _interruptible_sleep(
+    seconds: float,
+    *,
+    should_cancel: Callable[[], bool] | None = None,
+    slice_s: float = 0.25,
+) -> None:
+    """Sleep in short slices so UI cancel can stop polling quickly."""
+    end = time.monotonic() + max(0.0, seconds)
+    while time.monotonic() < end:
+        if should_cancel and should_cancel():
+            raise DeviceFlowCancelled()
+        time.sleep(min(slice_s, end - time.monotonic()))
+
+
 def poll_for_token(
     client_id: str,
     device_code: str,
@@ -95,17 +116,22 @@ def poll_for_token(
     expires_in: int,
     *,
     on_pending: Callable[[float], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> TokenResponse:
     """
-    Poll until token or timeout.
+    Poll until token, timeout, or cancel.
 
     on_pending(seconds_remaining) is called before each sleep while waiting.
     Handles slow_down by increasing the poll interval (+5s per GitHub guidance).
+    should_cancel() → DeviceFlowCancelled when the user aborts in the UI.
     """
     deadline = time.monotonic() + expires_in
     sleep_s = interval
 
     while time.monotonic() < deadline:
+        if should_cancel and should_cancel():
+            raise DeviceFlowCancelled()
+
         resp = requests.post(
             ACCESS_TOKEN_URL,
             headers=DEFAULT_HEADERS,
@@ -135,14 +161,14 @@ def poll_for_token(
         if err == "authorization_pending":
             if on_pending:
                 on_pending(remaining)
-            time.sleep(sleep_s)
+            _interruptible_sleep(sleep_s, should_cancel=should_cancel)
             continue
         if err == "slow_down":
             # GitHub: increase interval when rate-limited on polling.
             sleep_s += 5
             if on_pending:
                 on_pending(remaining)
-            time.sleep(sleep_s)
+            _interruptible_sleep(sleep_s, should_cancel=should_cancel)
             continue
         if err == "expired_token":
             raise DeviceFlowError("인증 코드가 만료되었습니다. 다시 실행하세요.")
@@ -204,6 +230,7 @@ def run_device_flow(
     open_browser: bool = True,
     copy_code: bool = True,
     on_user_code: Callable[[str, str, int], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> TokenResponse:
     """
     Full Device Flow: code → browser → poll → access token.
@@ -213,9 +240,18 @@ def run_device_flow(
         GUI should emit a Qt signal from here to show a modal on the UI thread.
         When provided, GUI typically sets open_browser=False and copy_code=False
         so the dialog can open the browser and copy on the main thread.
+
+    should_cancel():
+        Polled during waits; raise DeviceFlowCancelled when True (UI cancel).
     """
+    if should_cancel and should_cancel():
+        raise DeviceFlowCancelled()
+
     dc = request_device_code(client_id, scope)
     open_url = verification_open_url(dc.verification_uri, dc.user_code)
+
+    if should_cancel and should_cancel():
+        raise DeviceFlowCancelled()
 
     if on_user_code is not None:
         on_user_code(dc.user_code, dc.verification_uri, dc.expires_in)
@@ -281,4 +317,5 @@ def run_device_flow(
         dc.interval,
         dc.expires_in,
         on_pending=_pending,
+        should_cancel=should_cancel,
     )

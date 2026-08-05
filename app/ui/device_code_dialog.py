@@ -165,7 +165,8 @@ class DeviceCodeOverlay(QWidget):
 
         btn_cancel = QPushButton("로그인 취소", card)
         btn_cancel.setObjectName("btnCancel")
-        btn_cancel.clicked.connect(self.cancelled.emit)
+        btn_cancel.setEnabled(True)
+        btn_cancel.clicked.connect(self._on_cancel_clicked)
 
         row = QHBoxLayout()
         row.addWidget(btn_copy)
@@ -231,3 +232,14 @@ class DeviceCodeOverlay(QWidget):
             )
         except Exception as e:
             self._status.setText(f"브라우저 열기 실패: {e}")
+
+    def _on_cancel_clicked(self) -> None:
+        self._status.setText("취소 중…")
+        # Disable double-clicks while worker winds down
+        for child in self.findChildren(QPushButton):
+            if child.objectName() == "btnCancel":
+                child.setEnabled(False)
+        self.cancelled.emit()
+
+    def set_waiting_message(self, text: str) -> None:
+        self._status.setText(text)

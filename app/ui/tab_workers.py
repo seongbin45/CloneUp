@@ -85,6 +85,7 @@ class CloneWorker(QThread):
                         open_browser=False,
                         copy_code=False,
                         on_user_code=on_user_code,
+                        should_cancel=self.isInterruptionRequested,
                     )
                     self._log(f"로그인: {user.get('login')} · {mask_token(token)}")
                 if self.isInterruptionRequested():
@@ -182,6 +183,7 @@ class SyncActionWorker(QThread):
                     open_browser=False,
                     copy_code=False,
                     on_user_code=on_user_code,
+                    should_cancel=self.isInterruptionRequested,
                 )
                 if self.action == "pull":
                     self._log("pull…")

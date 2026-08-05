@@ -78,9 +78,10 @@ class LoginWorker(QThread):
                     open_browser=False,
                     copy_code=False,
                     on_user_code=on_user_code,
+                    should_cancel=self.isInterruptionRequested,
                 )
                 if self.isInterruptionRequested():
-                    self.failed.emit("취소됨")
+                    self.failed.emit("로그인이 취소되었습니다.")
                     return
                 self.succeeded.emit(
                     {
@@ -90,7 +91,11 @@ class LoginWorker(QThread):
                     }
                 )
         except AuthError as e:
-            self.failed.emit(f"인증 실패: {e}")
+            msg = str(e)
+            if "취소" in msg:
+                self.failed.emit(msg)
+            else:
+                self.failed.emit(f"인증 실패: {e}")
         except OSError as e:
             self.failed.emit(f"네트워크: {e}")
         except Exception as e:
@@ -165,14 +170,13 @@ class PublishWorker(QThread):
             self._log("인증 확인 (필요 시 Device Flow + 코드 팝업)…")
 
             def on_user_code(code: str, uri: str, expires_in: int) -> None:
-                # Re-use LoginWorker signal name via duck-typing on PublishWorker
-                if hasattr(self, "user_code_ready"):
-                    self.user_code_ready.emit(code, uri, int(expires_in))  # type: ignore[attr-defined]
+                self.user_code_ready.emit(code, uri, int(expires_in))
 
             token, user = ensure_valid_token(
                 open_browser=False,
                 copy_code=False,
                 on_user_code=on_user_code,
+                should_cancel=self.isInterruptionRequested,
             )
             self._log(f"로그인: {user.get('login')} · scope={load_scope()!r}")
             self._log(f"토큰: {mask_token(token)}")

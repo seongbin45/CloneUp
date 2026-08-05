@@ -25,6 +25,7 @@ def login_device_flow(
     copy_code: bool = True,
     scopes: str | None = None,
     on_user_code=None,
+    should_cancel=None,
 ) -> str:
     """Run Device Flow, store token+scope, return access token."""
     client_id = get_github_client_id()
@@ -36,6 +37,7 @@ def login_device_flow(
             open_browser=open_browser,
             copy_code=copy_code,
             on_user_code=on_user_code,
+            should_cancel=should_cancel,
         )
     except DeviceFlowError as e:
         raise AuthError(str(e)) from e
@@ -53,6 +55,7 @@ def ensure_valid_token(
     copy_code: bool = True,
     scopes: str | None = None,
     on_user_code=None,
+    should_cancel=None,
 ) -> tuple[str, dict]:
     """
     Return (access_token, user_json).
@@ -64,6 +67,7 @@ def ensure_valid_token(
         open_browser=open_browser,
         copy_code=copy_code,
         on_user_code=on_user_code,
+        should_cancel=should_cancel,
     )
 
     if force_login:
