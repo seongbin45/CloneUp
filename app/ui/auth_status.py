@@ -1,4 +1,4 @@
-"""GitHub auth status control — shows 미로그인/로그인됨 and triggers login on click."""
+"""GitHub auth status control — status-row style (design Phase 2)."""
 
 from __future__ import annotations
 
@@ -9,16 +9,7 @@ from PySide6.QtWidgets import QPushButton
 
 from app.auth.token_store import has_scope, load_scope, load_token
 from app.ui.settings_store import load_last_github_login, save_last_github_login
-from app.ui.theme import (
-    BORDER_INPUT,
-    DANGER,
-    PRIMARY,
-    SUCCESS_DOT,
-    TEXT,
-    TEXT_ON_PRIMARY,
-    TEXT_SECONDARY,
-    WARN_DOT,
-)
+from app.ui.theme import PRIMARY, SUCCESS_DOT, TEXT_SECONDARY, WARN_DOT
 from app.util.log_mask import mask_token
 
 
@@ -28,37 +19,40 @@ class AuthState(Enum):
     SCOPE_INSUFFICIENT = "scope_insufficient"
 
 
-def _style(bg: str, fg: str, border: str) -> str:
+def _dot_style(dot_color: str, text_color: str = TEXT_SECONDARY) -> str:
+    """Status-row look: no heavy button chrome (matches desin mock)."""
     return f"""
-    QPushButton {{
-        text-align: left;
-        padding: 6px 12px;
-        border: 1px solid {border};
-        border-radius: 6px;
-        background: {bg};
-        color: {fg};
-        font-weight: 500;
+    QPushButton#btnAuthStatus {{
+        background: transparent;
+        border: none;
+        color: {text_color};
         font-size: 12.5px;
+        font-weight: 500;
+        padding: 2px 4px;
+        text-align: left;
+        min-height: 0;
     }}
-    QPushButton:hover {{
-        background: {bg};
-        color: {fg};
-        border-color: {PRIMARY};
+    QPushButton#btnAuthStatus:hover {{
+        color: {PRIMARY};
+        background: transparent;
+        border: none;
     }}
-    QPushButton:disabled {{
+    QPushButton#btnAuthStatus:disabled {{
         color: #b3ac9e;
-        border-color: #ddd8d0;
-        background: #f2efe9;
+        background: transparent;
+        border: none;
     }}
+    /* Dot color is part of the label text (●) — keep fg readable */
     """
 
 
 class AuthStatusButton(QObject):
     """
-    Owns a QPushButton in the status bar.
+    Status-bar GitHub control (click to login / re-login).
 
-    - 미로그인 → 클릭 시 로그인 요청
-    - 로그인됨 → 상태 표시, 클릭 시 재로그인 요청
+    Design copy:
+      logged out → ● GitHub: 로그인 필요
+      logged in  → ● GitHub: 로그인됨 (user)
     """
 
     login_requested = Signal()
@@ -66,6 +60,7 @@ class AuthStatusButton(QObject):
     def __init__(self, button: QPushButton, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.button = button
+        self.button.setObjectName("btnAuthStatus")
         self._state = AuthState.LOGGED_OUT
         self._login: str | None = load_last_github_login()
         self.button.clicked.connect(self._on_clicked)
@@ -89,30 +84,36 @@ class AuthStatusButton(QObject):
         scope = load_scope()
         if not token:
             self._state = AuthState.LOGGED_OUT
-            self.button.setText("GitHub: 미로그인  ·  클릭하여 로그인")
-            # Warm paper + amber accent (design warn)
-            self.button.setStyleSheet(_style("#fff8e8", TEXT_SECONDARY, WARN_DOT))
-            self.button.setToolTip("Device Flow로 GitHub에 로그인합니다.")
+            # Amber status (design authDot when logged out)
+            self.button.setText(f"●  GitHub: 로그인 필요")
+            self.button.setStyleSheet(
+                _dot_style(WARN_DOT) + f" QPushButton#btnAuthStatus {{ color: {TEXT_SECONDARY}; }}"
+            )
+            # Color the bullet via rich-ish unicode; keep plain text for reliability
+            self.button.setToolTip("클릭하여 GitHub 로그인 (Device Flow)")
             return
 
         if has_scope("repo"):
             self._state = AuthState.LOGGED_IN
-            who = self._login or "로그인됨"
-            self.button.setText(f"GitHub: {who}  ·  로그인됨  ·  클릭하여 재로그인")
-            self.button.setStyleSheet(_style("#eef6f2", TEXT_SECONDARY, SUCCESS_DOT))
+            who = self._login or "계정"
+            self.button.setText(f"●  GitHub: 로그인됨 ({who})")
+            self.button.setStyleSheet(
+                _dot_style(SUCCESS_DOT)
+                + f" QPushButton#btnAuthStatus {{ color: {TEXT_SECONDARY}; }}"
+            )
             self.button.setToolTip(
-                f"scope={scope!r}\n토큰={mask_token(token)}\n클릭하면 다시 로그인합니다."
+                f"scope={scope!r}\n토큰={mask_token(token)}\n클릭하면 재로그인합니다."
             )
             return
 
         self._state = AuthState.SCOPE_INSUFFICIENT
         who = self._login or "계정"
-        self.button.setText(
-            f"GitHub: {who}  ·  권한 부족 ({scope!r})  ·  클릭하여 재로그인"
+        self.button.setText(f"●  GitHub: 권한 부족 ({who})")
+        self.button.setStyleSheet(
+            _dot_style(WARN_DOT) + f" QPushButton#btnAuthStatus {{ color: {TEXT_SECONDARY}; }}"
         )
-        self.button.setStyleSheet(_style("#fff8e8", TEXT_SECONDARY, WARN_DOT))
         self.button.setToolTip(
-            "비공개 저장소 등에 repo 권한이 필요합니다. 클릭하여 다시 승인하세요."
+            f"현재 scope={scope!r}. repo 권한이 필요합니다. 클릭하여 재로그인."
         )
 
     def _on_clicked(self) -> None:

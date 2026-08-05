@@ -224,4 +224,36 @@ def app_stylesheet() -> str:
         color: {TEXT_FAINT};
         border-top: 1px solid {BORDER_SOFT};
     }}
+
+    /* Phase 2 — top status row (design: Git + GitHub dots) */
+    QWidget#statusBarFrame {{
+        background-color: {BG_WINDOW};
+        border-bottom: 1px solid {BORDER_DIVIDER};
+    }}
+    QLabel#labelStatusGit {{
+        color: {TEXT_SECONDARY};
+        font-size: 12.5px;
+        padding: 0;
+        background: transparent;
+    }}
+    QPushButton#btnAuthStatus {{
+        background: transparent;
+        border: none;
+        color: {TEXT_SECONDARY};
+        font-size: 12.5px;
+        font-weight: 500;
+        padding: 2px 4px;
+        text-align: left;
+        min-height: 0;
+    }}
+    QPushButton#btnAuthStatus:hover {{
+        color: {PRIMARY};
+        background: transparent;
+        border: none;
+    }}
+    QPushButton#btnAuthStatus:disabled {{
+        color: {TEXT_DISABLED};
+        background: transparent;
+        border: none;
+    }}
     """

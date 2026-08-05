@@ -311,12 +311,21 @@ class MainController(QObject):
         self.comboRecent.blockSignals(False)
 
     def _refresh_status_bar(self) -> None:
+        # Design: green status dot + "Git: x.y.z" (desin status row)
         if self.labelStatusGit is not None:
             try:
                 _e, ver = require_git()
-                self.labelStatusGit.setText(f"Git: {ver[0]}.{ver[1]}.{ver[2]}")
+                self.labelStatusGit.setText(
+                    f"●  Git: {ver[0]}.{ver[1]}.{ver[2]}"
+                )
+                self.labelStatusGit.setStyleSheet(
+                    "color: #4a453b; font-size: 12.5px;"
+                )
             except GitError:
-                self.labelStatusGit.setText("Git: 없음")
+                self.labelStatusGit.setText("●  Git: 없음")
+                self.labelStatusGit.setStyleSheet(
+                    "color: #8b8477; font-size: 12.5px;"
+                )
         self.auth_status.refresh()
 
     # ----- publish -----
