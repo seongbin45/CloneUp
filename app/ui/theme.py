@@ -256,4 +256,57 @@ def app_stylesheet() -> str:
         background: transparent;
         border: none;
     }}
+
+    /* Phase 3 — form label grid (~92px, design mock) */
+    QLabel#labelFolder,
+    QLabel#labelRecent,
+    QLabel#labelRepoName,
+    QLabel#labelCommitMessage,
+    QLabel#labelCloneUrl,
+    QLabel#labelCloneParent,
+    QLabel#labelCloneDirName,
+    QLabel#labelSyncFolder,
+    QLabel#labelSyncMessage {{
+        min-width: 92px;
+        max-width: 92px;
+        color: {TEXT_SECONDARY};
+        font-size: 13px;
+        padding-right: 4px;
+    }}
+    QCheckBox#checkAllowSecrets,
+    QCheckBox#checkCloneUseToken,
+    QCheckBox#checkSyncAllowSecrets {{
+        margin-left: 102px;
+        color: {TEXT_FAINT};
+        font-size: 12.5px;
+    }}
+    QCheckBox#checkCloneUseToken {{
+        color: {TEXT_SECONDARY};
+    }}
+    QLabel#labelCloneHint {{
+        background: {BG_HINT};
+        color: {TEXT_MUTED};
+        border-left: 3px solid {WARN_DOT};
+        border-radius: 0 5px 5px 0;
+        padding: 11px 13px;
+        font-size: 12.5px;
+        margin-left: 102px;
+    }}
+    QLabel#labelSyncStatus {{
+        background: {BG_MUTED};
+        color: {TEXT_MUTED};
+        border-radius: 5px;
+        padding: 8px 13px;
+        margin-left: 102px;
+        font-size: 12px;
+    }}
+    QLabel#labelLogTitle {{
+        color: {TEXT_SECONDARY};
+        font-size: 12px;
+        font-weight: 600;
+    }}
+    QLabel#labelLogHint {{
+        color: {TEXT_FAINT};
+        font-size: 11.5px;
+    }}
     """

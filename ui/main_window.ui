@@ -15,6 +15,21 @@
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
+    <property name="spacing">
+     <number>0</number>
+    </property>
+    <property name="leftMargin">
+     <number>0</number>
+    </property>
+    <property name="topMargin">
+     <number>0</number>
+    </property>
+    <property name="rightMargin">
+     <number>0</number>
+    </property>
+    <property name="bottomMargin">
+     <number>0</number>
+    </property>
     <item>
      <widget class="QWidget" name="statusBarFrame">
       <property name="minimumSize">
@@ -88,12 +103,33 @@
         <string>만들고 올리기</string>
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayoutPublish">
+        <property name="spacing">
+         <number>16</number>
+        </property>
+        <property name="leftMargin">
+         <number>24</number>
+        </property>
+        <property name="topMargin">
+         <number>26</number>
+        </property>
+        <property name="rightMargin">
+         <number>24</number>
+        </property>
+        <property name="bottomMargin">
+         <number>22</number>
+        </property>
         <item>
          <layout class="QHBoxLayout" name="folderLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QLabel" name="labelFolder">
             <property name="text">
              <string>로컬 폴더</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
             </property>
            </widget>
           </item>
@@ -115,10 +151,16 @@
         </item>
         <item>
          <layout class="QHBoxLayout" name="recentLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QLabel" name="labelRecent">
             <property name="text">
              <string>최근 폴더</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
             </property>
            </widget>
           </item>
@@ -139,10 +181,16 @@
         </item>
         <item>
          <layout class="QHBoxLayout" name="repoLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QLabel" name="labelRepoName">
             <property name="text">
              <string>저장소 이름</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
             </property>
            </widget>
           </item>
@@ -174,10 +222,16 @@
         </item>
         <item>
          <layout class="QHBoxLayout" name="messageLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QLabel" name="labelCommitMessage">
             <property name="text">
              <string>커밋 메시지</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
             </property>
            </widget>
           </item>
@@ -250,12 +304,33 @@
         <string>받기</string>
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayoutClone">
+        <property name="spacing">
+         <number>16</number>
+        </property>
+        <property name="leftMargin">
+         <number>24</number>
+        </property>
+        <property name="topMargin">
+         <number>26</number>
+        </property>
+        <property name="rightMargin">
+         <number>24</number>
+        </property>
+        <property name="bottomMargin">
+         <number>22</number>
+        </property>
         <item>
          <layout class="QHBoxLayout" name="cloneUrlLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QLabel" name="labelCloneUrl">
             <property name="text">
              <string>GitHub 주소</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
             </property>
            </widget>
           </item>
@@ -269,11 +344,27 @@
          </layout>
         </item>
         <item>
+         <widget class="QLabel" name="labelCloneHint">
+          <property name="text">
+           <string>저장소 루트 주소를 붙여넣으세요. /tree/main 이 붙은 주소는 자동으로 정리됩니다.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
          <layout class="QHBoxLayout" name="cloneParentLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QLabel" name="labelCloneParent">
             <property name="text">
              <string>저장 위치</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
             </property>
            </widget>
           </item>
@@ -295,10 +386,16 @@
         </item>
         <item>
          <layout class="QHBoxLayout" name="cloneDirNameLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QLabel" name="labelCloneDirName">
             <property name="text">
              <string>폴더 이름</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
             </property>
            </widget>
           </item>
@@ -368,12 +465,33 @@
         <string>동기화</string>
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayoutSync">
+        <property name="spacing">
+         <number>16</number>
+        </property>
+        <property name="leftMargin">
+         <number>24</number>
+        </property>
+        <property name="topMargin">
+         <number>26</number>
+        </property>
+        <property name="rightMargin">
+         <number>24</number>
+        </property>
+        <property name="bottomMargin">
+         <number>22</number>
+        </property>
         <item>
          <layout class="QHBoxLayout" name="syncFolderLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QLabel" name="labelSyncFolder">
             <property name="text">
              <string>로컬 저장소</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
             </property>
            </widget>
           </item>
@@ -412,10 +530,16 @@
         </item>
         <item>
          <layout class="QHBoxLayout" name="syncMessageLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QLabel" name="labelSyncMessage">
             <property name="text">
              <string>커밋 메시지</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
             </property>
            </widget>
           </item>
@@ -437,17 +561,20 @@
         </item>
         <item>
          <layout class="QHBoxLayout" name="syncButtonLayout">
-          <item>
-           <widget class="QPushButton" name="btnSyncPull">
-            <property name="text">
-             <string>받아오기 (pull)</string>
-            </property>
-           </widget>
-          </item>
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QPushButton" name="btnSyncPush">
             <property name="text">
              <string>올리고 보내기 (commit+push)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnSyncPull">
+            <property name="text">
+             <string>받아오기 (pull)</string>
             </property>
            </widget>
           </item>
