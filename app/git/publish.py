@@ -96,17 +96,21 @@ def assert_git_config_has_no_token(folder: Path, token: str) -> None:
 
 def _write_credential_file(token: str) -> str:
     """
-    git-credential-store format (one line):
-      https://x-access-token:TOKEN@github.com
+    git-credential-store format (one line).
 
-    Use mkstemp (system temp). Path must be safe for git -c on Windows:
-    forward slashes, no unescaped spaces issues when passed as single -c value.
+    Trailing slash after host is required for reliable matching on Windows Git
+    (credential fill fails without it; see spike verification):
+
+      https://x-access-token:TOKEN@github.com/
+
+    Use mkstemp (system temp). Path is passed to git as posix path inside a
+    single -c value so backslashes never break parsing.
     """
     fd, path = tempfile.mkstemp(prefix="cloneup-git-cred-", suffix=".txt")
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             # username x-access-token is GitHub's documented HTTPS token auth form
-            f.write(f"https://x-access-token:{token}@github.com\n")
+            f.write(f"https://x-access-token:{token}@github.com/\n")
     except Exception:
         try:
             os.unlink(path)
