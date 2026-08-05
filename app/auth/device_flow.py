@@ -7,8 +7,6 @@ import time
 import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
-from urllib.parse import quote
-
 import requests
 
 DEVICE_CODE_URL = "https://github.com/login/device/code"
