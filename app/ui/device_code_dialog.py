@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 import webbrowser
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QGuiApplication
+from PySide6.QtCore import QEvent, QRect, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -35,20 +35,16 @@ from app.ui.theme import (
     WARN_DOT,
 )
 
-
-def _host_widget(parent: QWidget) -> QWidget:
-    """Prefer central widget so the dim covers tabs + form + log."""
-    if isinstance(parent, QMainWindow) and parent.centralWidget() is not None:
-        return parent.centralWidget()
-    return parent
+# Dim color (not relying only on QSS rgba, which can clip oddly on maximize)
+_DIM = QColor(15, 18, 22, 170)
 
 
 class DeviceCodeOverlay(QWidget):
     """
-    Full-area dim overlay + centered card with copyable user code.
+    Full-window dim overlay + centered code card.
 
-    Tracks parent resizes (including maximize) so geometry stays correct.
-    Non-blocking (show()) so the login QThread can keep polling.
+    Parented to QMainWindow (not only centralWidget) so maximize covers
+    the entire client area. Geometry is re-synced on every resize/state change.
     """
 
     cancelled = Signal()
@@ -61,23 +57,26 @@ class DeviceCodeOverlay(QWidget):
         verification_uri: str,
         expires_in: int,
     ) -> None:
-        host = _host_widget(parent)
-        super().__init__(host)
-        self._host = host
+        # Always attach to top-level main window so we cover status + tabs + log
+        main = parent
+        while main is not None and not isinstance(main, QMainWindow):
+            main = main.parentWidget()
+        if main is None:
+            main = parent
+
+        super().__init__(main)
+        self._main = main
         self._user_code = str(user_code)
-        self._verification_uri = str(verification_uri)
         self._deadline = time.monotonic() + max(1, int(expires_in))
         self._open_url = verification_open_url(verification_uri, user_code)
 
         self.setObjectName("deviceCodeOverlay")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        # Cover children of host; intercept mouse so form is not clicked under dim
-        self.setAttribute(Qt.WidgetAttribute.WA_NoMouseReplay, True)
-        self.setStyleSheet(
-            "#deviceCodeOverlay { background-color: rgba(15, 18, 22, 160); }"
-        )
+        # Paint dim ourselves — more reliable than stylesheet on Windows maximize
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
+        self.setAutoFillBackground(False)
 
-        # --- card ---
+        # --- card (fixed width, height by content) ---
         card = QFrame()
         card.setObjectName("deviceCodeCard")
         card.setFixedWidth(440)
@@ -205,9 +204,7 @@ class DeviceCodeOverlay(QWidget):
         lay.addLayout(row)
         lay.addWidget(btn_cancel)
 
-        self._card = card
-
-        # Layout keeps card centered on any size (maximize / restore)
+        # Center card with stretches — independent of absolute host size
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -219,8 +216,8 @@ class DeviceCodeOverlay(QWidget):
         root.addLayout(mid)
         root.addStretch(1)
 
-        # Follow host size changes (maximize sends Resize on host, not always on us)
-        self._host.installEventFilter(self)
+        # Track main window size (maximize / restore / drag-resize)
+        self._main.installEventFilter(self)
         self.sync_geometry()
 
         self._tick = QTimer(self)
@@ -231,13 +228,29 @@ class DeviceCodeOverlay(QWidget):
         QTimer.singleShot(0, self._copy_code)
         QTimer.singleShot(50, self._open_browser)
 
+    # ----- geometry -----
+    def _client_rect(self) -> QRect:
+        """Full client area of the main window (everything inside the frame)."""
+        return self._main.rect()
+
+    def sync_geometry(self) -> None:
+        r = self._client_rect()
+        # Geometry is relative to parent (main window)
+        self.setGeometry(0, 0, max(1, r.width()), max(1, r.height()))
+        self.raise_()
+        self.update()
+
     def eventFilter(self, obj, event):  # noqa: N802
-        if obj is self._host and event.type() in (
-            QEvent.Type.Resize,
-            QEvent.Type.Show,
-            QEvent.Type.LayoutRequest,
-        ):
-            self.sync_geometry()
+        if obj is self._main:
+            et = event.type()
+            if et in (
+                QEvent.Type.Resize,
+                QEvent.Type.Show,
+                QEvent.Type.LayoutRequest,
+                QEvent.Type.WindowStateChange,
+            ):
+                # Defer one tick so maximize layout settles
+                QTimer.singleShot(0, self.sync_geometry)
         return False
 
     def showEvent(self, event) -> None:  # noqa: N802
@@ -245,20 +258,17 @@ class DeviceCodeOverlay(QWidget):
         self.sync_geometry()
         self.raise_()
 
-    def sync_geometry(self) -> None:
-        """Cover the entire host (tabs + form + log), even after maximize."""
-        if self._host is None:
-            return
-        # Use contents rect so we match client area after layout
-        r = self._host.rect()
-        self.setGeometry(0, 0, r.width(), r.height())
-        self.raise_()
-
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        # Card is layout-managed; just keep on top
         self.raise_()
 
+    def paintEvent(self, event) -> None:  # noqa: N802
+        # Full-rect dim — avoids QSS background clipping on maximize
+        p = QPainter(self)
+        p.fillRect(self.rect(), _DIM)
+        p.end()
+
+    # ----- actions -----
     def _update_timer(self) -> None:
         left = self._deadline - time.monotonic()
         if left <= 0:
