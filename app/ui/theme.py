@@ -1,0 +1,227 @@
+"""
+CloneUp design tokens — from desin/CloneUp Window.dc.html
+
+Warm paper UI + teal accent. Use these constants everywhere (QSS, dialogs)
+so colors stay unified.
+"""
+
+from __future__ import annotations
+
+# --- Surfaces ---
+BG_APP = "#e8e6e1"  # window chrome / outside (if shown)
+BG_WINDOW = "#fbfaf8"  # main content
+BG_BAR = "#f2efe9"  # title / tab rail
+BG_INPUT = "#ffffff"
+BG_MUTED = "#f2efe9"
+BG_HINT = "#f4f1e8"
+BG_LOG = "#2c2925"
+
+# --- Borders ---
+BORDER = "#c9c5bd"
+BORDER_SOFT = "#ddd8d0"
+BORDER_INPUT = "#cdc8bf"
+BORDER_DIVIDER = "#e6e1d8"
+
+# --- Text ---
+TEXT = "#2f2b24"
+TEXT_SECONDARY = "#4a453b"
+TEXT_MUTED = "#6d675c"
+TEXT_FAINT = "#8b8477"
+TEXT_DISABLED = "#b3ac9e"
+TEXT_ON_PRIMARY = "#ffffff"
+TEXT_LOG = "#d6d0c4"
+TEXT_LOG_DIM = "#8f887c"
+TEXT_LOG_OK = "#7fc9a8"
+TEXT_LOG_ERR = "#e0a3a3"
+
+# --- Accent (teal) ---
+PRIMARY = "#1f6f5c"
+PRIMARY_HOVER = "#185b4b"
+PRIMARY_SOFT = "#14503f"
+SUCCESS_DOT = "#2f8f6d"
+
+# --- Status ---
+WARN_DOT = "#c4a94e"
+WARN_BORDER = "#c4a94e"
+DANGER = "#cf222e"
+
+# --- Tabs ---
+TAB_ACTIVE_FG = PRIMARY
+TAB_INACTIVE_FG = "#7c766a"
+TAB_ACTIVE_BG = BG_WINDOW
+TAB_RAIL_BG = BG_BAR
+
+
+def app_stylesheet() -> str:
+    """Global QSS applied to QApplication — Phase 1 color unification."""
+    return f"""
+    /* ===== CloneUp global theme (Phase 1) ===== */
+    QMainWindow, QWidget {{
+        background-color: {BG_WINDOW};
+        color: {TEXT};
+        font-size: 13px;
+    }}
+    QLabel {{
+        color: {TEXT_SECONDARY};
+        background: transparent;
+    }}
+    QLineEdit, QComboBox, QPlainTextEdit, QTextEdit {{
+        background-color: {BG_INPUT};
+        color: {TEXT};
+        border: 1px solid {BORDER_INPUT};
+        border-radius: 5px;
+        padding: 4px 10px;
+        selection-background-color: {PRIMARY};
+        selection-color: {TEXT_ON_PRIMARY};
+    }}
+    QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus {{
+        border: 1px solid {PRIMARY};
+    }}
+    QLineEdit:disabled, QComboBox:disabled {{
+        color: {TEXT_DISABLED};
+        background: {BG_MUTED};
+    }}
+    QComboBox::drop-down {{
+        border: none;
+        width: 22px;
+    }}
+    QCheckBox, QRadioButton {{
+        color: {TEXT_SECONDARY};
+        spacing: 8px;
+        background: transparent;
+    }}
+    QCheckBox::indicator, QRadioButton::indicator {{
+        width: 13px;
+        height: 13px;
+    }}
+    QRadioButton::indicator:checked {{
+        border: 1px solid {PRIMARY};
+        background: {PRIMARY};
+        border-radius: 7px;
+    }}
+    QRadioButton::indicator:unchecked {{
+        border: 1px solid {BORDER_INPUT};
+        background: {BG_INPUT};
+        border-radius: 7px;
+    }}
+    QCheckBox::indicator:unchecked {{
+        border: 1px solid {BORDER_INPUT};
+        background: {BG_INPUT};
+        border-radius: 3px;
+    }}
+    QCheckBox::indicator:checked {{
+        border: 1px solid {PRIMARY};
+        background: {PRIMARY};
+        border-radius: 3px;
+    }}
+
+    /* Secondary buttons (browse, cancel idle, etc.) */
+    QPushButton {{
+        background-color: {BG_MUTED};
+        color: {TEXT_SECONDARY};
+        border: 1px solid {BORDER_INPUT};
+        border-radius: 6px;
+        padding: 6px 14px;
+        font-weight: 500;
+        min-height: 28px;
+    }}
+    QPushButton:hover {{
+        background-color: #e9e5dd;
+        color: {TEXT_SECONDARY};
+    }}
+    QPushButton:disabled {{
+        color: {TEXT_DISABLED};
+        background: {BG_MUTED};
+        border-color: {BORDER_SOFT};
+    }}
+    QPushButton:pressed {{
+        background-color: #e0dbd2;
+    }}
+
+    /* Primary actions */
+    QPushButton#btnPublish,
+    QPushButton#btnClone,
+    QPushButton#btnSyncPush {{
+        background-color: {PRIMARY};
+        color: {TEXT_ON_PRIMARY};
+        border: 1px solid {PRIMARY};
+        font-weight: 600;
+        min-height: 36px;
+        padding: 8px 16px;
+    }}
+    QPushButton#btnPublish:hover,
+    QPushButton#btnClone:hover,
+    QPushButton#btnSyncPush:hover {{
+        background-color: {PRIMARY_HOVER};
+        border-color: {PRIMARY_HOVER};
+        color: {TEXT_ON_PRIMARY};
+    }}
+    QPushButton#btnPublish:disabled,
+    QPushButton#btnClone:disabled,
+    QPushButton#btnSyncPush:disabled {{
+        background-color: {BG_MUTED};
+        border-color: {BORDER_SOFT};
+        color: {TEXT_DISABLED};
+    }}
+
+    /* Secondary outline (pull) */
+    QPushButton#btnSyncPull {{
+        background-color: {BG_INPUT};
+        color: #3d382f;
+        border: 1px solid #b7b1a5;
+        font-weight: 500;
+        min-height: 36px;
+    }}
+    QPushButton#btnSyncPull:hover {{
+        background-color: {BG_MUTED};
+        color: #3d382f;
+    }}
+
+    /* Tabs */
+    QTabWidget::pane {{
+        border: 1px solid {BORDER_SOFT};
+        border-top: none;
+        background: {BG_WINDOW};
+        top: -1px;
+    }}
+    QTabBar {{
+        background: {TAB_RAIL_BG};
+    }}
+    QTabBar::tab {{
+        background: transparent;
+        color: {TAB_INACTIVE_FG};
+        padding: 10px 18px;
+        margin-right: 2px;
+        border: 1px solid transparent;
+        border-bottom: none;
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
+        font-weight: 500;
+    }}
+    QTabBar::tab:selected {{
+        background: {TAB_ACTIVE_BG};
+        color: {TAB_ACTIVE_FG};
+        border: 1px solid {BORDER_SOFT};
+        border-bottom: 1px solid {TAB_ACTIVE_BG};
+    }}
+    QTabBar::tab:hover:!selected {{
+        color: {TEXT_SECONDARY};
+    }}
+
+    /* Log */
+    QPlainTextEdit#textLog {{
+        background-color: {BG_LOG};
+        color: {TEXT_LOG};
+        border: none;
+        border-radius: 6px;
+        padding: 12px 14px;
+        font-family: Consolas, "IBM Plex Mono", monospace;
+        font-size: 11.5px;
+    }}
+
+    QStatusBar {{
+        background: {BG_BAR};
+        color: {TEXT_FAINT};
+        border-top: 1px solid {BORDER_SOFT};
+    }}
+    """

@@ -18,6 +18,21 @@ from PySide6.QtWidgets import (
 )
 
 from app.auth.device_flow import format_remaining, verification_open_url
+from app.ui.theme import (
+    BG_HINT,
+    BG_INPUT,
+    BG_MUTED,
+    BORDER_INPUT,
+    BORDER_SOFT,
+    DANGER,
+    PRIMARY,
+    PRIMARY_HOVER,
+    TEXT,
+    TEXT_MUTED,
+    TEXT_ON_PRIMARY,
+    TEXT_SECONDARY,
+    WARN_DOT,
+)
 
 
 def _host_widget(parent: QWidget) -> QWidget:
@@ -61,62 +76,61 @@ class DeviceCodeOverlay(QWidget):
         card = QFrame(self)
         card.setObjectName("deviceCodeCard")
         card.setStyleSheet(
-            """
-            #deviceCodeCard {
-                background: #ffffff;
-                border-radius: 14px;
-                border: 1px solid #d0d7de;
-            }
-            QLabel#title { font-size: 16px; font-weight: 600; color: #1f2328; }
-            QLabel#hint { color: #656d76; font-size: 13px; }
-            QLabel#code {
+            f"""
+            #deviceCodeCard {{
+                background: #fbfaf8;
+                border-radius: 10px;
+                border: 1px solid #c9c5bd;
+            }}
+            QLabel#title {{ font-size: 16px; font-weight: 600; color: #3d382f; }}
+            QLabel#hint {{ color: {TEXT_MUTED}; font-size: 13px; }}
+            QLabel#code {{
                 font-size: 32px;
                 font-weight: 700;
                 letter-spacing: 3px;
-                color: #0969da;
+                color: {PRIMARY};
                 padding: 12px;
-                background: #f6f8fa;
+                background: {BG_HINT};
                 border-radius: 8px;
-                border: 1px dashed #d0d7de;
-            }
-            QLabel#timer { color: #9a6700; font-size: 12px; }
-            /* Explicit colors — Windows dark-mode inheritance can force light text. */
-            QPushButton {
+                border: 1px dashed {WARN_DOT};
+            }}
+            QLabel#timer {{ color: #9a6700; font-size: 12px; }}
+            QPushButton {{
                 padding: 8px 14px;
                 border-radius: 6px;
                 font-weight: 600;
-                color: #1f2328;
-                background: #f6f8fa;
-                border: 1px solid #d0d7de;
-            }
-            QPushButton#btnCopy {
-                background: #0969da;
-                color: #ffffff;
-                border: 1px solid #0969da;
-            }
-            QPushButton#btnCopy:hover {
-                background: #0860ca;
-                color: #ffffff;
-                border-color: #0860ca;
-            }
-            QPushButton#btnOpen {
-                background: #ffffff;
-                color: #1f2328;
-                border: 1px solid #d0d7de;
-            }
-            QPushButton#btnOpen:hover {
-                background: #f3f4f6;
-                color: #1f2328;
-            }
-            QPushButton#btnCancel {
-                background: #ffffff;
-                border: 1px solid #d0d7de;
-                color: #cf222e;
-            }
-            QPushButton#btnCancel:hover {
+                color: {TEXT_SECONDARY};
+                background: {BG_MUTED};
+                border: 1px solid {BORDER_INPUT};
+            }}
+            QPushButton#btnCopy {{
+                background: {PRIMARY};
+                color: {TEXT_ON_PRIMARY};
+                border: 1px solid {PRIMARY};
+            }}
+            QPushButton#btnCopy:hover {{
+                background: {PRIMARY_HOVER};
+                color: {TEXT_ON_PRIMARY};
+                border-color: {PRIMARY_HOVER};
+            }}
+            QPushButton#btnOpen {{
+                background: {BG_INPUT};
+                color: {TEXT};
+                border: 1px solid {BORDER_INPUT};
+            }}
+            QPushButton#btnOpen:hover {{
+                background: #e9e5dd;
+                color: {TEXT};
+            }}
+            QPushButton#btnCancel {{
+                background: {BG_INPUT};
+                border: 1px solid {BORDER_SOFT};
+                color: {DANGER};
+            }}
+            QPushButton#btnCancel:hover {{
                 background: #fff5f5;
                 color: #a40e26;
-            }
+            }}
             """
         )
 

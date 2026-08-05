@@ -26,6 +26,9 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("CloneUp")
+    from app.ui.theme import app_stylesheet
+
+    app.setStyleSheet(app_stylesheet())
     win = load_main_window()
     win.show()
     return app.exec()
