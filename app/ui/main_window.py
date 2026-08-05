@@ -29,7 +29,6 @@ from app.ui.device_code_dialog import DeviceCodeOverlay
 from app.ui.publish_worker import LoginWorker, PublishWorker
 from app.ui.settings_store import (
     load_last_commit_message,
-    load_last_github_login,
     load_last_private,
     load_recent_folders,
     remember_folder,
@@ -425,13 +424,13 @@ class MainController(QObject):
             or bool(load_token())
         )
         if had_session:
-            who = load_last_github_login() or "현재 계정"
             reply = QMessageBox.warning(
                 self.window,
                 "재로그인 확인",
-                f"GitHub 계정 ({who}) 으로 다시 로그인합니다.\n\n"
-                "확인을 누르면 저장된 로그인 정보가 삭제되고\n"
-                "장치 코드 인증이 시작됩니다.\n\n"
+                "저장된 GitHub 로그인 정보를 삭제하고\n"
+                "새 장치 코드 인증을 시작합니다.\n\n"
+                "다른 계정으로 로그인할 수 있습니다.\n\n"
+                "확인을 누르면 현재 세션이 로그아웃됩니다.\n"
                 "취소를 누르면 현재 로그인을 유지합니다.",
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Cancel,
