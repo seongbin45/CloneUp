@@ -27,6 +27,7 @@ from app.auth.token_store import load_token
 from app.ui.auth_status import AuthState, AuthStatusButton
 from app.ui.device_code_dialog import DeviceCodeOverlay
 from app.ui.publish_worker import LoginWorker, PublishWorker
+from app.ui.tip_card import install_tip_card
 from app.ui.settings_store import (
     load_last_commit_message,
     load_last_private,
@@ -134,10 +135,41 @@ class MainController(QObject):
         if self.textLog is None or self.btnPublish is None:
             raise RuntimeError("필수 UI 위젯 누락")
 
+        self._install_tab_tip_cards()
         self._wire()
         self._load_prefs()
         self._refresh_status_bar()
         self._log("CloneUp — 만들고 올리기 / 받기 / 동기화 탭 사용 가능")
+
+    def _install_tab_tip_cards(self) -> None:
+        """G1/G2 — collapsible tip cards (folded by default to save space)."""
+        tips: list[tuple[str, str, str]] = [
+            (
+                "labelTabIntroPublish",
+                "내 컴퓨터 폴더를 GitHub에 처음 올립니다.",
+                "• 저장소 이름에 쓸 수 없는 문자가 있으면 실패합니다.\n"
+                "• 공개로 만들면 누구나 볼 수 있고, 되돌리기 어렵습니다.\n"
+                "• .env 같은 비밀 파일 후보는 기본적으로 올리지 않습니다.",
+            ),
+            (
+                "labelTabIntroClone",
+                "GitHub에 있는 폴더를 내 컴퓨터로 복사합니다.",
+                "• 저장소 루트 주소만 쓰세요. /tree/main 은 자동으로 정리됩니다.\n"
+                "• 같은 이름의 폴더가 이미 있으면 실패합니다. 이름을 바꾸세요.\n"
+                "• 비공개 저장소는 위 GitHub 로그인이 필요합니다.",
+            ),
+            (
+                "labelTabIntroSync",
+                "이미 연결된 폴더의 변경사항을 주고받습니다.",
+                "• 이 폴더에 .git 이 있어야 합니다. 없으면 「받기」나 「만들고 올리기」를 먼저 하세요.\n"
+                "• 올리기 전에 비밀 파일 후보가 있는지 확인하세요.\n"
+                "• push 권한 오류가 나면 GitHub 로그인을 다시 하세요.",
+            ),
+        ]
+        for obj_name, summary, body in tips:
+            ph = self.window.findChild(QLabel, obj_name)
+            if ph is not None:
+                install_tip_card(ph, summary=summary, body=body)
 
     # ----- helpers -----
     def _log(self, message: str) -> None:

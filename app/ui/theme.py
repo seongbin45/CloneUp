@@ -556,15 +556,42 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         border: none;
     }}
 
-    /* G1 — tab purpose one-liner (always visible under tab bar) */
+    /* G1/G2 — collapsible tip card (folded = one line) */
+    QFrame#tipCard {{
+        background-color: {BG_HINT};
+        border: 1px solid {BORDER_SOFT};
+        border-left: 3px solid {PRIMARY};
+        border-radius: 0 6px 6px 0;
+    }}
+    QPushButton#tipCardHeader {{
+        background: transparent;
+        border: none;
+        color: {TEXT_SECONDARY};
+        font-size: 12.5px;
+        font-weight: 500;
+        text-align: left;
+        padding: 0;
+        min-height: 0;
+    }}
+    QPushButton#tipCardHeader:hover {{
+        color: {PRIMARY};
+        background: transparent;
+        border: none;
+    }}
+    QLabel#tipCardBody {{
+        color: {TEXT_MUTED};
+        font-size: 12px;
+        background: transparent;
+        padding: 2px 2px 2px 18px;
+        line-height: 1.45;
+    }}
+    /* placeholders until MainController swaps in TipCard */
     QLabel#labelTabIntroPublish,
     QLabel#labelTabIntroClone,
     QLabel#labelTabIntroSync {{
         color: {TEXT_MUTED};
         font-size: 12.5px;
         background: transparent;
-        padding: 0 0 4px 0;
-        margin: 0;
     }}
 
     /* Form label grid (~92px) */
