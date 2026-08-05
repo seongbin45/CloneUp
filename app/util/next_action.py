@@ -1,0 +1,111 @@
+"""
+G4 — map existing Korean error text to a single next-step line.
+
+Does not invent new root-cause messages; only appends "다음: …" guidance.
+"""
+
+from __future__ import annotations
+
+import re
+
+
+def next_step_for_error(message: str) -> str | None:
+    """
+    Return a plain-language next action, or None if no mapping.
+    Caller should log/show as: f"다음: {hint}"
+    """
+    msg = (message or "").strip()
+    if not msg:
+        return None
+    low = msg.lower()
+
+    # Auth / permission (push denied, 401, etc.)
+    if (
+        "denied" in low
+        or "permission" in low
+        or "403" in msg
+        or "401" in msg
+        or "authentication failed" in low
+        or "could not read username" in low
+        or "invalid credentials" in low
+        or "로그인이 필요" in msg
+        or "권한" in msg
+        and ("없" in msg or "부족" in msg or "실패" in msg)
+    ):
+        return "GitHub 로그인을 다시 하세요."
+
+    # Clone path already exists
+    if "이미 존재하는 경로" in msg or (
+        "already exists" in low and ("path" in low or "dest" in low or "폴더" in msg)
+    ):
+        return "폴더 이름을 바꾸거나, 비어 있는 다른 위치를 고르세요."
+
+    # Bad folder name for clone
+    if "폴더 이름이 올바르지 않" in msg:
+        return "폴더 이름에서 특수문자(<>:\"/\\|?*)를 빼 보세요."
+
+    # Parent missing
+    if "저장 폴더가 없습니다" in msg or "폴더가 없습니다" in msg:
+        return "존재하는 로컬 폴더를 선택한 뒤 다시 시도하세요."
+
+    # Empty folder / nothing to commit
+    if "빈 폴더" in msg or "커밋할 파일이 최소" in msg:
+        return "올릴 파일을 폴더에 넣은 뒤 다시 시도하세요."
+
+    # Secrets by filename
+    if "비밀 파일" in msg:
+        return (
+            "해당 파일을 빼거나 이름을 바꾼 뒤 다시 시도하세요. "
+            "정말 포함하려면 고급 옵션을 켠 뒤 확인 창에서 진행하세요."
+        )
+
+    # URL issues
+    if "owner/repo" in msg or "저장소 주소" in msg or "주소를 입력" in msg:
+        return "GitHub 저장소 루트 주소(…/owner/repo)만 붙여넣으세요."
+
+    # Not a git repo / no origin (sync)
+    if ".git" in msg and ("없" in msg or "git 저장소" in msg):
+        return "「받기」또는 「만들고 올리기」로 먼저 연결하세요."
+    if "origin" in low and ("없" in msg or "없습니다" in msg):
+        return "「만들고 올리기」로 원격 저장소를 먼저 만들거나, remote를 확인하세요."
+
+    # Conflict
+    if "충돌" in msg:
+        return "「충돌 취소」로 되돌리거나, 에디터에서 충돌을 해결하세요."
+
+    # Staging empty
+    if "staging" in low or "staged" in low or "스테이징" in msg:
+        return ".gitignore 때문에 제외된 파일이 없는지 확인하세요."
+
+    # Network / generic git failure
+    if "네트워크" in msg or "timed out" in low or "could not resolve" in low:
+        return "인터넷 연결을 확인한 뒤 다시 시도하세요."
+
+    if "git" in low and "설치" in msg:
+        return "https://git-scm.com/download/win 에서 Git을 설치하세요."
+
+    # Device flow / auth cancel already clear
+    if "취소" in msg:
+        return None
+
+    # Token / config security
+    if "토큰" in msg and ("config" in low or "remote" in low or "보안" in msg):
+        return "로그를 확인한 뒤 재로그인하고, 문제가 계속되면 폴더의 remote URL을 점검하세요."
+
+    # push/pull 실패 with little detail — soft default
+    if re.search(r"push\s*실패|pull\s*실패", msg, re.I):
+        if "denied" in low or "permission" in low or "403" in msg:
+            return "GitHub 로그인을 다시 하세요."
+        return "로그 원문을 확인하세요. 권한 문제면 GitHub 로그인을 다시 해 보세요."
+
+    return None
+
+
+def format_next_step_line(message: str) -> str | None:
+    """Full log line '다음: …' or None."""
+    step = next_step_for_error(message)
+    if not step:
+        return None
+    if step.startswith("다음:"):
+        return step
+    return f"다음: {step}"

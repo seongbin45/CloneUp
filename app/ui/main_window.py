@@ -35,6 +35,7 @@ from app.ui.auth_status import AuthState, AuthStatusButton
 from app.ui.device_code_dialog import DeviceCodeOverlay
 from app.ui.publish_worker import LoginWorker, PublishWorker
 from app.ui.tip_card import install_tip_card
+from app.util.next_action import format_next_step_line
 from app.ui.settings_store import (
     load_last_commit_message,
     load_last_private,
@@ -207,7 +208,12 @@ class MainController(QObject):
             color = err
         elif "성공" in msg or "✓" in msg or msg.startswith("Clone 성공") or msg.startswith("Publish 성공"):
             color = ok
-        elif "안내" in msg or "경고" in msg or "비권장" in msg:
+        elif (
+            msg.startswith("다음:")
+            or "안내" in msg
+            or "경고" in msg
+            or "비권장" in msg
+        ):
             color = warn
         elif msg.startswith("---") or msg.startswith(">") or low.startswith("git "):
             color = dim
@@ -539,10 +545,18 @@ class MainController(QObject):
     def _on_fail_msg(self, message: str) -> None:
         self._close_device_overlay()
         self._log(f"ERROR: {message}")
+        # G4 — one next-step line under the raw/Korean error
+        next_line = format_next_step_line(message)
+        if next_line:
+            self._log(next_line)
         if message.startswith("취소"):
             QMessageBox.information(self.window, "취소됨", message)
         else:
-            QMessageBox.critical(self.window, "실패", message)
+            # Dialog: error + next step when available
+            body = message
+            if next_line:
+                body = f"{message}\n\n{next_line}"
+            QMessageBox.critical(self.window, "실패", body)
 
     def _confirm_upload_g3(
         self,
