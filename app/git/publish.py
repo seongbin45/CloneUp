@@ -282,15 +282,16 @@ def publish_folder_to_new_repo(
     description: str = "",
     commit_message: str = "Initial commit",
     allow_secrets: bool = False,
+    private: bool = False,
 ) -> PublishResult:
-    """Create empty public GitHub repo then publish_local_to_existing_remote."""
+    """Create empty GitHub repo (public or private) then push local history."""
     from app.github.api_client import GitHubAPIError
 
     try:
         repo = create_repo_fn(
             token,
             repo_name,
-            private=False,
+            private=private,
             description=description,
             auto_init=False,
         )
@@ -305,7 +306,8 @@ def publish_folder_to_new_repo(
     if not clone_url:
         raise PublishError("API 응답에 clone_url 이 없습니다.")
 
-    print(f"원격 저장소 생성됨: {full_name} (auto_init 없음)")
+    vis = "private" if private else "public"
+    print(f"원격 저장소 생성됨: {full_name} ({vis}, auto_init 없음)")
     return publish_local_to_existing_remote(
         folder,
         token=token,

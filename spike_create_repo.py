@@ -2,16 +2,16 @@
 """
 CloneUp — Stage 2 spike (no UI)
 
-ensure_valid_token → POST /user/repos (public, no auto_init)
+ensure_valid_token (scope=repo) → POST /user/repos (public or private, no auto_init)
 
 Prints for stage 3 handoff: full_name, html_url, clone_url
 
 Usage:
   .\\.venv\\Scripts\\python.exe spike_create_repo.py
   .\\.venv\\Scripts\\python.exe spike_create_repo.py --name my-test-repo
+  .\\.venv\\Scripts\\python.exe spike_create_repo.py --private --name my-private
 
-Note: DELETE needs delete_repo scope (not in public_repo).
-Cleanup is manual on github.com — names use cloneup-spike-YYYYMMDD-HHMM.
+Cleanup: GitHub 웹에서 수동 삭제 (delete_repo scope 없음).
 """
 
 from __future__ import annotations
@@ -37,12 +37,11 @@ _REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 def _friendly_create_error(e: GitHubAPIError) -> str:
     if e.status == 401:
         return (
-            "인증 실패(401). 세션 계층이 재로그인을 시도했어야 합니다. "
-            "spike_device_flow.py --force 후 다시 시도하세요."
+            "인증 실패(401). spike_device_flow.py --force 후 다시 시도하세요."
         )
     if e.status == 403:
         return (
-            "권한 부족(403). public_repo 스코프인지 확인하세요. "
+            "권한 부족(403). 로그인 scope 에 repo 가 있는지 확인하세요. "
             f"stored scope={load_scope()!r}. 상세: {e.message}"
         )
     if e.status == 422:
@@ -63,6 +62,11 @@ def main() -> int:
         "--description",
         default="CloneUp spike 2 — safe to delete manually on github.com",
         help="Repo description",
+    )
+    parser.add_argument(
+        "--private",
+        action="store_true",
+        help="Create a private repository (requires OAuth scope repo)",
     )
     args = parser.parse_args()
 
@@ -92,12 +96,13 @@ def main() -> int:
         )
         return 2
 
-    print(f"Creating public empty repo (no auto_init): {login}/{name}")
+    vis = "private" if args.private else "public"
+    print(f"Creating {vis} empty repo (no auto_init): {login}/{name}")
     try:
         repo = create_repo(
             token,
             name,
-            private=False,
+            private=args.private,
             description=args.description,
             auto_init=False,
         )
@@ -121,9 +126,9 @@ def main() -> int:
     print(f"  full_name : {full_name}")
     print(f"  html_url  : {html_url}")
     print(f"  clone_url : {clone_url}")
-    print(f"  private   : {private}  (expect False)")
+    print(f"  private   : {private}  (expect {args.private})")
     print()
-    print("정리: public_repo로는 DELETE 불가 → GitHub 웹에서 수동 삭제하세요.")
+    print("정리: 웹에서 수동 삭제하세요.")
     print("다음: 3단계 publish (init -b main, clean remote, credential-helper push)")
     return 0
 

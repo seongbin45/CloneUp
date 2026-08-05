@@ -159,7 +159,7 @@ def poll_for_token(
 
 def run_device_flow(
     client_id: str,
-    scope: str = "public_repo",
+    scope: str = "repo",
     *,
     open_browser: bool = True,
 ) -> TokenResponse:

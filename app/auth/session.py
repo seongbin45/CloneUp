@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from app.auth.device_flow import DeviceFlowError, run_device_flow
-from app.auth.token_store import delete_token, load_scope, load_token, save_token
+from app.auth.token_store import (
+    delete_token,
+    has_scope,
+    load_scope,
+    load_token,
+    save_token,
+)
 from app.config import get_github_client_id, get_github_scopes
 from app.github.api_client import GitHubAPIError, get_authenticated_user
 from app.util.log_mask import mask_token
@@ -46,6 +52,19 @@ def ensure_valid_token(
         user = get_authenticated_user(token)
         return token, user
 
+    want = scopes if scopes is not None else get_github_scopes()
+    # If stored grant is narrower than app default (e.g. old public_repo only),
+    # re-auth so private create works without a separate UX path.
+    needed = [s for s in want.split() if s]
+    if load_token() and needed and not all(has_scope(s) for s in needed):
+        print(
+            f"저장된 scope {load_scope()!r} 가 필요 권한 {want!r} 보다 좁음 → 재로그인"
+        )
+        delete_token()
+        token = login_device_flow(open_browser=open_browser, scopes=want)
+        user = get_authenticated_user(token)
+        return token, user
+
     token = load_token()
     if not token:
         print("저장된 토큰 없음 → Device Flow 시작")
@@ -74,5 +93,14 @@ def ensure_valid_token(
     if header_scopes is not None and load_scope() is None:
         save_token(token, header_scopes)
         print(f"  scope backfill from X-OAuth-Scopes: {header_scopes!r}")
+        # After backfill, check again — old public_repo may still be too narrow.
+        if needed and not all(has_scope(s) for s in needed):
+            print(
+                f"backfill 후에도 scope {load_scope()!r} 부족 → 재로그인 ({want!r})"
+            )
+            delete_token()
+            token = login_device_flow(open_browser=open_browser, scopes=want)
+            user = get_authenticated_user(token)
+            return token, user
 
     return token, user

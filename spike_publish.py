@@ -2,7 +2,7 @@
 """
 CloneUp — Stage 3 spike (no UI)
 
-Publish local folder → new empty public GitHub repo:
+Publish local folder → new empty GitHub repo (public or private):
   safety → gitignore → init -b main → add → commit (-c identity if needed)
   → remote clean URL → push via temp credential.helper store file
   → assert .git/config has no token
@@ -10,10 +10,12 @@ Publish local folder → new empty public GitHub repo:
 Usage:
   .\\.venv\\Scripts\\python.exe spike_publish.py --folder PATH
   .\\.venv\\Scripts\\python.exe spike_publish.py --folder PATH --name my-repo
+  .\\.venv\\Scripts\\python.exe spike_publish.py --folder PATH --private
   .\\.venv\\Scripts\\python.exe spike_publish.py --folder PATH --allow-secrets
 
 Uses existing empty remote if --clone-url / --html-url / --full-name given
-(from stage 2 handoff); otherwise creates a new public repo (no auto_init).
+(from stage 2 handoff); otherwise creates a new repo (no auto_init).
+Default OAuth scope is `repo` (public + private).
 """
 
 from __future__ import annotations
@@ -59,6 +61,11 @@ def main() -> int:
         "--allow-secrets",
         action="store_true",
         help="Allow files that look like secrets (.env, keys, …)",
+    )
+    parser.add_argument(
+        "--private",
+        action="store_true",
+        help="Create a private GitHub repository",
     )
     parser.add_argument(
         "--clone-url",
@@ -146,7 +153,8 @@ def main() -> int:
             )
         else:
             assert name is not None
-            print(f"새 public 저장소 생성 후 업로드: {name}")
+            vis = "private" if args.private else "public"
+            print(f"새 {vis} 저장소 생성 후 업로드: {name}")
             result = publish_folder_to_new_repo(
                 folder,
                 token=token,
@@ -156,6 +164,7 @@ def main() -> int:
                 description="CloneUp publish spike — safe to delete on github.com",
                 commit_message=args.message,
                 allow_secrets=args.allow_secrets,
+                private=args.private,
             )
     except PublishError as e:
         print(f"ERROR: publish — {e}", file=sys.stderr)
@@ -179,7 +188,7 @@ def main() -> int:
             print(f"  warning    : {w}")
     print()
     print("브라우저에서 파일 2개(README/hello 또는 사용자 파일)가 보이는지 확인하세요.")
-    print("정리: public_repo 로는 DELETE 불가 → GitHub 웹에서 수동 삭제.")
+    print("정리: 웹에서 수동 삭제 (delete_repo scope 없음).")
 
     if demo_dir and not args.keep_demo:
         # keep .git for inspection? user may want to inspect config — keep demo if --keep-demo

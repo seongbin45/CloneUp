@@ -100,10 +100,17 @@
           <item>
            <widget class="QRadioButton" name="radioPublic">
             <property name="text">
-             <string>공개 (public)</string>
+             <string>공개</string>
             </property>
             <property name="checked">
              <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QRadioButton" name="radioPrivate">
+            <property name="text">
+             <string>비공개</string>
             </property>
            </widget>
           </item>

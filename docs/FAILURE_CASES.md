@@ -99,10 +99,11 @@ echo SECRET=1 > $env:TEMP\cloneup-secret\.env
 |----|------|-----------|-----------|
 | R1 | 성공 (public, 빈 원격) | `full_name`, `html_url`, `clone_url` | `create_repo` |
 | R2 | **422 이름 중복** | 이름 변경 안내 | `spike_create_repo` / PublishError |
-| R3 | **403 scope 부족** (예: private 시도) | scope 안내; private는 코드에서 선차단 | `create_repo` ValueError |
+| R3 | **403 scope 부족** | `repo` 권한 재로그인 안내 | session / API |
 | R4 | **401 토큰 무효** | 세션 계층 재로그인 또는 안내 | session + API |
 | R5 | `auto_init=True` 요청 | **거부** (필드 전송 안 함) | `create_repo` |
-| R6 | DELETE with `public_repo` | 403 예상 — 웹 수동 삭제 | 문서상 제약 |
+| R6 | private 생성 | `private: true` + scope `repo` (앱 기본) | `create_repo` |
+| R7 | DELETE | delete_repo 없으면 웹 수동 삭제 | 문서상 제약 |
 
 ---
 
@@ -146,7 +147,7 @@ echo SECRET=1 > $env:TEMP\cloneup-secret\.env
 
 ## 9. 테스트용 저장소 이름
 
-`public_repo` 로는 DELETE 불가. 이름은 웹에서 묶어서 지우기 쉽게:
+DELETE 는 웹에서. 테스트 저장소 이름은 묶어서 지우기 쉽게:
 
 - `cloneup-spike-YYYYMMDD-HHMM`
 - `cloneup-publish-YYYYMMDD-HHMM`

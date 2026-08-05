@@ -14,7 +14,9 @@ from dotenv import load_dotenv
 
 # Built-in default for packaged / end-user runs (not a secret).
 DEFAULT_GITHUB_CLIENT_ID = "Ov23liuwynj1IgDmz8Tj"
-DEFAULT_GITHUB_SCOPES = "public_repo"
+# Full repo access from first login so public *and* private create/push work.
+# Trade-off: broader than public_repo — user authorizes once with eyes open.
+DEFAULT_GITHUB_SCOPES = "repo"
 
 _ROOT = Path(__file__).resolve().parent.parent
 _ENV_LOADED = False

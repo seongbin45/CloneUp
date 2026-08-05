@@ -14,7 +14,7 @@
 │  [ Publish ]  (Clone / Sync 탭은 비활성 또는 빈 칸)   │
 ├───────────────────────────────────────────────────┤
 │  로컬 폴더: [______________] [찾아보기]               │
-│  저장소 이름: [______________]  ( )공개               │
+│  저장소 이름: [______________]  (•)공개  ( )비공개     │
 │  커밋 메시지: [Initial commit____________]            │
 │  [ ] 비밀 파일 경고 무시 (고급)                       │
 │                                                     │
@@ -47,6 +47,7 @@
 | `btnBrowseFolder` | QPushButton | 폴더 선택 |
 | `editRepoName` | QLineEdit | 저장소 이름 |
 | `radioPublic` | QRadioButton | 공개 (기본) |
+| `radioPrivate` | QRadioButton | 비공개 (`repo` scope, 앱 기본 로그인) |
 | `editCommitMessage` | QLineEdit | 커밋 메시지 |
 | `checkAllowSecrets` | QCheckBox | `--allow-secrets` 대응 |
 | `btnPublish` | QPushButton | 실행 (아직 stub) |

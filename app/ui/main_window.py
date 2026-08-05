@@ -63,6 +63,7 @@ class PublishSkeletonController(QObject):
         self.btnBrowseFolder = window.findChild(QPushButton, "btnBrowseFolder")
         self.editRepoName = window.findChild(QLineEdit, "editRepoName")
         self.radioPublic = window.findChild(QRadioButton, "radioPublic")
+        self.radioPrivate = window.findChild(QRadioButton, "radioPrivate")
         self.editCommitMessage = window.findChild(QLineEdit, "editCommitMessage")
         self.checkAllowSecrets = window.findChild(QCheckBox, "checkAllowSecrets")
         self.btnPublish = window.findChild(QPushButton, "btnPublish")
@@ -126,10 +127,12 @@ class PublishSkeletonController(QObject):
         name = (self.editRepoName.text() or "").strip()
         msg = (self.editCommitMessage.text() or "").strip()
         allow = self.checkAllowSecrets.isChecked()
+        private = bool(self.radioPrivate and self.radioPrivate.isChecked())
 
         self._log("--- Publish 클릭 (stub) ---")
         self._log(f"  folder={folder or '(비어 있음)'}")
         self._log(f"  name={name or '(비어 있음)'}")
+        self._log(f"  visibility={'private' if private else 'public'}")
         self._log(f"  message={msg}")
         self._log(f"  allow_secrets={allow}")
         self._log(

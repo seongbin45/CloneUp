@@ -78,14 +78,10 @@ def create_repo(
     """
     POST /user/repos
 
+    Requires OAuth scope `repo` for private repos (CloneUp default login).
     Never enable auto_init for CloneUp publish flow: a remote initial commit
     causes non-fast-forward rejection when pushing a fresh local history.
     """
-    if private:
-        raise ValueError(
-            "public_repo scope path only supports public repos. "
-            "Private repos need re-auth with `repo` scope later."
-        )
     if auto_init:
         raise ValueError(
             "auto_init must stay False: remote README commit breaks first push "
@@ -95,7 +91,7 @@ def create_repo(
     # Omit auto_init entirely (GitHub default is false) — do not send true.
     payload: dict[str, Any] = {
         "name": name,
-        "private": False,
+        "private": bool(private),
         "description": description,
     }
     resp = requests.post(
@@ -112,8 +108,8 @@ def delete_repo(access_token: str, owner: str, repo: str) -> None:
     """
     DELETE /repos/{owner}/{repo}
 
-    Requires delete_repo scope — NOT included in public_repo.
-    Kept for future use after broader auth; expect 403 with current spike grants.
+    Needs delete_repo (not granted by `repo` alone for all cases).
+    Prefer manual delete on github.com unless this scope is added later.
     """
     resp = requests.delete(
         f"{API_BASE}/repos/{owner}/{repo}",
