@@ -54,13 +54,13 @@ def show_missing_repo_help(
     title.setWordWrap(True)
 
     # One line cause — no essay
-    why = QLabel("「repo」(저장소) 권한이 꺼져 있습니다.")
+    why = QLabel("저장소 권한(repo)이 꺼져 있습니다.")
     why.setObjectName("wizLead")
     why.setWordWrap(True)
 
     steps = QLabel(
         "1. 아래에서 새 키 만들기\n"
-        "2. repo 체크 ✓  ·  만료 90일 권장\n"
+        "2. 저장소(repo) 체크 ✓  ·  만료 90일 권장\n"
         "3. 생성 → 복사 → 다시 연결"
     )
     steps.setObjectName("wizBox")
@@ -300,7 +300,7 @@ class ConnectGitHubWizard(QDialog):
         lead.setWordWrap(True)
 
         box = QLabel(
-            "· repo 권한 켜기\n"
+            "· 저장소 권한(repo) 켜기\n"
             "· 만료일: 90일 또는 없음 권장\n"
             "· 생성 후 초록 키 전체 복사"
         )
@@ -310,7 +310,7 @@ class ConnectGitHubWizard(QDialog):
         detail = _DetailToggle(
             "키 = 비밀번호 대용 출입증. 채팅·캡처에 올리지 마세요.\n"
             "이 컴퓨터에만 저장됩니다. 만료되면 새 키가 필요합니다.\n"
-            "영문 화면: Expiration → repo → Generate → Copy."
+            "GitHub 영문 화면 단어: Expiration · repo · Generate · Copy."
         )
 
         btn_open = QPushButton("브라우저에서 만들기")

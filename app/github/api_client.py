@@ -67,6 +67,33 @@ def get_authenticated_user(access_token: str) -> dict[str, Any]:
     return data
 
 
+def _repo_headers(access_token: str | None = None) -> dict[str, str]:
+    headers = {**DEFAULT_HEADERS}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    return headers
+
+
+def get_repo_default_branch(
+    owner: str,
+    repo: str,
+    *,
+    access_token: str | None = None,
+) -> str | None:
+    """GET /repos/{owner}/{repo} → default_branch (e.g. main)."""
+    resp = requests.get(
+        f"{API_BASE}/repos/{owner}/{repo}",
+        headers=_repo_headers(access_token),
+        timeout=30,
+    )
+    _raise_for_status(resp)
+    data = resp.json()
+    if not isinstance(data, dict):
+        return None
+    name = (data.get("default_branch") or "").strip()
+    return name or None
+
+
 def list_repo_branches(
     owner: str,
     repo: str,
@@ -79,14 +106,9 @@ def list_repo_branches(
 
     Works without token for public repos. Private needs a valid token.
     """
-    headers = {
-        **DEFAULT_HEADERS,
-    }
-    if access_token:
-        headers["Authorization"] = f"Bearer {access_token}"
     resp = requests.get(
         f"{API_BASE}/repos/{owner}/{repo}/branches",
-        headers=headers,
+        headers=_repo_headers(access_token),
         params={"per_page": max(1, min(per_page, 100))},
         timeout=30,
     )

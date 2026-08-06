@@ -1,20 +1,39 @@
 # CloneUp — 실패 케이스 체크리스트
 
-스파이크·UI 공통. **성공 경로만 보고 넘어가지 말 것.**  
+**성공 경로만 보고 넘어가지 말 것.**  
 기준 코드: `app/git/safety.py`, `app/git/publish.py`, `app/auth/session.py`, `app/github/api_client.py`.
+
+제품 기본 인증은 **키(PAT)** 입니다. Device Flow는 기본 꺼짐.
 
 ---
 
 ## 0. 확인 방법
 
+### 0-1. 제품 UI (권장 · 초심자·배포 검증)
+
+```powershell
+.\.venv\Scripts\python.exe main.py
+```
+
+| 확인 | 방법 |
+|------|------|
+| 연결 | 상태줄 「GitHub: 연결」→ 키 붙여넣기 |
+| 만들고 올리기 | 폴더 선택 후 업로드 |
+| 받기 / 동기화 | 각 탭에서 한 번씩 |
+
+기대: hang 없이 끝나거나, **한국어**로 원인·다음 행동이 보임.  
+절대: 토큰이 `.git/config` / 로그 평문에 남지 않음.
+
+### 0-2. 개발자 전용 스파이크 (일반 사용자 불필요)
+
+아래 스크립트는 **개발·회귀용**입니다. 앱 UI와 다를 수 있고, Device Flow 스파이크는  
+`CLONEUP_ALLOW_DEVICE_FLOW=1` 이 필요할 수 있습니다.
+
 | 방법 | 명령 예 |
 |------|---------|
 | Publish 스파이크 | `.\.venv\Scripts\python.exe spike_publish.py --folder <경로>` |
-| 인증만 | `.\.venv\Scripts\python.exe spike_device_flow.py` |
+| Device Flow (개발) | `$env:CLONEUP_ALLOW_DEVICE_FLOW=1; .\.venv\Scripts\python.exe spike_device_flow.py` |
 | 저장소 생성만 | `.\.venv\Scripts\python.exe spike_create_repo.py --name ...` |
-
-기대: **hang 없이** 끝나거나, 한국어로 원인을 말함.  
-절대: 토큰이 `.git/config` / `git remote -v` / 로그 평문에 남지 않음.
 
 ---
 

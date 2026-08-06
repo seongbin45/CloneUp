@@ -90,9 +90,9 @@ class CloneWorker(QThread):
                     return
                 name = self.dir_name.strip() or None
                 if self.branch:
-                    self._log(f"브랜치: {self.branch}")
+                    self._log(f"branch: {self.branch}")
                 else:
-                    self._log("브랜치: 기본 브랜치")
+                    self._log("branch: default branch")
                 result = clone_repository(
                     self.url,
                     Path(self.parent_dir),

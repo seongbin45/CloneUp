@@ -113,7 +113,7 @@ def normalize_github_clone_url(raw: str) -> NormalizedCloneUrl:
         if len(parts) > 2:
             warnings.append(
                 "주소 뒤 경로는 지우고 저장소 루트만 사용합니다. "
-                "받을 줄은 아래 「브랜치」에서 고르세요."
+                "branch는 아래에서 고르세요."
             )
             suggested = _branch_from_web_path(
                 [owner, repo, "tree"] + parts[2:]
@@ -153,7 +153,7 @@ def normalize_github_clone_url(raw: str) -> NormalizedCloneUrl:
         suggested = _branch_from_web_path(parts)
         warnings.append(
             "주소 뒤 경로는 지우고 저장소 루트만 남깁니다. "
-            "받을 줄은 아래 「브랜치」에서 고르세요."
+            "branch는 아래에서 고르세요."
         )
 
     display = f"https://github.com/{owner}/{repo}"

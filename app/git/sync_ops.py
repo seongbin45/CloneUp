@@ -102,9 +102,9 @@ def get_repo_status(folder: Path) -> RepoStatus:
 
     # Beginner-facing summary (avoid origin/ahead/behind jargon)
     if branch.startswith("("):
-        bits = ["작업 위치: 특수 상태"]
+        bits = ["branch: (detached)"]
     else:
-        bits = [f"작업 줄: {branch}"]
+        bits = [f"branch: {branch}"]
 
     if has_origin:
         bits.append("GitHub와 연결됨")

@@ -82,9 +82,9 @@ def clone_repository(
             cred_path = write_credential_file(token)
             config = credential_helper_configs(cred_path)
         if branch_name:
-            print(f"받기: {norm.display_url} (브랜치 {branch_name}) → {target}")
+            print(f"clone: {norm.display_url} (branch {branch_name}) → {target}")
         else:
-            print(f"받기: {norm.display_url} (기본 브랜치) → {target}")
+            print(f"clone: {norm.display_url} (default branch) → {target}")
         for w in norm.warnings:
             print(f"안내: {w}")
         args = ["clone"]
@@ -106,8 +106,8 @@ def clone_repository(
             or "did not match" in msg.lower()
         ):
             raise CloneError(
-                f"브랜치 「{branch_name}」을(를) 찾지 못했습니다.\n"
-                "이름을 확인하거나 「기본 브랜치」로 받아 보세요.\n\n"
+                f"branch 「{branch_name}」을(를) 찾지 못했습니다.\n"
+                "이름을 확인하거나 default branch로 받아 보세요.\n\n"
                 + msg[:400]
             ) from e
         raise CloneError(msg) from e

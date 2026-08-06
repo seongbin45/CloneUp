@@ -184,10 +184,16 @@ class MainController(QObject):
         self.checkCloneUseToken = window.findChild(QCheckBox, "checkCloneUseToken")
         self.btnClone = window.findChild(QPushButton, "btnClone")
         self.btnCloneCancel = window.findChild(QPushButton, "btnCloneCancel")
+        # List-only selection (no free typing) — real names + (notes)
+        if self.comboCloneBranch is not None:
+            self.comboCloneBranch.setEditable(False)
+            self.comboCloneBranch.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._clone_url_timer = QTimer(self)
         self._clone_url_timer.setSingleShot(True)
         self._clone_url_timer.setInterval(350)
         self._clone_url_timer.timeout.connect(self._normalize_clone_url_field)
+        # Track last owner/repo so folder name resets when URL changes to another repo
+        self._last_clone_repo_key: str | None = None
 
         # --- sync ---
         self.editSyncFolder = window.findChild(QLineEdit, "editSyncFolder")
@@ -256,7 +262,7 @@ class MainController(QObject):
             (
                 "labelTabIntroClone",
                 "GitHub에 있는 폴더를 내 컴퓨터로 복사합니다.",
-                "• 주소를 붙여넣으면 저장소 루트만 남습니다. 브랜치는 아래에서 고르세요.\n"
+                "• 주소를 붙여넣으면 저장소 루트만 남습니다. branch는 아래에서 고르세요.\n"
                 "• 같은 이름의 폴더가 이미 있으면 실패합니다. 이름을 바꾸세요.\n"
                 "• 비공개 저장소는 「비공개 저장소 받을 때 GitHub 연결 사용」을 켠 뒤 연결하세요.",
             ),
@@ -1070,7 +1076,32 @@ class MainController(QObject):
             self._go_sync_tab(folder)
 
     # ----- clone -----
-    _DEFAULT_BRANCH_LABEL = "기본 브랜치"
+    # Real branch names stay intact; notes only in parentheses for beginners.
+    _NOTE_DEFAULT = "default branch"
+    _NOTE_FROM_URL = "from URL"
+
+    @staticmethod
+    def _format_branch_label(name: str, note: str | None = None) -> str:
+        name = (name or "").strip()
+        if not name:
+            return ""
+        if note:
+            return f"{name} ({note})"
+        return name
+
+    @classmethod
+    def _parse_branch_label(cls, display: str) -> str | None:
+        """Extract real branch name; ignore UI-only notes in (...)."""
+        text = (display or "").strip()
+        if not text or text in ("default branch", "기본 브랜치"):
+            return None
+        if text.endswith(")") and " (" in text:
+            base, _, note = text.rpartition(" (")
+            note = note[:-1].strip()
+            if note in (cls._NOTE_DEFAULT, cls._NOTE_FROM_URL, "default"):
+                base = base.strip()
+                return base or None
+        return text
 
     @Slot()
     def _on_clone_url_text_changed(self, _text: str = "") -> None:
@@ -1082,12 +1113,21 @@ class MainController(QObject):
         """
         Strip everything after github.com/user/repo and refresh branch list.
 
-        Branch from /tree/… becomes a combo suggestion; user still chooses.
+        When owner/repo changes (different repository), reset folder name and
+        branch to match the new repo — old name would collide or look wrong.
         """
         if not self.editCloneUrl:
             return
         raw = (self.editCloneUrl.text() or "").strip()
         if not raw:
+            # Cleared field → clear dependent fields
+            self._last_clone_repo_key = None
+            if self.editCloneDirName is not None:
+                self.editCloneDirName.clear()
+            if self.comboCloneBranch is not None:
+                self.comboCloneBranch.blockSignals(True)
+                self.comboCloneBranch.clear()
+                self.comboCloneBranch.blockSignals(False)
             return
         try:
             n = normalize_github_clone_url(raw)
@@ -1102,12 +1142,23 @@ class MainController(QObject):
             for w in n.warnings:
                 self._log(f"URL 안내: {w}")
 
+        repo_key = f"{n.owner}/{n.repo}".lower()
+        repo_changed = self._last_clone_repo_key != repo_key
+        self._last_clone_repo_key = repo_key
+
         if self.editCloneDirName is not None:
-            if not (self.editCloneDirName.text() or "").strip():
+            cur_name = (self.editCloneDirName.text() or "").strip()
+            # New/empty → fill; different repo → always reset to new repo name
+            if repo_changed or not cur_name:
                 self.editCloneDirName.setText(n.repo)
+                if repo_changed and cur_name and cur_name != n.repo:
+                    self._log(f"폴더 이름 → {n.repo} (저장소가 바뀜)")
 
         self._refresh_clone_branches(
-            n.owner, n.repo, suggested=n.suggested_branch
+            n.owner,
+            n.repo,
+            suggested=n.suggested_branch,
+            repo_changed=repo_changed,
         )
 
     def _refresh_clone_branches(
@@ -1116,53 +1167,111 @@ class MainController(QObject):
         repo: str,
         *,
         suggested: str | None = None,
+        repo_changed: bool = False,
     ) -> None:
-        """Fill branch combo: 기본 브랜치 + API list + URL hint."""
+        """
+        Fill branch combo with real names; notes only as ``name (note)``.
+
+        Never replace a branch name with a vague label alone.
+        """
         if self.comboCloneBranch is None:
             return
-        current = (self.comboCloneBranch.currentText() or "").strip()
+        prev_value = self._parse_branch_label(
+            self.comboCloneBranch.currentText() or ""
+        )
         names: list[str] = []
+        default_branch: str | None = None
         token = load_token()
         try:
-            from app.github.api_client import list_repo_branches
+            from app.github.api_client import (
+                get_repo_default_branch,
+                list_repo_branches,
+            )
 
+            default_branch = get_repo_default_branch(
+                owner, repo, access_token=token
+            )
             names = list_repo_branches(owner, repo, access_token=token)
         except Exception as e:
-            self._log(f"브랜치 목록: 불러오지 못함 ({e.__class__.__name__})")
+            self._log(f"branch list: failed ({e.__class__.__name__})")
+
+        if default_branch and default_branch not in names:
+            names = [default_branch] + names
+
+        # Build display items: real name + optional (note)
+        items: list[str] = []
+        seen: set[str] = set()
+
+        def _add(name: str, note: str | None = None) -> str:
+            label = self._format_branch_label(name, note)
+            key = name.lower()
+            if key in seen:
+                return label
+            seen.add(key)
+            items.append(label)
+            return label
+
+        default_label: str | None = None
+        if default_branch:
+            default_label = _add(default_branch, self._NOTE_DEFAULT)
+        for name in names:
+            if default_branch and name == default_branch:
+                continue
+            _add(name)
+        suggested_label: str | None = None
+        if suggested:
+            if default_branch and suggested == default_branch:
+                suggested_label = default_label
+            elif suggested.lower() in seen:
+                # already listed as plain name — find that label
+                for it in items:
+                    if self._parse_branch_label(it) == suggested:
+                        suggested_label = it
+                        break
+            else:
+                suggested_label = _add(suggested, self._NOTE_FROM_URL)
+
+        if not items and suggested:
+            suggested_label = _add(suggested, self._NOTE_FROM_URL)
 
         self.comboCloneBranch.blockSignals(True)
         self.comboCloneBranch.clear()
-        self.comboCloneBranch.addItem(self._DEFAULT_BRANCH_LABEL)
-        for name in names:
-            self.comboCloneBranch.addItem(name)
-        if suggested and suggested not in names:
-            self.comboCloneBranch.addItem(suggested)
+        for it in items:
+            self.comboCloneBranch.addItem(it)
 
-        # Prefer URL-suggested branch, else keep prior choice if still listed
-        pick = self._DEFAULT_BRANCH_LABEL
-        if suggested and (
-            suggested in names or self.comboCloneBranch.findText(suggested) >= 0
-        ):
-            pick = suggested
-        elif current and current != self._DEFAULT_BRANCH_LABEL:
-            if self.comboCloneBranch.findText(current) >= 0:
-                pick = current
-        idx = self.comboCloneBranch.findText(pick)
-        self.comboCloneBranch.setCurrentIndex(idx if idx >= 0 else 0)
+        # Selection: new repo → URL hint or default; same repo → keep value
+        pick: str | None = None
+        if repo_changed:
+            pick = suggested_label or default_label
+        else:
+            if prev_value:
+                for it in items:
+                    if self._parse_branch_label(it) == prev_value:
+                        pick = it
+                        break
+            if pick is None:
+                pick = suggested_label or default_label
+
+        if pick and self.comboCloneBranch.findText(pick) >= 0:
+            self.comboCloneBranch.setCurrentIndex(
+                self.comboCloneBranch.findText(pick)
+            )
+        elif self.comboCloneBranch.count() > 0:
+            self.comboCloneBranch.setCurrentIndex(0)
         self.comboCloneBranch.blockSignals(False)
 
-        if names:
-            self._log(f"브랜치 목록: {len(names)}개")
+        if names or default_branch:
+            self._log(
+                f"branch list: {len(items)}"
+                + (f" · default={default_branch}" if default_branch else "")
+            )
         if suggested:
-            self._log(f"주소에서 본 브랜치 후보: {suggested}")
+            self._log(f"branch from URL: {suggested}")
 
     def _selected_clone_branch(self) -> str | None:
         if self.comboCloneBranch is None:
             return None
-        text = (self.comboCloneBranch.currentText() or "").strip()
-        if not text or text == self._DEFAULT_BRANCH_LABEL:
-            return None
-        return text
+        return self._parse_branch_label(self.comboCloneBranch.currentText() or "")
 
     @Slot()
     def on_clone_browse_parent(self) -> None:
@@ -1238,8 +1347,8 @@ class MainController(QObject):
             return
 
         branch = self._selected_clone_branch()
-        branch_note = branch or "기본 브랜치"
-        self._log(f"--- 받기: {norm.display_url} · {branch_note} ---")
+        branch_note = branch or "(repo default)"
+        self._log(f"--- clone: {norm.display_url} · branch {branch_note} ---")
         w = CloneWorker(
             url=norm.display_url,
             parent_dir=str(Path(parent).expanduser().resolve()),
