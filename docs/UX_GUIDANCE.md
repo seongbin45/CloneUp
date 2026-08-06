@@ -37,8 +37,14 @@
 - 파일 **내용** 개인정보 패턴 (전화·이메일)
   - 확인만 (차단 아님) + **오탐 가능** 명시 (예시 번호 등)
 - 공개/비공개 위험을 **평이한 말**로 구분
-- 항상: 커밋 기록 이메일 공개 (`peek_commit_email`)
+- 항상: **커밋에 남을 작성자 주소**
+  - 체크 **「커밋에 내 이메일 숨기기 (권장)」** (기본 켜짐)
+    → 이번 커밋만 GitHub **가림 주소** (PC Git 설정 안 바꿈)
+  - 체크 끔 → PC Git `user.email` 사용
+  - 공개/비공개는 “누가 보느냐”만 바꿈 (주소 자체를 만들지 않음)
+  - 구현: `hide_real_email` → `resolve_commit_identity` / `preview_commit_email`
 - 상세: `docs/PII_CROSS_VERIFY.md`
+
 
 ### G4 (적용)
 

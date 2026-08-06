@@ -24,14 +24,14 @@ from app.util.log_mask import mask_token
 # Shown whenever a worker needs auth but keyring is empty / invalid.
 LOGIN_REQUIRED_MSG = (
     "GitHub 연결이 필요합니다.\n"
-    "창 위쪽 「GitHub: 로그인」을 누른 뒤, "
+    "창 위쪽 「GitHub: 연결」을 누른 뒤, "
     "GitHub에서 만든 키를 붙여 넣으세요."
 )
 
 TOKEN_EXPIRED_MSG = (
     "저장된 키가 만료되었거나 취소·삭제되었습니다.\n"
-    "GitHub에서 새 키를 만들고 (repo 권한 · 만료일 확인),\n"
-    "창 위쪽 「GitHub: 로그인」에서 다시 붙여 넣으세요."
+    "GitHub에서 새 키를 만들고 (저장소 권한 · 만료일 확인),\n"
+    "창 위쪽 「GitHub: 연결」에서 다시 붙여 넣으세요."
 )
 
 # Detectable marker for friendly UI dialog (see show_missing_repo_help).

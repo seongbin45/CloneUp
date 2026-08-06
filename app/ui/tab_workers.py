@@ -76,13 +76,13 @@ class CloneWorker(QThread):
                     return
                 token = None
                 if self.use_token:
-                    self._log("인증 확인 (저장된 키, 비공개 clone)…")
+                    self._log("인증 확인 (비공개 저장소 받기)…")
                     token, user = ensure_valid_token(
                         open_browser=False,
                         copy_code=False,
                         should_cancel=self.isInterruptionRequested,
                     )
-                    self._log(f"로그인: {user.get('login')} · {mask_token(token)}")
+                    self._log(f"연결됨: {user.get('login')}")
                 if self.isInterruptionRequested():
                     self.failed.emit("취소됨")
                     return
@@ -154,6 +154,7 @@ class SyncActionWorker(QThread):
         folder: str,
         message: str = "",
         allow_secrets: bool = False,
+        hide_real_email: bool = True,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -161,6 +162,7 @@ class SyncActionWorker(QThread):
         self.folder = folder
         self.message = message
         self.allow_secrets = allow_secrets
+        self.hide_real_email = hide_real_email
 
     def _log(self, msg: str) -> None:
         self.log_line.emit(mask_secrets_in_text(msg))
@@ -177,12 +179,12 @@ class SyncActionWorker(QThread):
                     should_cancel=self.isInterruptionRequested,
                 )
                 if self.action == "pull":
-                    self._log("pull…")
+                    self._log("받아오기…")
                     token, _user = ensure_valid_token(**auth_kw)
                     msg = pull_repo(folder, token=token)
                     self.succeeded.emit(msg)
                 elif self.action == "push":
-                    self._log("commit + push…")
+                    self._log("올리고 보내기…")
                     token, user = ensure_valid_token(**auth_kw)
                     msg = commit_and_push(
                         folder,
@@ -190,6 +192,7 @@ class SyncActionWorker(QThread):
                         token=token,
                         user=user,
                         allow_secrets=self.allow_secrets,
+                        hide_real_email=self.hide_real_email,
                     )
                     self.succeeded.emit(msg)
                 elif self.action == "abort":

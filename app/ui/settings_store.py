@@ -49,8 +49,12 @@ def save_last_private(private: bool) -> None:
 
 
 def load_last_commit_message() -> str:
-    val = _settings().value("last_commit_message", "Initial commit")
-    return str(val) if val else "Initial commit"
+    val = _settings().value("last_commit_message", "첫 업로드")
+    s = str(val) if val else "첫 업로드"
+    # Migrate old English default for beginners
+    if s.strip() in ("Initial commit", "initial commit"):
+        return "첫 업로드"
+    return s or "첫 업로드"
 
 
 def save_last_commit_message(msg: str) -> None:
@@ -67,3 +71,12 @@ def load_last_github_login() -> str | None:
 def save_last_github_login(login: str) -> None:
     if login.strip():
         _settings().setValue("last_github_login", login.strip())
+
+
+def load_hide_real_email() -> bool:
+    """Default True: beginner-safe hide school/work email in commits."""
+    return bool(_settings().value("hide_real_email", True, type=bool))
+
+
+def save_hide_real_email(hide: bool) -> None:
+    _settings().setValue("hide_real_email", bool(hide))

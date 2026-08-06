@@ -610,15 +610,23 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         font-size: 13px;
         padding-right: 4px;
     }}
+    /* Option row: side-by-side checkboxes (left margin on HBox in .ui) */
     QCheckBox#checkAllowSecrets,
-    QCheckBox#checkCloneUseToken,
-    QCheckBox#checkSyncAllowSecrets {{
-        margin-left: 102px;
+    QCheckBox#checkHideEmail,
+    QCheckBox#checkSyncAllowSecrets,
+    QCheckBox#checkSyncHideEmail {{
+        margin-left: 0;
         color: {TEXT_FAINT};
         font-size: 12.5px;
     }}
-    QCheckBox#checkCloneUseToken {{
+    QCheckBox#checkHideEmail,
+    QCheckBox#checkSyncHideEmail {{
         color: {TEXT_SECONDARY};
+    }}
+    QCheckBox#checkCloneUseToken {{
+        margin-left: 102px;
+        color: {TEXT_SECONDARY};
+        font-size: 12.5px;
     }}
     QLabel#labelCloneHint {{
         background: {BG_HINT};

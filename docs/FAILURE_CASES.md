@@ -26,20 +26,21 @@
 | E2 | Git &lt; 2.28 | `init` + `symbolic-ref` 로 main 설정 | `publish._init_repo_main` |
 | E3 | Git ≥ 2.28 | `git init -b main` | 동일 |
 | E4 | 네트워크 없음 | API/push 실패, hang 없음 | requests / `GIT_TERMINAL_PROMPT=0` |
-| E5 | `user.name`/`user.email` 없음 | global 수정 없이 `-c` 로 noreply 주입 | `resolve_commit_identity` |
-| E6 | identity 이미 있음 | **덮어쓰지 않음** | 동일 |
+| E5 | `user.name`/`user.email` 없음 | global 수정 없이 `-c` 로 가림 주소 주입 | `resolve_commit_identity` |
+| E6 | identity 이미 있음 + 숨기기 **끔** | Git 설정 존중 (덮어쓰지 않음) | 동일 |
+| E7 | 「커밋에 내 이메일 숨기기」켬 | 이번 커밋만 가림 주소 (`-c`, gitconfig 미변경) | 동일 |
 
 ---
 
-## 2. 인증
+## 2. 인증 (0.1.1+ : 키/PAT 기본)
 
 | ID | 상황 | 기대 동작 | 구현 위치 |
 |----|------|-----------|-----------|
-| A1 | keyring 토큰 없음 | Device Flow 시작 | `ensure_valid_token` |
-| A2 | 토큰 유효 | GET /user 성공, scope 표시 | 동일 |
-| A3 | 토큰 401 (권한 취소 등) | keyring 삭제 → **자동** Device Flow | 동일 |
-| A4 | Device Flow 미활성 OAuth App | 400 + Enable Device Flow 힌트 | `device_flow` |
-| A5 | 승인 거부 / 시간 초과 | 명확한 메시지, hang 없음 | `device_flow` |
+| A1 | keyring 토큰 없음 | **Device Flow 안 함** → 연결 안내 | `ensure_valid_token` |
+| A2 | 토큰 유효 | GET /user 성공 | 동일 |
+| A3 | 토큰 401 (만료·취소) | keyring 삭제 → 재연결 안내 (자동 Device 없음) | 동일 |
+| A4 | PAT에 repo 없음 | 친절한 권한 안내 팝업 | `login_with_pat` / UI |
+| A5 | Device Flow | `CLONEUP_ALLOW_DEVICE_FLOW=1` 일 때만 (개발용) | `config` / `session` |
 | A6 | 저장된 scope 없음 | `X-OAuth-Scopes` backfill | `session` |
 
 ---

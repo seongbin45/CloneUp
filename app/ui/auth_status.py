@@ -73,8 +73,8 @@ class AuthStatusButton(QObject):
     Status-bar GitHub control (click to login / re-login).
 
     Design copy:
-      logged out → ● GitHub: 로그인 필요
-      logged in  → ● GitHub: 로그인됨 (user)
+      logged out → ● GitHub: 연결 필요
+      logged in  → ● GitHub: 연결됨 (user)
       aging      → ● GitHub: 키 확인 권장 (user)
     """
 
@@ -108,12 +108,12 @@ class AuthStatusButton(QObject):
         scope = load_scope()
         if not token:
             self._state = AuthState.LOGGED_OUT
-            self.button.setText("●  GitHub: 로그인 필요")
+            self.button.setText("●  GitHub: 연결 필요")
             self.button.setStyleSheet(
                 _status_button_style(p, emphasis=p.warn_dot)
             )
             self.button.setToolTip(
-                "클릭하여 GitHub 연결\n"
+                "클릭하여 GitHub와 연결\n"
                 "GitHub에서 만든 키를 붙여 넣습니다.\n"
                 "키에는 만료일이 있을 수 있습니다 (90일 등).\n"
                 "연결 정보는 이 컴퓨터 안에만 저장됩니다."
@@ -122,7 +122,7 @@ class AuthStatusButton(QObject):
 
         kind = load_auth_kind()
         kind_txt = _auth_kind_label(kind)
-        store_note = "저장: OS keyring (이 PC만, .git/config 아님)"
+        store_note = "저장: 이 컴퓨터 안에만 (다른 사람에게 공유되지 않음)"
         age = token_age_info()
 
         if has_scope("repo"):
@@ -136,7 +136,7 @@ class AuthStatusButton(QObject):
                 )
             else:
                 self._state = AuthState.LOGGED_IN
-                self.button.setText(f"●  GitHub: 로그인됨 ({who})")
+                self.button.setText(f"●  GitHub: 연결됨 ({who})")
                 self.button.setStyleSheet(
                     _status_button_style(p, emphasis=p.success_dot)
                 )
@@ -158,7 +158,7 @@ class AuthStatusButton(QObject):
             _status_button_style(p, emphasis=p.warn_dot)
         )
         self.button.setToolTip(
-            f"저장소(repo) 권한이 있는 키가 필요합니다.\n"
+            f"저장소 권한이 있는 키가 필요합니다.\n"
             f"방식={kind_txt}\n"
             f"{store_note}\n"
             f"{age.tooltip_extra}\n"

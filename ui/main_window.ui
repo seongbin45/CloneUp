@@ -248,18 +248,57 @@
           <item>
            <widget class="QLineEdit" name="editCommitMessage">
             <property name="text">
-             <string>Initial commit</string>
+             <string>첫 업로드</string>
             </property>
            </widget>
           </item>
          </layout>
         </item>
         <item>
-         <widget class="QCheckBox" name="checkAllowSecrets">
-          <property name="text">
-           <string>비밀 파일로 보이는 항목이 있어도 진행 (고급 · 비권장)</string>
+         <layout class="QHBoxLayout" name="publishOptionsLayout">
+          <property name="spacing">
+           <number>18</number>
           </property>
-         </widget>
+          <property name="leftMargin">
+           <number>102</number>
+          </property>
+          <item>
+           <widget class="QCheckBox" name="checkHideEmail">
+            <property name="text">
+             <string>커밋에 내 이메일 숨기기 (권장)</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+            <property name="toolTip">
+             <string>체크하면 커밋 기록에 학교·회사 메일 대신 GitHub 가림 주소가 들어갑니다. 이 컴퓨터의 Git 설정은 바꾸지 않습니다.</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="checkAllowSecrets">
+            <property name="text">
+             <string>비밀 파일도 진행 (고급)</string>
+            </property>
+            <property name="toolTip">
+             <string>비밀 파일로 보이는 항목이 있어도 진행합니다. 초보에게는 권장하지 않습니다.</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="publishOptionsSpacer">
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
         </item>
         <item>
          <layout class="QHBoxLayout" name="publishButtonLayout">
@@ -431,10 +470,13 @@
         <item>
          <widget class="QCheckBox" name="checkCloneUseToken">
           <property name="text">
-           <string>로그인 토큰 사용 (비공개 저장소)</string>
+           <string>비공개 저장소 받을 때 GitHub 연결 사용</string>
           </property>
           <property name="checked">
            <bool>true</bool>
+          </property>
+          <property name="toolTip">
+           <string>공개 저장소만 받을 때는 꺼도 됩니다. 비공개 저장소는 위쪽 「GitHub: 연결」이 필요합니다.</string>
           </property>
          </widget>
         </item>
@@ -576,18 +618,57 @@
           <item>
            <widget class="QLineEdit" name="editSyncMessage">
             <property name="text">
-             <string>Update</string>
+             <string>변경 사항 반영</string>
             </property>
            </widget>
           </item>
          </layout>
         </item>
         <item>
-         <widget class="QCheckBox" name="checkSyncAllowSecrets">
-          <property name="text">
-           <string>비밀 파일로 보이는 항목이 있어도 커밋 (고급 · 비권장)</string>
+         <layout class="QHBoxLayout" name="syncOptionsLayout">
+          <property name="spacing">
+           <number>18</number>
           </property>
-         </widget>
+          <property name="leftMargin">
+           <number>102</number>
+          </property>
+          <item>
+           <widget class="QCheckBox" name="checkSyncHideEmail">
+            <property name="text">
+             <string>커밋에 내 이메일 숨기기 (권장)</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+            <property name="toolTip">
+             <string>체크하면 커밋 기록에 학교·회사 메일 대신 GitHub 가림 주소가 들어갑니다. 이 컴퓨터의 Git 설정은 바꾸지 않습니다.</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="checkSyncAllowSecrets">
+            <property name="text">
+             <string>비밀 파일도 커밋 (고급)</string>
+            </property>
+            <property name="toolTip">
+             <string>비밀 파일로 보이는 항목이 있어도 커밋합니다. 초보에게는 권장하지 않습니다.</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="syncOptionsSpacer">
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
         </item>
         <item>
          <layout class="QHBoxLayout" name="syncButtonLayout">
@@ -597,14 +678,14 @@
           <item>
            <widget class="QPushButton" name="btnSyncPush">
             <property name="text">
-             <string>올리고 보내기 (commit+push)</string>
+             <string>올리고 보내기</string>
             </property>
            </widget>
           </item>
           <item>
            <widget class="QPushButton" name="btnSyncPull">
             <property name="text">
-             <string>받아오기 (pull)</string>
+             <string>받아오기</string>
             </property>
            </widget>
           </item>

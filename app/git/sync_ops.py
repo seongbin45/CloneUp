@@ -195,6 +195,7 @@ def commit_and_push(
     token: str,
     user: dict,
     allow_secrets: bool = False,
+    hide_real_email: bool = False,
 ) -> str:
     folder = _ensure_git_repo(folder)
     st = get_repo_status(folder)
@@ -220,8 +221,10 @@ def commit_and_push(
         # nothing to commit — still allow push of existing commits
         print("커밋할 새 변경 없음 → push 만 시도")
     else:
-        msg = (message or "").strip() or "Update"
-        identity = resolve_commit_identity(folder, user)
+        msg = (message or "").strip() or "변경 사항 반영"
+        identity = resolve_commit_identity(
+            folder, user, hide_real_email=hide_real_email
+        )
         run_git(
             ["commit", "-m", msg],
             cwd=str(folder),

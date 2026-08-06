@@ -60,9 +60,9 @@ def display_name(user: dict) -> str:
 
 def peek_commit_email(folder: Path | None = None) -> str:
     """
-    Email that will appear on the next commit (for UI G3 disclosure).
+    Email from Git config that *would* be used if we do not hide it.
 
-    Does not invent noreply until login; if unset, returns a plain-language placeholder.
+    Does not invent noreply; if unset, returns a plain-language placeholder.
     """
     cwd = str(folder) if folder is not None and folder.is_dir() else None
     email = git_config_get("user.email", cwd=cwd)
@@ -70,19 +70,45 @@ def peek_commit_email(folder: Path | None = None) -> str:
         email = git_config_get("user.email", cwd=None, global_scope=True)
     if email and email.strip():
         return email.strip()
-    return "GitHub 로그인 후 부여되는 noreply 이메일 (git에 이메일이 없을 때)"
+    return "GitHub 로그인 후 부여되는 가림 주소 (git에 이메일이 없을 때)"
+
+
+def preview_commit_email(
+    folder: Path | None,
+    user: dict | None,
+    *,
+    hide_real_email: bool,
+) -> str:
+    """
+    What the *next* commit will show (for G3 UI).
+
+    ``hide_real_email``: use GitHub noreply for this commit only.
+    """
+    if hide_real_email:
+        if user:
+            return noreply_email(user)
+        return "GitHub 가림 주소 (연결한 계정 기준 · 올리기 때 확정)"
+    # Prefer configured git email; if missing, show what we will inject.
+    existing = peek_commit_email(folder)
+    if existing and "가림 주소" not in existing and "로그인 후" not in existing:
+        return existing
+    if user:
+        return noreply_email(user)
+    return existing
 
 
 def resolve_commit_identity(
     folder: Path,
     user: dict,
+    *,
+    hide_real_email: bool = False,
 ) -> list[tuple[str, str]]:
     """
-    Return -c pairs for this commit only when local/global identity is missing.
-    Never writes to the user's gitconfig.
+    Return -c pairs for this commit only. Never writes to the user's gitconfig.
+
+    ``hide_real_email``: always use GitHub noreply for author email on this
+    commit, even if git user.email is set (privacy option for beginners).
     """
-    # Prefer repo-local, then global (git config --get walks hierarchy if we run in repo;
-    # before init, only global/system apply — we check global explicitly too).
     email = git_config_get("user.email", cwd=str(folder))
     if email is None:
         email = git_config_get("user.email", cwd=None, global_scope=True)
@@ -93,7 +119,7 @@ def resolve_commit_identity(
     config: list[tuple[str, str]] = []
     if not name:
         config.append(("user.name", display_name(user)))
-    if not email:
+    if hide_real_email or not email:
         config.append(("user.email", noreply_email(user)))
     return config
 
@@ -150,8 +176,9 @@ def publish_local_to_existing_remote(
     clone_url: str,
     html_url: str,
     full_name: str,
-    commit_message: str = "Initial commit",
+    commit_message: str = "첫 업로드",
     allow_secrets: bool = False,
+    hide_real_email: bool = False,
 ) -> PublishResult:
     """
     Init (if needed) → add → commit → remote add origin (clean) → push with temp creds.
@@ -185,7 +212,9 @@ def publish_local_to_existing_remote(
     else:
         _init_repo_main(folder)
 
-    identity = resolve_commit_identity(folder, user)
+    identity = resolve_commit_identity(
+        folder, user, hide_real_email=hide_real_email
+    )
     if identity:
         print(
             "커밋 identity 임시 주입 (-c, global 설정 변경 없음): "
@@ -227,7 +256,7 @@ def publish_local_to_existing_remote(
             # surface friendly text without token
             raise PublishError(
                 mask_secrets_in_text(str(e))
-                + " (자격증명이 필요하면 재로그인: spike_device_flow.py --force)"
+                + "\n\n다음: 창 위쪽 「GitHub: 연결」에서 키를 다시 연결한 뒤 올려 보세요."
             ) from e
     finally:
         delete_credential_file(cred_path)
@@ -258,9 +287,10 @@ def publish_folder_to_new_repo(
     create_repo_fn,
     repo_name: str,
     description: str = "",
-    commit_message: str = "Initial commit",
+    commit_message: str = "첫 업로드",
     allow_secrets: bool = False,
     private: bool = False,
+    hide_real_email: bool = False,
 ) -> PublishResult:
     """Create empty GitHub repo (public or private) then push local history."""
     from app.github.api_client import GitHubAPIError
@@ -295,4 +325,5 @@ def publish_folder_to_new_repo(
         full_name=full_name,
         commit_message=commit_message,
         allow_secrets=allow_secrets,
+        hide_real_email=hide_real_email,
     )

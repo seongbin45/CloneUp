@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 
-from app.git.publish import peek_commit_email
+from app.git.publish import preview_commit_email
 from app.git.runner import GitError, require_git
 from app.git.safety import (
     find_secret_candidates,
@@ -46,10 +46,12 @@ from app.ui.success_dialog import show_clone_success, show_publish_success
 from app.ui.tip_card import install_tip_card
 from app.util.next_action import format_next_step_line
 from app.ui.settings_store import (
+    load_hide_real_email,
     load_last_commit_message,
     load_last_private,
     load_recent_folders,
     remember_folder,
+    save_hide_real_email,
     save_last_commit_message,
     save_last_private,
 )
@@ -59,6 +61,43 @@ from app.ui.theme import active_palette
 
 def _ui_path() -> Path:
     return app_root() / "ui" / "main_window.ui"
+
+
+def _format_commit_email_g3(
+    email: str,
+    *,
+    private: bool | None,
+    hide_real_email: bool,
+) -> str:
+    """
+    G3 copy for commit author email.
+
+    Not “repo public/private chose this email”. hide_real_email uses GitHub
+    noreply for this commit only (PC git config unchanged).
+    """
+    addr = (email or "").strip()
+    is_github_noreply = "users.noreply.github.com" in addr.lower()
+    is_hide_preview = hide_real_email or "가림 주소" in addr
+    is_placeholder = ("로그인 후" in addr) or (
+        "noreply" in addr.lower() and not is_github_noreply and "@" not in addr
+    )
+
+    # Keep short — beginners skip long G3 blocks
+    lines = ["【커밋에 남을 주소】", f"  {addr}"]
+
+    if hide_real_email or is_hide_preview:
+        lines.append("이메일 숨기기 켜짐 → 가림 주소 사용 (PC Git 설정은 그대로)")
+    elif is_placeholder:
+        lines.append("Git에 메일이 없으면 가림 주소를 씁니다.")
+    else:
+        lines.append("이 PC Git 설정의 메일입니다. 숨기려면 위 옵션을 켜세요.")
+
+    if private is False:
+        lines.append("공개 저장소면 누구나 이 주소를 볼 수 있습니다.")
+    elif private is True:
+        lines.append("비공개여도 권한이 있는 사람은 볼 수 있습니다.")
+
+    return "\n".join(lines)
 
 
 def load_main_window() -> QMainWindow:
@@ -131,6 +170,7 @@ class MainController(QObject):
         self.radioPublic = window.findChild(QRadioButton, "radioPublic")
         self.radioPrivate = window.findChild(QRadioButton, "radioPrivate")
         self.editCommitMessage = window.findChild(QLineEdit, "editCommitMessage")
+        self.checkHideEmail = window.findChild(QCheckBox, "checkHideEmail")
         self.checkAllowSecrets = window.findChild(QCheckBox, "checkAllowSecrets")
         self.btnPublish = window.findChild(QPushButton, "btnPublish")
 
@@ -149,6 +189,7 @@ class MainController(QObject):
         self.btnSyncRefresh = window.findChild(QPushButton, "btnSyncRefresh")
         self.labelSyncStatus = window.findChild(QLabel, "labelSyncStatus")
         self.editSyncMessage = window.findChild(QLineEdit, "editSyncMessage")
+        self.checkSyncHideEmail = window.findChild(QCheckBox, "checkSyncHideEmail")
         self.checkSyncAllowSecrets = window.findChild(QCheckBox, "checkSyncAllowSecrets")
         self.btnSyncPull = window.findChild(QPushButton, "btnSyncPull")
         self.btnSyncPush = window.findChild(QPushButton, "btnSyncPush")
@@ -194,7 +235,7 @@ class MainController(QObject):
             if age.level in ("strong", "stale"):
                 self._log(
                     "다음: GitHub 키 목록에서 만료일을 확인하거나, "
-                    "새 키로 「GitHub: 로그인」을 다시 하세요."
+                    "새 키로 「GitHub: 연결」을 다시 하세요."
                 )
 
     def _install_tab_tip_cards(self) -> None:
@@ -203,9 +244,9 @@ class MainController(QObject):
             (
                 "labelTabIntroPublish",
                 "내 컴퓨터 폴더를 GitHub에 처음 올립니다.",
-                "• 먼저 위쪽 「GitHub: 로그인」에서 연결하세요. (3단계 안내)\n"
-                "• 저장소 이름에 쓸 수 없는 문자가 있으면 실패합니다.\n"
-                "• 공개로 만들면 누구나 볼 수 있고, 되돌리기 어렵습니다.\n"
+                "• 먼저 위쪽 「GitHub: 연결」에서 키를 연결하세요.\n"
+                "• 「커밋에 내 이메일 숨기기」를 켜 두면 학교·회사 메일이 안 남습니다.\n"
+                "• 공개 저장소는 누구나 볼 수 있고, 되돌리기 어렵습니다.\n"
                 "• .env 같은 비밀 파일 후보는 기본적으로 올리지 않습니다.",
             ),
             (
@@ -213,14 +254,14 @@ class MainController(QObject):
                 "GitHub에 있는 폴더를 내 컴퓨터로 복사합니다.",
                 "• 저장소 루트 주소만 쓰세요. /tree/main 은 자동으로 정리됩니다.\n"
                 "• 같은 이름의 폴더가 이미 있으면 실패합니다. 이름을 바꾸세요.\n"
-                "• 비공개 저장소는 위 GitHub 로그인이 필요합니다.",
+                "• 비공개 저장소는 「비공개 저장소 받을 때 GitHub 연결 사용」을 켠 뒤 연결하세요.",
             ),
             (
                 "labelTabIntroSync",
                 "이미 연결된 폴더의 변경사항을 주고받습니다.",
                 "• 이 폴더에 .git 이 있어야 합니다. 없으면 「받기」나 「만들고 올리기」를 먼저 하세요.\n"
                 "• 올리기 전에 비밀 파일 후보가 있는지 확인하세요.\n"
-                "• push 권한 오류가 나면 GitHub 로그인을 다시 하세요.",
+                "• 권한 오류가 나면 위쪽 「GitHub: 연결」에서 키를 다시 연결하세요.",
             ),
         ]
         for obj_name, summary, body in tips:
@@ -291,6 +332,7 @@ class MainController(QObject):
             self.editCommitMessage,
             self.radioPublic,
             self.radioPrivate,
+            self.checkHideEmail,
             self.checkAllowSecrets,
         ):
             if w is not None:
@@ -333,6 +375,7 @@ class MainController(QObject):
             self.btnSyncAbort,
             self.editSyncFolder,
             self.editSyncMessage,
+            self.checkSyncHideEmail,
             self.checkSyncAllowSecrets,
         ):
             if w is not None:
@@ -411,7 +454,7 @@ class MainController(QObject):
         delete_token()
         self.auth_status.set_login_name(None)
         self.auth_status.refresh()
-        self._log("로그아웃 완료 — 저장된 GitHub 토큰을 삭제했습니다.")
+        self._log("로그아웃 완료 — 이 컴퓨터에 저장된 연결 정보를 지웠습니다.")
 
     def _notify_logout_done(self) -> None:
         """Friendly ack instead of '로그인이 취소되었습니다' failure dialog."""
@@ -503,6 +546,11 @@ class MainController(QObject):
             self.radioPrivate.setChecked(True)
         elif self.radioPublic is not None:
             self.radioPublic.setChecked(True)
+        hide = load_hide_real_email()
+        if self.checkHideEmail is not None:
+            self.checkHideEmail.setChecked(hide)
+        if self.checkSyncHideEmail is not None:
+            self.checkSyncHideEmail.setChecked(hide)
         self._reload_recent_combo()
         recent = load_recent_folders()
         if recent and self.editFolder is not None and not self.editFolder.text():
@@ -688,13 +736,13 @@ class MainController(QObject):
         self.auth_status.set_login_name(str(login) if login else None)
         self.auth_status.refresh()
         self._log(
-            f"로그인 완료 ({kind_label}): {login} {info.get('token_masked')}"
+            f"연결 완료 ({kind_label}): {login}"
         )
         QMessageBox.information(
             self.window,
             "연결 완료",
             f"{login} 님, 연결되었습니다.\n"
-            "만료일이 지나면 「GitHub: 로그인」으로 새 키를 넣으세요.",
+            "만료일이 지나면 「GitHub: 연결」으로 새 키를 넣으세요.",
         )
 
     @Slot(str)
@@ -764,6 +812,7 @@ class MainController(QObject):
         *,
         allow_secrets: bool,
         private: bool | None,
+        hide_real_email: bool = True,
         title: str = "올리기 전 확인",
     ) -> bool:
         """
@@ -830,25 +879,28 @@ class MainController(QObject):
                 "실제 개인정보면 올리기 전에 지우거나 가리세요."
             )
 
-        email = peek_commit_email(folder)
+        email = preview_commit_email(
+            folder, None, hide_real_email=hide_real_email
+        )
         parts.append(
-            "【커밋에 기록되는 이메일】\n"
-            f"  {email}\n\n"
-            "Git 기록에 남으며, 공개 저장소면 누구나 볼 수 있습니다. "
-            "CloneUp은 가능하면 GitHub noreply 주소를 씁니다."
+            _format_commit_email_g3(
+                email, private=private, hide_real_email=hide_real_email
+            )
         )
 
         if not secrets and not pii_hits:
-            intro = (
-                f"올리기 직전 확인입니다. ({vis_short})\n"
-                f"{vis_risk}"
+            # Clean path: short confirm
+            body = (
+                f"{vis_short}로 올립니다.\n"
+                f"{vis_risk}\n\n"
+                + "\n".join(parts)
+                + "\n\n계속할까요?"
             )
-            body = intro + "\n\n" + "\n\n".join(parts) + "\n\n계속할까요?"
         else:
             body = (
-                f"올리기 직전 확인입니다. ({vis_short})\n\n"
+                f"{vis_short} — 올리기 전 확인\n\n"
                 + "\n\n".join(parts)
-                + "\n\n위 내용을 이해했고, 그래도 올리려면 확인을 누르세요."
+                + "\n\n계속할까요?"
             )
 
         reply = QMessageBox.warning(
@@ -871,10 +923,13 @@ class MainController(QObject):
         name = (self.editRepoName.text() or "").strip()
         msg = (
             (self.editCommitMessage.text() if self.editCommitMessage else None)
-            or "Initial commit"
+            or "첫 업로드"
         ).strip()
         allow = bool(self.checkAllowSecrets and self.checkAllowSecrets.isChecked())
         private = bool(self.radioPrivate and self.radioPrivate.isChecked())
+        hide_email = bool(
+            self.checkHideEmail is None or self.checkHideEmail.isChecked()
+        )
 
         if not folder:
             QMessageBox.warning(self.window, "CloneUp", "로컬 폴더를 선택하세요.")
@@ -894,14 +949,20 @@ class MainController(QObject):
             # Prefer G3-style secret listing when that is the only block
             if report.secret_candidates and not allow:
                 self._confirm_upload_g3(
-                    path.resolve(), allow_secrets=False, private=private
+                    path.resolve(),
+                    allow_secrets=False,
+                    private=private,
+                    hide_real_email=hide_email,
                 )
                 return
             QMessageBox.warning(self.window, "올릴 수 없음", "\n".join(report.errors))
             return
 
         if not self._confirm_upload_g3(
-            path.resolve(), allow_secrets=allow, private=private
+            path.resolve(),
+            allow_secrets=allow,
+            private=private,
+            hide_real_email=hide_email,
         ):
             self._log("Publish 취소 — 확인 대화상자")
             return
@@ -910,6 +971,7 @@ class MainController(QObject):
         self._reload_recent_combo()
         save_last_private(private)
         save_last_commit_message(msg)
+        save_hide_real_email(hide_email)
 
         self._log(f"--- Publish: {name} ({'private' if private else 'public'}) ---")
         w = PublishWorker(
@@ -918,6 +980,7 @@ class MainController(QObject):
             commit_message=msg,
             private=private,
             allow_secrets=allow,
+            hide_real_email=hide_email,
             parent=self,
         )
         w.succeeded.connect(self._on_publish_ok)
@@ -1113,18 +1176,22 @@ class MainController(QObject):
             QMessageBox.warning(self.window, "CloneUp", "동기화할 폴더를 선택하세요.")
             return
         msg = (
-            (self.editSyncMessage.text() if self.editSyncMessage else None) or "Update"
+            (self.editSyncMessage.text() if self.editSyncMessage else None)
+            or "변경 사항 반영"
         ).strip()
         allow = bool(
             self.checkSyncAllowSecrets and self.checkSyncAllowSecrets.isChecked()
+        )
+        hide_email = bool(
+            self.checkSyncHideEmail is None or self.checkSyncHideEmail.isChecked()
         )
 
         if action == "abort":
             ans = QMessageBox.question(
                 self.window,
                 "충돌 취소",
-                "진행 중인 merge/rebase 를 취소할까요?\n"
-                "(git merge --abort / rebase --abort)",
+                "서로 다른 변경이 겹친 상태를 되돌릴까요?\n"
+                "(저장소가 충돌 직전 상태로 돌아갑니다.)",
             )
             if ans != QMessageBox.StandardButton.Yes:
                 return
@@ -1133,8 +1200,8 @@ class MainController(QObject):
             ans = QMessageBox.question(
                 self.window,
                 "받아오기",
-                "원격 변경을 pull 합니다.\n"
-                "충돌이 나면 이 앱으로 해결하지 않고 안내만 합니다. 계속할까요?",
+                "GitHub에 있는 최신 내용을 이 폴더로 가져옵니다.\n"
+                "겹치는 변경이 있으면 이 앱에서는 자동으로 합치지 않습니다. 계속할까요?",
             )
             if ans != QMessageBox.StandardButton.Yes:
                 return
@@ -1146,10 +1213,12 @@ class MainController(QObject):
                     path.resolve(),
                     allow_secrets=allow,
                     private=None,
+                    hide_real_email=hide_email,
                     title="올리고 보내기 전 확인",
                 ):
                     self._log("Sync push 취소 — 확인 대화상자")
                     return
+            save_hide_real_email(hide_email)
 
         self._log(f"--- Sync {action}: {folder} ---")
         w = SyncActionWorker(
@@ -1157,6 +1226,7 @@ class MainController(QObject):
             folder=folder.strip(),
             message=msg,
             allow_secrets=allow,
+            hide_real_email=hide_email,
             parent=self,
         )
         w.succeeded.connect(self._on_sync_action_ok)

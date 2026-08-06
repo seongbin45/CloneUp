@@ -34,7 +34,7 @@ def next_step_for_error(message: str) -> str | None:
     ):
         return (
             "GitHub에서 새 키를 만드세요 (repo 권한, 만료일 90일 이상 권장). "
-            "그다음 「GitHub: 로그인」에서 붙여 넣으세요."
+            "그다음 「GitHub: 연결」에서 붙여 넣으세요."
         )
 
     # Need user to paste a key (no auto Device Flow)
@@ -47,11 +47,11 @@ def next_step_for_error(message: str) -> str | None:
         or "장치 코드 로그인" in msg
         or "브라우저(장치 코드)" in msg
     ):
-        return "창 위쪽 「GitHub: 로그인」에서 GitHub 키를 붙여 넣으세요."
+        return "창 위쪽 「GitHub: 연결」에서 GitHub 키를 붙여 넣으세요."
 
     # Device Flow (legacy / maintainer only)
     if "device" in low or "장치 코드" in msg or "장치 인증" in msg:
-        return "장치 코드 로그인은 꺼져 있습니다. 「GitHub: 로그인」에서 키를 사용하세요."
+        return "브라우저 장치 코드 방식은 꺼져 있습니다. 「GitHub: 연결」에서 키를 사용하세요."
 
     # Auth / permission (push denied, 401, etc.)
     if (
@@ -65,7 +65,7 @@ def next_step_for_error(message: str) -> str | None:
         or "로그인이 필요" in msg
         or ("권한" in msg and ("없" in msg or "부족" in msg or "실패" in msg))
     ):
-        return "창 위쪽 「GitHub: 로그인」에서 키를 다시 연결하세요."
+        return "창 위쪽 「GitHub: 연결」에서 키를 다시 연결하세요."
 
     # Clone path already exists
     if "이미 존재하는 경로" in msg or (
@@ -128,8 +128,8 @@ def next_step_for_error(message: str) -> str | None:
     # push/pull 실패 with little detail — soft default
     if re.search(r"push\s*실패|pull\s*실패", msg, re.I):
         if "denied" in low or "permission" in low or "403" in msg:
-            return "GitHub 로그인을 다시 하세요."
-        return "로그 원문을 확인하세요. 권한 문제면 GitHub 로그인을 다시 해 보세요."
+            return "「GitHub: 연결」에서 키를 다시 연결하세요."
+        return "로그를 확인하세요. 권한 문제면 「GitHub: 연결」을 다시 해 보세요."
 
     return None
 
