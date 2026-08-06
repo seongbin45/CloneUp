@@ -5,7 +5,7 @@ Windows용 **GitHub 도우미** 데스크톱 앱입니다.
 
 | 항목 | 내용 |
 |------|------|
-| 현재 버전 | **0.1.0** (`VERSION`, `app/__init__.py`, `installer/CloneUp.iss`) |
+| 현재 버전 | **0.1.1** (`VERSION`, `app/__init__.py`, `installer/CloneUp.iss`) |
 | 실행 (개발) | `.\.venv\Scripts\python.exe main.py` |
 | 설치 파일 빌드 | `powershell -File scripts\build_installer.ps1` |
 | GitHub | https://github.com/seongbin45/CloneUp |
@@ -15,6 +15,11 @@ Windows용 **GitHub 도우미** 데스크톱 앱입니다.
 
 **`.env` 파일은 일반 사용자에게 필요 없습니다.**  
 OAuth client id·scope 기본값이 코드에 들어 있고, 로그인 토큰은 OS keyring에 저장됩니다.
+
+로그인: **GitHub에서 만든 키(PAT)만** (기본).  
+브라우저 장치 코드(Device Flow)는 공개 client_id 남용 위험으로 **기본 비활성**입니다.  
+(개발자만 `CLONEUP_ALLOW_DEVICE_FLOW=1`)  
+차별화·보안: [docs/DIFFERENTIATION.md](docs/DIFFERENTIATION.md)
 
 ---
 
@@ -160,7 +165,7 @@ git commit -m "merge: 충돌 해결"
 지금 설치 프로그램 버전은 여기에 적혀 있습니다.
 
 - 파일: [`installer/CloneUp.iss`](installer/CloneUp.iss)  
-- 줄: `#define MyAppVersion "0.1.0"`  
+- 줄: `#define MyAppVersion "0.1.1"`  
 → 예: `0.1.1` (버그 수정), `0.2.0` (기능 추가)
 
 (선택) 태그:

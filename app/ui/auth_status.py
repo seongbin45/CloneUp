@@ -7,23 +7,40 @@ from enum import Enum
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QPushButton
 
-from app.auth.token_store import has_scope, load_scope, load_token
+from app.auth.token_store import (
+    AUTH_KIND_DEVICE,
+    AUTH_KIND_PAT,
+    has_scope,
+    load_auth_kind,
+    load_scope,
+    load_token,
+    token_age_info,
+)
 from app.ui.settings_store import load_last_github_login, save_last_github_login
 from app.ui.theme import Palette, active_palette
 from app.util.log_mask import mask_token
+
+
+def _auth_kind_label(kind: str | None) -> str:
+    if kind == AUTH_KIND_PAT:
+        return "키(직접 연결)"
+    if kind == AUTH_KIND_DEVICE:
+        return "브라우저(이전/개발용 — 재연결 권장)"
+    return "알 수 없음(이전 버전 — 키로 다시 연결 권장)"
 
 
 class AuthState(Enum):
     LOGGED_OUT = "logged_out"
     LOGGED_IN = "logged_in"
     SCOPE_INSUFFICIENT = "scope_insufficient"
+    TOKEN_AGING = "token_aging"  # still has token; soft/hard age warning
 
 
 def _status_button_style(p: Palette, *, emphasis: str | None = None) -> str:
     """
     Status-row look: no heavy button chrome (matches desin mock).
 
-    Uses active palette at call time so OS dark/light is respected
+    Uses active palette at call time so OS light/dark is respected
     (import-time PRIMARY/TEXT_SECONDARY would stay stuck on light).
     """
     body = emphasis or p.text_secondary
@@ -58,6 +75,7 @@ class AuthStatusButton(QObject):
     Design copy:
       logged out → ● GitHub: 로그인 필요
       logged in  → ● GitHub: 로그인됨 (user)
+      aging      → ● GitHub: 키 확인 권장 (user)
     """
 
     login_requested = Signal()
@@ -90,23 +108,46 @@ class AuthStatusButton(QObject):
         scope = load_scope()
         if not token:
             self._state = AuthState.LOGGED_OUT
-            # Amber status (design authDot when logged out)
             self.button.setText("●  GitHub: 로그인 필요")
             self.button.setStyleSheet(
                 _status_button_style(p, emphasis=p.warn_dot)
             )
-            self.button.setToolTip("클릭하여 GitHub 로그인 (Device Flow)")
+            self.button.setToolTip(
+                "클릭하여 GitHub 연결\n"
+                "GitHub에서 만든 키를 붙여 넣습니다.\n"
+                "키에는 만료일이 있을 수 있습니다 (90일 등).\n"
+                "연결 정보는 이 컴퓨터 안에만 저장됩니다."
+            )
             return
 
+        kind = load_auth_kind()
+        kind_txt = _auth_kind_label(kind)
+        store_note = "저장: OS keyring (이 PC만, .git/config 아님)"
+        age = token_age_info()
+
         if has_scope("repo"):
-            self._state = AuthState.LOGGED_IN
             who = self._login or "계정"
-            self.button.setText(f"●  GitHub: 로그인됨 ({who})")
-            self.button.setStyleSheet(
-                _status_button_style(p, emphasis=p.success_dot)
-            )
+            if age.level in ("stale", "strong"):
+                self._state = AuthState.TOKEN_AGING
+                label = age.status_line or "키 확인 권장"
+                self.button.setText(f"●  GitHub: {label} ({who})")
+                self.button.setStyleSheet(
+                    _status_button_style(p, emphasis=p.warn_dot)
+                )
+            else:
+                self._state = AuthState.LOGGED_IN
+                self.button.setText(f"●  GitHub: 로그인됨 ({who})")
+                self.button.setStyleSheet(
+                    _status_button_style(p, emphasis=p.success_dot)
+                )
             self.button.setToolTip(
-                f"scope={scope!r}\n토큰={mask_token(token)}\n클릭하면 재로그인합니다."
+                f"계정={who}\n"
+                f"방식={kind_txt}\n"
+                f"권한={scope!r}\n"
+                f"키={mask_token(token)}\n"
+                f"{store_note}\n"
+                f"{age.tooltip_extra}\n"
+                "클릭하면 새 키로 다시 연결합니다."
             )
             return
 
@@ -117,7 +158,11 @@ class AuthStatusButton(QObject):
             _status_button_style(p, emphasis=p.warn_dot)
         )
         self.button.setToolTip(
-            f"현재 scope={scope!r}. repo 권한이 필요합니다. 클릭하여 재로그인."
+            f"저장소(repo) 권한이 있는 키가 필요합니다.\n"
+            f"방식={kind_txt}\n"
+            f"{store_note}\n"
+            f"{age.tooltip_extra}\n"
+            "클릭하여 키를 다시 붙여 넣으세요."
         )
 
     def _on_clicked(self) -> None:

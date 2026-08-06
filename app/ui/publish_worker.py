@@ -67,12 +67,11 @@ class LoginWorker(QThread):
                 if self.isInterruptionRequested():
                     self.failed.emit("취소됨")
                     return
-                self._log("GitHub 로그인 (Device Flow)…")
+                self._log("GitHub 로그인 (개발용 Device Flow)…")
 
                 def on_user_code(code: str, uri: str, expires_in: int) -> None:
                     self.user_code_ready.emit(code, uri, int(expires_in))
 
-                # Dialog owns browser + clipboard on UI thread.
                 token, user = ensure_valid_token(
                     force_login=self.force,
                     open_browser=False,
@@ -88,6 +87,7 @@ class LoginWorker(QThread):
                         "login": user.get("login"),
                         "scope": load_scope(),
                         "token_masked": mask_token(token),
+                        "auth_kind": "device",
                     }
                 )
         except AuthError as e:
@@ -97,6 +97,52 @@ class LoginWorker(QThread):
             else:
                 # Keep Device Flow detail (avoid opaque "인증 실패" only)
                 self.failed.emit(f"Device 인증 실패: {e}")
+        except OSError as e:
+            self.failed.emit(f"네트워크: {e}")
+        except Exception as e:
+            self.failed.emit(mask_secrets_in_text(f"예상치 못한 오류: {e}"))
+        finally:
+            sink.flush()
+
+
+class PatLoginWorker(QThread):
+    """Validate and store a user-supplied Personal Access Token (no OAuth App)."""
+
+    log_line = Signal(str)
+    succeeded = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, token: str, parent=None) -> None:
+        super().__init__(parent)
+        self._token = token
+
+    def _log(self, msg: str) -> None:
+        self.log_line.emit(mask_secrets_in_text(msg))
+
+    def run(self) -> None:
+        from app.auth.session import login_with_pat
+
+        sink = _SignalStdout(self._log)
+        try:
+            with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+                if self.isInterruptionRequested():
+                    self.failed.emit("취소됨")
+                    return
+                self._log("GitHub 로그인 (개인 액세스 토큰)…")
+                token, user = login_with_pat(self._token)
+                if self.isInterruptionRequested():
+                    self.failed.emit("로그인이 취소되었습니다.")
+                    return
+                self.succeeded.emit(
+                    {
+                        "login": user.get("login"),
+                        "scope": load_scope(),
+                        "token_masked": mask_token(token),
+                        "auth_kind": "pat",
+                    }
+                )
+        except AuthError as e:
+            self.failed.emit(str(e))
         except OSError as e:
             self.failed.emit(f"네트워크: {e}")
         except Exception as e:
@@ -168,15 +214,12 @@ class PublishWorker(QThread):
             return
 
         try:
-            self._log("인증 확인 (필요 시 Device Flow + 코드 팝업)…")
+            self._log("인증 확인 (저장된 키)…")
 
-            def on_user_code(code: str, uri: str, expires_in: int) -> None:
-                self.user_code_ready.emit(code, uri, int(expires_in))
-
+            # Never auto-start Device Flow — PAT must already be in keyring.
             token, user = ensure_valid_token(
                 open_browser=False,
                 copy_code=False,
-                on_user_code=on_user_code,
                 should_cancel=self.isInterruptionRequested,
             )
             self._log(f"로그인: {user.get('login')} · scope={load_scope()!r}")

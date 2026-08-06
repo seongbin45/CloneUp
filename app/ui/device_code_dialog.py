@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.auth.device_flow import format_remaining, verification_open_url
+from app.config import oauth_app_owner_one_liner
 from app.ui.theme import Palette, active_palette
 
 
@@ -45,6 +46,10 @@ def _card_stylesheet(p: Palette) -> str:
     QLabel#hint {{
         color: {p.text_muted};
         font-size: 13px;
+    }}
+    QLabel#trust {{
+        color: {p.text_faint};
+        font-size: 11.5px;
     }}
     QLabel#code {{
         font-size: 28px;
@@ -173,6 +178,11 @@ class DeviceCodeOverlay(QWidget):
         hint.setWordWrap(True)
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        trust = QLabel(oauth_app_owner_one_liner(), card)
+        trust.setObjectName("trust")
+        trust.setWordWrap(True)
+        trust.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         self._code_label = QLabel(self._user_code, card)
         self._code_label.setObjectName("code")
         self._code_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -217,6 +227,7 @@ class DeviceCodeOverlay(QWidget):
         lay.setSpacing(12)
         lay.addWidget(title)
         lay.addWidget(hint)
+        lay.addWidget(trust)
         lay.addWidget(self._code_label)
         lay.addWidget(self._timer_label)
         lay.addWidget(self._status)

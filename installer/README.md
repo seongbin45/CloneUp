@@ -37,7 +37,7 @@ installer\Output\CloneUp-Setup.exe
 `CloneUp.iss` 파일 위쪽:
 
 ```iss
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.1.1"
 ```
 
 올린 뒤 다시 `build_installer.ps1` 실행.

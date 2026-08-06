@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QObject, QUrl, Slot
-from PySide6.QtGui import QColor, QDesktopServices, QTextCharFormat, QTextCursor
+from PySide6.QtCore import QEvent, QFile, QObject, Slot
+from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
+    QTabWidget,
 )
 
 from app.git.publish import peek_commit_email
@@ -34,7 +35,14 @@ from app.auth.token_store import delete_token, load_token
 from app.paths import app_root
 from app.ui.auth_status import AuthState, AuthStatusButton
 from app.ui.device_code_dialog import DeviceCodeOverlay
-from app.ui.publish_worker import LoginWorker, PublishWorker
+from app.auth.session import MISSING_REPO_MARKER
+from app.ui.login_dialog import (
+    ConnectGitHubWizard,
+    parse_scopes_from_missing_repo_message,
+    show_missing_repo_help,
+)
+from app.ui.publish_worker import LoginWorker, PatLoginWorker, PublishWorker
+from app.ui.success_dialog import show_clone_success, show_publish_success
 from app.ui.tip_card import install_tip_card
 from app.util.next_action import format_next_step_line
 from app.ui.settings_store import (
@@ -93,6 +101,7 @@ class MainController(QObject):
         self.window.installEventFilter(self)
 
         # --- shared ---
+        self.tabWidget = window.findChild(QTabWidget, "tabWidget")
         self.labelStatusGit = window.findChild(QLabel, "labelStatusGit")
         self.textLog = window.findChild(QPlainTextEdit, "textLog")
         self.btnCancel = window.findChild(QPushButton, "btnCancel")
@@ -158,6 +167,7 @@ class MainController(QObject):
         from PySide6.QtCore import QTimer
 
         QTimer.singleShot(0, self._ensure_git_bootstrap)
+        QTimer.singleShot(0, self._log_token_age_hint)
 
     def _ensure_git_bootstrap(self) -> None:
         """Plan D / DG1: if Git missing, offer download page or winget install."""
@@ -169,12 +179,31 @@ class MainController(QObject):
         ensure_git_or_offer_setup(self.window, log=self._log)
         self._refresh_status_bar()
 
+    def _log_token_age_hint(self) -> None:
+        """Soft reminder: PAT may expire; we only know connect age on this PC."""
+        from app.auth.token_store import load_token, token_age_info
+
+        if not load_token():
+            return
+        age = token_age_info()
+        if age.level in ("soft", "strong", "stale"):
+            self._log(
+                f"안내: GitHub 키 연결 후 약 {age.days}일 지남. "
+                "만료일이 지났으면 올리기/받기가 실패할 수 있습니다."
+            )
+            if age.level in ("strong", "stale"):
+                self._log(
+                    "다음: GitHub 키 목록에서 만료일을 확인하거나, "
+                    "새 키로 「GitHub: 로그인」을 다시 하세요."
+                )
+
     def _install_tab_tip_cards(self) -> None:
         """G1/G2 — collapsible tip cards (folded by default to save space)."""
         tips: list[tuple[str, str, str]] = [
             (
                 "labelTabIntroPublish",
                 "내 컴퓨터 폴더를 GitHub에 처음 올립니다.",
+                "• 먼저 위쪽 「GitHub: 로그인」에서 연결하세요. (3단계 안내)\n"
                 "• 저장소 이름에 쓸 수 없는 문자가 있으면 실패합니다.\n"
                 "• 공개로 만들면 누구나 볼 수 있고, 되돌리기 어렵습니다.\n"
                 "• .env 같은 비밀 파일 후보는 기본적으로 올리지 않습니다.",
@@ -272,7 +301,12 @@ class MainController(QObject):
                 "올리는 중…" if busy else "GitHub에 만들고 올리기"
             )
         if self.btnCancel is not None:
-            self.btnCancel.setEnabled(busy and isinstance(self._worker, (PublishWorker, LoginWorker)))
+            self.btnCancel.setEnabled(
+                busy
+                and isinstance(
+                    self._worker, (PublishWorker, LoginWorker, PatLoginWorker)
+                )
+            )
 
         # clone
         for w in (
@@ -569,22 +603,24 @@ class MainController(QObject):
     def on_login(self) -> None:
         if self._busy():
             return
-        # Re-login (already had a session) → cancel on popup acts as logout
+        # Re-login (already had a session) → cancel on device popup acts as logout
         had_session = (
             self.auth_status.state
-            in (AuthState.LOGGED_IN, AuthState.SCOPE_INSUFFICIENT)
+            in (
+                AuthState.LOGGED_IN,
+                AuthState.SCOPE_INSUFFICIENT,
+                AuthState.TOKEN_AGING,
+            )
             or bool(load_token())
         )
         if had_session:
             reply = QMessageBox.warning(
                 self.window,
-                "재로그인 확인",
-                "새 장치 코드 인증을 시작합니다.\n"
-                "다른 계정으로 로그인할 수 있습니다.\n\n"
-                "확인을 누르면 브라우저 인증이 시작됩니다.\n"
-                "(실패·취소 시 기존 로그인은 유지됩니다.\n"
-                "팝업의 「로그아웃」을 누르면 토큰이 삭제됩니다.)\n\n"
-                "대화상자 취소를 누르면 아무 것도 하지 않습니다.",
+                "다시 연결할까요?",
+                "이미 GitHub에 연결되어 있습니다.\n\n"
+                "새 키로 바꾸면 이전 연결이 교체됩니다.\n\n"
+                "「확인」→ 안내 따라 다시 연결\n"
+                "「취소」→ 지금 연결 유지",
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Cancel,
             )
@@ -592,9 +628,50 @@ class MainController(QObject):
                 self._log("재로그인 취소됨 — 기존 로그인 유지")
                 return
 
-        self._device_cancel_label = "로그아웃" if had_session else "로그인 취소"
-        self._log("--- GitHub 로그인 ---")
-        w = LoginWorker(force=True, parent=self)
+        # Beginner 3-step wizard (PAT only). Security: no public Device Flow.
+        wiz = ConnectGitHubWizard(self.window, reauth=had_session)
+        if wiz.exec() != ConnectGitHubWizard.DialogCode.Accepted:
+            self._log("연결 안내 취소")
+            return
+
+        if wiz.wants_device_flow():
+            from app.config import is_device_flow_allowed
+
+            if not is_device_flow_allowed():
+                QMessageBox.warning(
+                    self.window,
+                    "연결",
+                    "이 방식은 사용할 수 없습니다. 안내의 키 연결을 이용해 주세요.",
+                )
+                return
+            self._device_cancel_label = "로그아웃" if had_session else "로그인 취소"
+            self._log("--- GitHub 로그인 (Device Flow, 개발용) ---")
+            w = LoginWorker(force=True, parent=self)
+            w.succeeded.connect(self._on_login_ok)
+            w.failed.connect(self._on_fail_msg)
+            self._start_worker(w)
+            return
+
+        self._start_pat_login(token=wiz.token())
+
+    def _start_pat_login(self, token: str | None = None) -> None:
+        """Store user-issued PAT after GET /user (no OAuth App)."""
+        raw = (token or "").strip()
+        if not raw:
+            wiz = ConnectGitHubWizard(self.window, reauth=False)
+            if wiz.exec() != ConnectGitHubWizard.DialogCode.Accepted:
+                self._log("연결 안내 취소")
+                return
+            if wiz.wants_device_flow():
+                self._log("개발용 Device Flow는 상태줄 로그인에서만 가능")
+                return
+            raw = wiz.token()
+        if not raw.strip():
+            self._log("키가 비어 연결 취소")
+            return
+        self._device_cancel_label = "로그인 취소"
+        self._log("--- GitHub 연결 (키) ---")
+        w = PatLoginWorker(raw, parent=self)
         w.succeeded.connect(self._on_login_ok)
         w.failed.connect(self._on_fail_msg)
         self._start_worker(w)
@@ -603,11 +680,21 @@ class MainController(QObject):
     def _on_login_ok(self, info: dict) -> None:
         self._close_device_overlay()
         login = info.get("login") or ""
+        kind = info.get("auth_kind") or ""
+        kind_label = {
+            "pat": "키(직접 만든 연결)",
+            "device": "브라우저(개발용)",
+        }.get(str(kind), "GitHub")
         self.auth_status.set_login_name(str(login) if login else None)
         self.auth_status.refresh()
-        self._log(f"로그인 완료: {login} {info.get('token_masked')}")
+        self._log(
+            f"로그인 완료 ({kind_label}): {login} {info.get('token_masked')}"
+        )
         QMessageBox.information(
-            self.window, "로그인 완료", f"{login}\nscope={info.get('scope')!r}"
+            self.window,
+            "연결 완료",
+            f"{login} 님, 연결되었습니다.\n"
+            "만료일이 지나면 「GitHub: 로그인」으로 새 키를 넣으세요.",
         )
 
     @Slot(str)
@@ -636,12 +723,40 @@ class MainController(QObject):
             self._log(next_line)
         if message.startswith("취소"):
             QMessageBox.information(self.window, "취소됨", message)
-        else:
-            # Dialog: error + next step when available
-            body = message
-            if next_line:
-                body = f"{message}\n\n{next_line}"
-            QMessageBox.critical(self.window, "실패", body)
+            return
+
+        # Missing repo scope — dedicated step-by-step help (beginners)
+        if MISSING_REPO_MARKER in message and not self._busy():
+            scopes = parse_scopes_from_missing_repo_message(message)
+            if show_missing_repo_help(
+                self.window, current_scopes=scopes, offer_reconnect=True
+            ):
+                self.on_login()
+            return
+
+        needs_login = (
+            "연결이 필요" in message
+            or "키를 붙여" in message
+            or "키가 올바르지" in message
+            or "만료되었" in message
+        )
+        body = message
+        if next_line:
+            body = f"{message}\n\n{next_line}"
+
+        if needs_login and not self._busy():
+            reply = QMessageBox.warning(
+                self.window,
+                "GitHub 연결 필요",
+                body + "\n\n지금 키를 붙여 넣을까요?",
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Ok,
+            )
+            if reply == QMessageBox.StandardButton.Ok:
+                self.on_login()
+            return
+
+        QMessageBox.critical(self.window, "실패", body)
 
     def _confirm_upload_g3(
         self,
@@ -653,31 +768,53 @@ class MainController(QObject):
     ) -> bool:
         """
         G3 — plain-language preflight before commit/push.
-        Secrets list + commit email disclosure. Cancel = do not start worker.
+        Secrets list + PII samples + commit email. Cancel = do not start worker.
         """
         parts: list[str] = []
+        if private is True:
+            vis_short = "비공개 저장소"
+            vis_risk = (
+                "비공개여도 나중에 공개로 바꾸거나, 권한이 있는 사람·유출 시 "
+                "그대로 보일 수 있습니다."
+            )
+        elif private is False:
+            vis_short = "공개 저장소"
+            vis_risk = (
+                "공개 저장소면 인터넷에 누구나 볼 수 있습니다. "
+                "한 번 올라간 내용은 완전 삭제가 어렵습니다."
+            )
+        else:
+            vis_short = "원격 저장소"
+            vis_risk = "원격에 올라가면 권한 있는 사람(또는 공개 시 누구나)이 볼 수 있습니다."
+
         secrets = find_secret_candidates(folder)
         if secrets:
             listing = format_secret_list(secrets)
             if not allow_secrets:
                 QMessageBox.warning(
                     self.window,
-                    "올릴 수 없음",
-                    "비밀 파일로 보이는 항목이 있습니다.\n\n"
+                    "올릴 수 없음 — 비밀 파일 후보",
+                    "이름만 봐도 비밀번호·API 키가 들어 있을 수 있는 파일입니다.\n"
+                    f"({vis_short})\n\n"
                     f"{listing}\n\n"
-                    "파일을 제거·이름 변경하거나, "
-                    "「비밀 파일로 보이는 항목이 있어도 진행」을 켠 뒤 다시 시도하세요.",
+                    "다음 중 하나를 하세요:\n"
+                    "  1) 폴더에서 해당 파일을 빼거나 이름 바꾸기\n"
+                    "  2) 정말 올려도 되면 「비밀 파일로 보이는 항목이 있어도 진행」을 켠 뒤 "
+                    "다시 시도\n\n"
+                    "참고: .env.example 처럼 샘플만 있는 파일도 이름 때문에 잡힐 수 있습니다. "
+                    "내용이 안전한지 확인한 뒤에만 2)를 쓰세요.",
+                )
+                self._log(
+                    "다음: 비밀 파일 후보를 제거·이름 변경하거나, "
+                    "확인 후 「비밀 파일… 진행」 체크"
                 )
                 return False
-            vis = (
-                "비공개 저장소여도 협업자·유출 시 위험합니다."
-                if private
-                else "공개 저장소면 인터넷에 그대로 보일 수 있습니다."
-            )
             parts.append(
-                "다음 파일이 포함될 수 있습니다:\n"
+                "【비밀 파일 후보 — 체크를 켠 상태】\n"
                 f"{listing}\n\n"
-                f"이대로 올리면 인터넷에 공개될 수 있습니다. ({vis})"
+                f"{vis_risk}\n"
+                "오탐일 수 있습니다(예: 빈 .env.example). "
+                "내용에 실제 비밀번호가 없는지 스스로 확인하세요."
             )
 
         # Content PII (phone/email) — Command-to-commit-changes-from-Git patterns
@@ -685,20 +822,35 @@ class MainController(QObject):
         if pii_hits:
             listing = format_pii_list(pii_hits)
             parts.append(
-                "파일 내용에서 개인정보로 보이는 값이 있습니다 "
-                "(전화·이메일 패턴):\n"
+                "【개인정보로 보이는 값 — 파일 내용】\n"
                 f"{listing}\n\n"
-                "이대로 올리면 인터넷에 공개될 수 있습니다. "
-                "필요하면 올리기 전에 지우거나 가리세요."
+                "전화·이메일 형태의 글자를 찾았습니다. "
+                f"{vis_risk}\n"
+                "오탐일 수 있습니다(예: 문서 속 예시 번호, 버전처럼 보이는 숫자). "
+                "실제 개인정보면 올리기 전에 지우거나 가리세요."
             )
 
         email = peek_commit_email(folder)
         parts.append(
-            "이 이메일이 커밋에 기록되어 공개됩니다:\n"
-            f"  {email}"
+            "【커밋에 기록되는 이메일】\n"
+            f"  {email}\n\n"
+            "Git 기록에 남으며, 공개 저장소면 누구나 볼 수 있습니다. "
+            "CloneUp은 가능하면 GitHub noreply 주소를 씁니다."
         )
 
-        body = "\n\n".join(parts) + "\n\n계속할까요?"
+        if not secrets and not pii_hits:
+            intro = (
+                f"올리기 직전 확인입니다. ({vis_short})\n"
+                f"{vis_risk}"
+            )
+            body = intro + "\n\n" + "\n\n".join(parts) + "\n\n계속할까요?"
+        else:
+            body = (
+                f"올리기 직전 확인입니다. ({vis_short})\n\n"
+                + "\n\n".join(parts)
+                + "\n\n위 내용을 이해했고, 그래도 올리려면 확인을 누르세요."
+            )
+
         reply = QMessageBox.warning(
             self.window,
             title,
@@ -706,7 +858,10 @@ class MainController(QObject):
             QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
-        return reply == QMessageBox.StandardButton.Ok
+        if reply != QMessageBox.StandardButton.Ok:
+            self._log("올리기 전 확인 — 사용자가 취소")
+            return False
+        return True
 
     @Slot()
     def on_publish(self) -> None:
@@ -769,21 +924,47 @@ class MainController(QObject):
         w.failed.connect(self._on_fail_msg)
         self._start_worker(w)
 
+    def _go_sync_tab(self, folder: str | None = None) -> None:
+        """Fill Sync folder field and switch to the Sync tab (V5 next step)."""
+        if folder and self.editSyncFolder is not None:
+            self.editSyncFolder.setText(str(folder))
+        if self.tabWidget is not None:
+            # tab order in main_window.ui: 0 publish, 1 clone, 2 sync
+            for i in range(self.tabWidget.count()):
+                w = self.tabWidget.widget(i)
+                if w is not None and w.objectName() == "tabSync":
+                    self.tabWidget.setCurrentIndex(i)
+                    break
+            else:
+                if self.tabWidget.count() >= 3:
+                    self.tabWidget.setCurrentIndex(2)
+        self._log("다음: 동기화 탭 — 이 폴더를 더 고친 뒤 「올리고 보내기」")
+
     @Slot(dict)
     def _on_publish_ok(self, result: dict) -> None:
         self._close_device_overlay()
-        self._log(f"Publish 성공: {result.get('html_url')}")
         url = result.get("html_url") or ""
-        QMessageBox.information(
+        folder = str(result.get("folder") or "")
+        full_name = str(result.get("full_name") or "")
+        private = bool(result.get("private"))
+        self._log(f"Publish 성공: {url or full_name}")
+        # Pre-fill Sync so 「동기화 탭으로」 is one click.
+        if self.editSyncFolder is not None and folder:
+            self.editSyncFolder.setText(folder)
+
+        steps = show_publish_success(
             self.window,
-            "업로드 완료",
-            f"{result.get('full_name')}\n{url}",
+            full_name=full_name,
+            html_url=url,
+            folder=folder,
+            private=private,
         )
-        if url:
-            QDesktopServices.openUrl(QUrl(url))
-        # offer to open in Sync tab
-        if self.editSyncFolder is not None and result.get("folder"):
-            self.editSyncFolder.setText(str(result["folder"]))
+        if steps.open_browser:
+            self._log(f"브라우저 열기: {url}")
+        if steps.url_copied:
+            self._log("저장소 주소 복사됨")
+        if steps.go_sync and folder:
+            self._go_sync_tab(folder)
 
     # ----- clone -----
     @Slot()
@@ -851,17 +1032,35 @@ class MainController(QObject):
 
     @Slot(dict)
     def _on_clone_ok(self, result: dict) -> None:
-        path = result.get("path") or ""
+        path = str(result.get("path") or "")
+        owner = result.get("owner") or ""
+        repo = result.get("repo") or ""
+        owner_repo = f"{owner}/{repo}".strip("/")
+        clone_url = str(result.get("clone_url") or "")
+        # HTTPS clone URL → browse URL when possible
+        html_url = ""
+        if clone_url.endswith(".git"):
+            html_url = clone_url[:-4]
+        elif clone_url.startswith("https://github.com/"):
+            html_url = clone_url
+
         self._log(f"Clone 성공: {path}")
-        remember_folder(path)
-        self._reload_recent_combo()
-        if self.editSyncFolder is not None:
+        if path:
+            remember_folder(path)
+            self._reload_recent_combo()
+        if self.editSyncFolder is not None and path:
             self.editSyncFolder.setText(path)
-        QMessageBox.information(
+
+        steps = show_clone_success(
             self.window,
-            "받기 완료",
-            f"{result.get('owner')}/{result.get('repo')}\n{path}",
+            owner_repo=owner_repo or "저장소",
+            path=path,
+            html_url=html_url,
         )
+        if steps.open_browser and html_url:
+            self._log(f"브라우저 열기: {html_url}")
+        if steps.go_sync and path:
+            self._go_sync_tab(path)
 
     # ----- sync -----
     @Slot()

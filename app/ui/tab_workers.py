@@ -76,15 +76,10 @@ class CloneWorker(QThread):
                     return
                 token = None
                 if self.use_token:
-                    self._log("인증 확인 (비공개 clone 용)…")
-
-                    def on_user_code(code: str, uri: str, expires_in: int) -> None:
-                        self.user_code_ready.emit(code, uri, int(expires_in))
-
+                    self._log("인증 확인 (저장된 키, 비공개 clone)…")
                     token, user = ensure_valid_token(
                         open_browser=False,
                         copy_code=False,
-                        on_user_code=on_user_code,
                         should_cancel=self.isInterruptionRequested,
                     )
                     self._log(f"로그인: {user.get('login')} · {mask_token(token)}")
@@ -176,13 +171,9 @@ class SyncActionWorker(QThread):
             with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
                 folder = Path(self.folder)
 
-                def on_user_code(code: str, uri: str, expires_in: int) -> None:
-                    self.user_code_ready.emit(code, uri, int(expires_in))
-
                 auth_kw = dict(
                     open_browser=False,
                     copy_code=False,
-                    on_user_code=on_user_code,
                     should_cancel=self.isInterruptionRequested,
                 )
                 if self.action == "pull":

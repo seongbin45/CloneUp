@@ -1,16 +1,42 @@
 from .device_flow import DeviceFlowError, run_device_flow
-from .session import AuthError, ensure_valid_token, login_device_flow
-from .token_store import delete_token, has_scope, load_scope, load_token, save_token
+from .session import (
+    AuthError,
+    MISSING_REPO_MARKER,
+    ensure_valid_token,
+    format_missing_repo_scope_error,
+    login_device_flow,
+    login_with_pat,
+)
+from .token_store import (
+    AUTH_KIND_DEVICE,
+    AUTH_KIND_PAT,
+    delete_token,
+    has_scope,
+    load_auth_kind,
+    load_connected_at,
+    load_scope,
+    load_token,
+    save_token,
+    token_age_info,
+)
 
 __all__ = [
+    "AUTH_KIND_DEVICE",
+    "AUTH_KIND_PAT",
     "AuthError",
     "DeviceFlowError",
+    "MISSING_REPO_MARKER",
     "delete_token",
     "ensure_valid_token",
+    "format_missing_repo_scope_error",
     "has_scope",
+    "load_auth_kind",
+    "load_connected_at",
     "load_scope",
     "load_token",
     "login_device_flow",
+    "login_with_pat",
     "run_device_flow",
     "save_token",
+    "token_age_info",
 ]

@@ -19,17 +19,41 @@ def next_step_for_error(message: str) -> str | None:
         return None
     low = msg.lower()
 
-    # Device Flow specific
-    if "device" in low or "장치 코드" in msg or "장치 인증" in msg:
-        if "만료" in msg:
-            return "로그인 버튼을 눌러 새 장치 코드를 받으세요."
-        if "거부" in msg:
-            return "브라우저에서 Authorize 를 눌러 승인한 뒤 다시 시도하세요."
-        if "올바르지 않" in msg or "incorrect" in low:
-            return "팝업에 보이는 코드만 복사해 github.com/login/device 에 붙여넣으세요."
-        return "팝업 코드를 github.com/login/device 에 입력하고 승인을 완료하세요."
+    # Missing repo scope on PAT
+    if "저장소(repo) 권한" in msg or ("repo" in low and "권한" in msg and "없" in msg):
+        return (
+            "repo 권한을 켠 새 키를 만드세요. "
+            "안내 창의 「repo 켠 채로 키 만들기」→ 복사 → 다시 연결."
+        )
 
-    # Auth / permission (push denied, 401, etc.) — not Device Flow setup
+    # Expired / revoked PAT
+    if (
+        "만료" in msg
+        or "취소·삭제" in msg
+        or "취소되었습니다" in msg
+    ):
+        return (
+            "GitHub에서 새 키를 만드세요 (repo 권한, 만료일 90일 이상 권장). "
+            "그다음 「GitHub: 로그인」에서 붙여 넣으세요."
+        )
+
+    # Need user to paste a key (no auto Device Flow)
+    if (
+        "연결이 필요" in msg
+        or "키를 붙여" in msg
+        or "키가 비어" in msg
+        or "키가 너무 짧" in msg
+        or "키가 올바르지" in msg
+        or "장치 코드 로그인" in msg
+        or "브라우저(장치 코드)" in msg
+    ):
+        return "창 위쪽 「GitHub: 로그인」에서 GitHub 키를 붙여 넣으세요."
+
+    # Device Flow (legacy / maintainer only)
+    if "device" in low or "장치 코드" in msg or "장치 인증" in msg:
+        return "장치 코드 로그인은 꺼져 있습니다. 「GitHub: 로그인」에서 키를 사용하세요."
+
+    # Auth / permission (push denied, 401, etc.)
     if (
         "denied" in low
         or "permission" in low
@@ -41,7 +65,7 @@ def next_step_for_error(message: str) -> str | None:
         or "로그인이 필요" in msg
         or ("권한" in msg and ("없" in msg or "부족" in msg or "실패" in msg))
     ):
-        return "GitHub 로그인을 다시 하세요."
+        return "창 위쪽 「GitHub: 로그인」에서 키를 다시 연결하세요."
 
     # Clone path already exists
     if "이미 존재하는 경로" in msg or (
