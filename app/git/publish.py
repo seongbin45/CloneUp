@@ -191,17 +191,6 @@ def ensure_repo_for_safety(
     return created
 
 
-def abandon_created_repo(folder: Path, created: bool) -> None:
-    """Remove ``.git`` only if *we* just created it (failed preflight)."""
-    if not created:
-        return
-    import shutil
-
-    git_dir = folder.expanduser().resolve() / ".git"
-    if git_dir.is_dir():
-        shutil.rmtree(git_dir, ignore_errors=True)
-
-
 def _has_staged_changes(folder: Path) -> bool:
     # diff --cached --quiet: exit 1 if differences, 0 if empty
     r = run_git(["diff", "--cached", "--quiet"], cwd=str(folder), check=False)

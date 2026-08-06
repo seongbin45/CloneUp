@@ -9,7 +9,8 @@
 | [UX_GUIDANCE.md](UX_GUIDANCE.md) | 초심자 안내 4층 (팁 카드, G3 확인, 「다음:」) |
 | [DIFFERENTIATION.md](DIFFERENTIATION.md) | GitHub Desktop·Bitbucket 대비 **차별 가치**와 로드맵 |
 | [ORG_OAUTH_APP.md](ORG_OAUTH_APP.md) | **Org OAuth App 운영** 초보 체크리스트 (client_id 이전) |
-| [RELEASE_0.1.2.md](RELEASE_0.1.2.md) | **0.1.2** 사용자·배포 노트 (현재) |
+| [RELEASE_0.1.3.md](RELEASE_0.1.3.md) | **0.1.3** 사용자·배포 노트 (현재) |
+| [RELEASE_0.1.2.md](RELEASE_0.1.2.md) | **0.1.2** 사용자·배포 노트 |
 | [RELEASE_0.1.1.md](RELEASE_0.1.1.md) | **0.1.1** 사용자·배포 노트 |
 | [PACKAGING.md](PACKAGING.md) | exe / Setup 빌드 |
 | [POWERSHELL_BUILD_SCRIPTS.md](POWERSHELL_BUILD_SCRIPTS.md) | **`.ps1` 빌드 스크립트 초심자 설명** (exe 만들기 전) |

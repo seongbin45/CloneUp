@@ -5,7 +5,7 @@ Windows용 **GitHub 도우미** 데스크톱 앱입니다.
 
 | 항목 | 내용 |
 |------|------|
-| 현재 버전 | **0.1.2** (`VERSION`, `app/__init__.py`, `installer/CloneUp.iss`) |
+| 현재 버전 | **0.1.3** (`VERSION`, `app/__init__.py`, `installer/CloneUp.iss`) |
 | 실행 (개발) | `.\.venv\Scripts\python.exe main.py` |
 | 설치 파일 빌드 | `powershell -File scripts\build_installer.ps1` |
 | GitHub | https://github.com/seongbin45/CloneUp |
@@ -165,13 +165,13 @@ git commit -m "merge: 충돌 해결"
 지금 설치 프로그램 버전은 여기에 적혀 있습니다.
 
 - 파일: [`installer/CloneUp.iss`](installer/CloneUp.iss)  
-- 줄: `#define MyAppVersion "0.1.2"`  
-→ 예: `0.1.2` (버그 수정), `0.2.0` (기능 추가)
+- 줄: `#define MyAppVersion "0.1.3"`  
+→ 예: `0.1.3` (버그 수정), `0.2.0` (기능 추가)
 
 (선택) 태그:
 ```powershell
-git tag v0.1.2
-git push origin v0.1.2
+git tag v0.1.3
+git push origin v0.1.3
 ```
 
 ### 4-2. 설치 파일 만들기 (한 번에)
@@ -205,8 +205,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 
 ### 4-4. GitHub Releases에 올리기 (권장)
 1. https://github.com/seongbin45/CloneUp/releases/new  
-2. Tag: `v0.1.2`  
-3. 제목: `CloneUp 0.1.2`  
+2. Tag: `v0.1.3`  
+3. 제목: `CloneUp 0.1.3`  
 4. 설명에 변경 요약 적기  
 5. **`CloneUp-Setup.exe` 첨부** 후 Publish  
 

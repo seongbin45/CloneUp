@@ -14,7 +14,6 @@ from app.git.runner import (
 )
 from app.git.sync_ops import SyncError, _assert_safe_origin
 from app.git.url_utils import UrlError, assert_github_https_remote
-from app.ui.settings_store import load_last_private
 
 
 def test_m4_commit_gets_no_verify() -> None:
@@ -44,7 +43,6 @@ def test_m4_commit_with_malicious_hook_does_not_run(tmp_path: Path) -> None:
     hooks = tmp_path / ".git" / "hooks"
     hooks.mkdir(parents=True, exist_ok=True)
     marker = tmp_path / "HOOK_RAN"
-    # Portable: write a hook that would create a file if executed
     hook = hooks / "pre-commit"
     hook.write_text(
         "#!/bin/sh\necho ran > \"" + str(marker).replace("\\", "/") + "\"\nexit 1\n",
@@ -56,7 +54,6 @@ def test_m4_commit_with_malicious_hook_does_not_run(tmp_path: Path) -> None:
         pass
     (tmp_path / "f.txt").write_text("x\n", encoding="utf-8")
     run_git(["add", "f.txt"], cwd=str(tmp_path), check=True)
-    # Must succeed despite hook that exits 1 (because --no-verify + empty hooksPath)
     run_git(["commit", "-m", "t"], cwd=str(tmp_path), check=True)
     assert not marker.exists(), "pre-commit hook must not run under CloneUp"
 
@@ -86,13 +83,14 @@ def test_p2_origin_rejects_token_embed() -> None:
 
 
 def test_m5_default_private_preference() -> None:
-    # Fresh QSettings key may not exist — API default must be True
-    assert load_last_private() is True or load_last_private() is False
-    # The default *when key missing* is True (settings_store)
+    """settings_store / QSettings default when key missing is True."""
+    pytest.importorskip("PySide6")
     from PySide6.QtCore import QSettings
 
+    from app.ui.settings_store import load_last_private
+
+    _ = load_last_private()
     s = QSettings("CloneUp", "CloneUp-test-private-default")
     s.remove("last_private")
-    # emulate load with default True
     val = bool(s.value("last_private", True, type=bool))
     assert val is True

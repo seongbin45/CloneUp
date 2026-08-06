@@ -1022,8 +1022,27 @@ class MainController(QObject):
         # H1: create .git (+ default .gitignore) before safety so gitignore applies
         from app.git.publish import PublishError, ensure_repo_for_safety
 
+        root = path.resolve()
+        need_git_prep = not (root / ".git").exists()
+        if need_git_prep:
+            # Surprise prevention (P3): prep happens before G3 confirm
+            prep = QMessageBox.question(
+                self.window,
+                "폴더 준비",
+                "올리기 전에 이 폴더를 Git 저장소로 준비합니다.\n\n"
+                "· .git 폴더가 생깁니다\n"
+                "· .gitignore 가 없으면 기본 목록을 만듭니다\n\n"
+                "확인 창에서 취소해도 위 준비는 이미 남습니다.\n"
+                "계속할까요?",
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Ok,
+            )
+            if prep != QMessageBox.StandardButton.Ok:
+                self._log("Publish 취소 — Git 준비 안내")
+                return
+
         try:
-            ensure_repo_for_safety(path.resolve(), write_gitignore=True)
+            ensure_repo_for_safety(root, write_gitignore=True)
         except PublishError as e:
             QMessageBox.warning(self.window, "CloneUp", str(e))
             return
@@ -1032,15 +1051,17 @@ class MainController(QObject):
                 self.window, "CloneUp", f"폴더 Git 준비에 실패했습니다.\n{e}"
             )
             return
+        if need_git_prep:
+            self._log("안내: 이 폴더에 .git 준비를 마쳤습니다.")
 
         report = run_safety_checks(
-            path.resolve(), allow_secrets=allow, write_gitignore=False
+            root, allow_secrets=allow, write_gitignore=False
         )
         if not report.ok:
             # Prefer G3-style secret listing when that is the only block
             if report.secret_candidates and not allow:
                 self._confirm_upload_g3(
-                    path.resolve(),
+                    root,
                     allow_secrets=False,
                     private=private,
                     hide_real_email=hide_email,
@@ -1050,7 +1071,7 @@ class MainController(QObject):
             return
 
         if not self._confirm_upload_g3(
-            path.resolve(),
+            root,
             allow_secrets=allow,
             private=private,
             hide_real_email=hide_email,
@@ -1058,7 +1079,7 @@ class MainController(QObject):
             self._log("Publish 취소 — 확인 대화상자")
             return
 
-        remember_folder(str(path.resolve()))
+        remember_folder(str(root))
         self._reload_recent_combo()
         save_last_private(private)
         save_last_commit_message(msg)
@@ -1066,7 +1087,7 @@ class MainController(QObject):
 
         self._log(f"--- Publish: {name} ({'private' if private else 'public'}) ---")
         w = PublishWorker(
-            folder=str(path.resolve()),
+            folder=str(root),
             repo_name=name,
             commit_message=msg,
             private=private,

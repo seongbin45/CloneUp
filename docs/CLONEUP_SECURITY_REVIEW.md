@@ -14,6 +14,7 @@
 > - **P2 origin** `get-url` + `get-url --push` + local `url.*` 거부 (`pushInsteadOf` 포함)  
 > - **H1 재수정** publish/UI: `ensure_repo_for_safety` 를 안전검사 **앞**에 호출 (gitignore 존중)  
 > - 회귀: `tests/test_h1_publish_path.py`, `tests/test_p2_pushinsteadof.py` 등  
+> - P3: 죽은 `abandon_created_repo` 제거 · 올리기 전 Git 준비 고지 · pytest `importorskip(PySide6)`  
 > - 잔여: 코드 서명, requirements hash pin, Device Flow 릴리스 빌드 제외
 
 ---
