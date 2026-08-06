@@ -221,7 +221,7 @@ class MainController(QObject):
         QTimer.singleShot(0, self._log_token_age_hint)
 
     def _ensure_git_bootstrap(self) -> None:
-        """Plan D / DG1: if Git missing, offer download page or winget install."""
+        """Plan D / DG1: if Git missing, full-window simple install chooser."""
         from app.git.bootstrap import probe_git
         from app.ui.git_setup import ensure_git_or_offer_setup
 
