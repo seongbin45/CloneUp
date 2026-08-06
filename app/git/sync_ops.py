@@ -149,35 +149,35 @@ def get_repo_status(folder: Path) -> RepoStatus:
             if len(parts) == 2:
                 ahead, behind = int(parts[0]), int(parts[1])
 
-    # Beginner-facing summary (branch is shown separately in UI as 「현재 branch」)
+    # Beginner-facing summary (work-line/branch shown separately in UI)
     bits: list[str] = []
 
     if has_origin:
-        bits.append("GitHub와 연결됨")
+        bits.append("GitHub 주소와 연결되어 있습니다")
     else:
-        bits.append("GitHub 연결 없음")
+        bits.append("아직 GitHub와 연결되어 있지 않습니다")
 
     if conflict:
-        bits.append("⚠ 변경이 겹쳐 막힘")
+        bits.append("변경이 겹쳐 막혀 있습니다 — 「충돌 취소」를 확인하세요")
     elif dirty:
-        bits.append("저장할 변경 있음")
+        bits.append("컴퓨터에 아직 안 올린 변경이 있습니다")
     else:
-        bits.append("로컬 변경 없음")
+        bits.append("컴퓨터 쪽에 새 변경은 없습니다")
 
     if ahead is not None and behind is not None:
         if ahead == 0 and behind == 0:
-            bits.append("GitHub와 같음")
+            bits.append("GitHub와 내용이 같습니다")
         else:
             parts_ab: list[str] = []
             if ahead:
-                parts_ab.append(f"올릴 내용 {ahead}개")
+                parts_ab.append(f"GitHub로 보낼 저장 {ahead}개")
             if behind:
-                parts_ab.append(f"받을 내용 {behind}개")
+                parts_ab.append(f"GitHub에서 받을 저장 {behind}개")
             if parts_ab:
                 bits.append(" · ".join(parts_ab))
 
     if not bits:
-        bits.append("상태 확인됨")
+        bits.append("상태를 확인했습니다")
 
     return RepoStatus(
         folder=folder,

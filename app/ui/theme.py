@@ -662,21 +662,23 @@ def app_stylesheet(palette: Palette | None = None) -> str:
     }}
     QLabel#labelSyncBranch {{
         background: {BG_HINT};
-        color: {PRIMARY};
+        color: {TEXT};
         border: 1px solid {BORDER_SOFT};
         border-left: 4px solid {PRIMARY};
         border-radius: 6px;
-        padding: 10px 14px;
+        padding: 12px 14px;
         margin-left: 102px;
-        font-size: 14px;
-        font-weight: 700;
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 1.35;
     }}
     QLabel#labelSyncStatus {{
         background: {BG_MUTED};
         color: {TEXT_MUTED};
         border-radius: 5px;
-        padding: 8px 13px;
+        padding: 10px 13px;
         margin-left: 102px;
-        font-size: 12px;
+        font-size: 12.5px;
+        line-height: 1.35;
     }}
     """

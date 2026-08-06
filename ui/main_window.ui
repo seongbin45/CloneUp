@@ -706,20 +706,24 @@
         <item>
          <widget class="QLabel" name="labelSyncBranch">
           <property name="text">
-           <string>현재 branch: (폴더를 선택하세요)</string>
+           <string>작업 중인 줄 이름
+(폴더를 고르면 여기에 표시됩니다)</string>
           </property>
           <property name="wordWrap">
            <bool>true</bool>
           </property>
           <property name="toolTip">
-           <string>이 폴더에서 작업 중인 Git branch 이름입니다. 「상태 새로고침」으로 다시 읽습니다.</string>
+           <string>이 폴더에서 지금 작업하는 줄의 이름입니다.
+올리기·받기가 이 이름을 기준으로 합니다.
+Git에서는 branch 라고 부릅니다. 「상태 새로고침」으로 다시 읽습니다.</string>
           </property>
          </widget>
         </item>
         <item>
          <widget class="QLabel" name="labelSyncStatus">
           <property name="text">
-           <string>상태: (폴더를 선택하세요)</string>
+           <string>이 폴더 상태
+(폴더를 고르면 여기에 표시됩니다)</string>
           </property>
           <property name="wordWrap">
            <bool>true</bool>
