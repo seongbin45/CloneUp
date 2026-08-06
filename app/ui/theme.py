@@ -668,9 +668,9 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         border-radius: 6px;
         padding: 12px 14px;
         margin-left: 102px;
-        font-size: 13px;
-        font-weight: 500;
-        line-height: 1.35;
+        font-size: 15px;
+        font-weight: 600;
+        line-height: 1.4;
     }}
     QLabel#labelSyncStatus {{
         background: {BG_MUTED};
