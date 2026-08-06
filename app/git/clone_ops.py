@@ -54,12 +54,14 @@ def clone_repository(
     *,
     directory_name: str | None = None,
     token: str | None = None,
+    branch: str | None = None,
 ) -> CloneResult:
     """
     Clone into parent_dir/<repo or directory_name>.
 
     If token is provided, use temp credential helper (for private repos).
     Remote URL stored in the new repo is always the clean HTTPS URL.
+    ``branch``: if set, ``git clone -b <branch> --single-branch``.
     """
     require_git()
     try:
@@ -71,27 +73,44 @@ def clone_repository(
         parent_dir, repo_name=norm.repo, directory_name=directory_name
     )
 
-    # git clone <url> <target>
-    # parent must exist; target must not
+    branch_name = (branch or "").strip() or None
+    # git clone [-b branch --single-branch] <url> <target>
     cred_path: str | None = None
     config = None
     try:
         if token:
             cred_path = write_credential_file(token)
             config = credential_helper_configs(cred_path)
-        print(f"clone: {norm.clone_url} → {target}")
+        if branch_name:
+            print(f"받기: {norm.display_url} (브랜치 {branch_name}) → {target}")
+        else:
+            print(f"받기: {norm.display_url} (기본 브랜치) → {target}")
         for w in norm.warnings:
             print(f"안내: {w}")
+        args = ["clone"]
+        if branch_name:
+            args.extend(["-b", branch_name, "--single-branch"])
+        args.extend([norm.clone_url, str(target)])
         run_git(
-            ["clone", norm.clone_url, str(target)],
+            args,
             cwd=str(parent_dir.resolve()),
             check=True,
             config=config,
             timeout=600,
         )
     except GitError as e:
-        # partial clone dir may exist — leave for user; message already useful
-        raise CloneError(str(e)) from e
+        msg = str(e)
+        if branch_name and (
+            "Remote branch" in msg
+            or "not found" in msg.lower()
+            or "did not match" in msg.lower()
+        ):
+            raise CloneError(
+                f"브랜치 「{branch_name}」을(를) 찾지 못했습니다.\n"
+                "이름을 확인하거나 「기본 브랜치」로 받아 보세요.\n\n"
+                + msg[:400]
+            ) from e
+        raise CloneError(msg) from e
     finally:
         delete_credential_file(cred_path)
 
@@ -99,9 +118,9 @@ def clone_repository(
     rv = run_git(["remote", "-v"], cwd=str(target), check=True)
     out = rv.stdout or ""
     if token and token in out:
-        raise CloneError("보안 실패: remote 에 토큰이 남았습니다.")
+        raise CloneError("보안 문제: 연결 정보가 주소에 남아 있습니다.")
     if "x-access-token" in out.lower():
-        raise CloneError("보안 실패: remote 에 x-access-token 이 있습니다.")
+        raise CloneError("보안 문제: GitHub 주소에 비밀 정보가 남아 있습니다.")
 
     return CloneResult(
         clone_url=norm.clone_url,

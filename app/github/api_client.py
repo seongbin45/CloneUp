@@ -67,6 +67,42 @@ def get_authenticated_user(access_token: str) -> dict[str, Any]:
     return data
 
 
+def list_repo_branches(
+    owner: str,
+    repo: str,
+    *,
+    access_token: str | None = None,
+    per_page: int = 100,
+) -> list[str]:
+    """
+    GET /repos/{owner}/{repo}/branches — names only.
+
+    Works without token for public repos. Private needs a valid token.
+    """
+    headers = {
+        **DEFAULT_HEADERS,
+    }
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    resp = requests.get(
+        f"{API_BASE}/repos/{owner}/{repo}/branches",
+        headers=headers,
+        params={"per_page": max(1, min(per_page, 100))},
+        timeout=30,
+    )
+    _raise_for_status(resp)
+    data = resp.json()
+    if not isinstance(data, list):
+        return []
+    names: list[str] = []
+    for item in data:
+        if isinstance(item, dict):
+            n = (item.get("name") or "").strip()
+            if n:
+                names.append(n)
+    return names
+
+
 def create_repo(
     access_token: str,
     name: str,

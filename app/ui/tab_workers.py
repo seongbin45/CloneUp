@@ -56,6 +56,7 @@ class CloneWorker(QThread):
         parent_dir: str,
         dir_name: str,
         use_token: bool,
+        branch: str | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -63,6 +64,7 @@ class CloneWorker(QThread):
         self.parent_dir = parent_dir
         self.dir_name = dir_name
         self.use_token = use_token
+        self.branch = (branch or "").strip() or None
 
     def _log(self, msg: str) -> None:
         self.log_line.emit(mask_secrets_in_text(msg))
@@ -87,11 +89,16 @@ class CloneWorker(QThread):
                     self.failed.emit("취소됨")
                     return
                 name = self.dir_name.strip() or None
+                if self.branch:
+                    self._log(f"브랜치: {self.branch}")
+                else:
+                    self._log("브랜치: 기본 브랜치")
                 result = clone_repository(
                     self.url,
                     Path(self.parent_dir),
                     directory_name=name,
                     token=token,
+                    branch=self.branch,
                 )
                 self.succeeded.emit(
                     {
@@ -99,6 +106,7 @@ class CloneWorker(QThread):
                         "clone_url": result.clone_url,
                         "owner": result.owner,
                         "repo": result.repo,
+                        "branch": self.branch or "",
                         "warnings": list(result.warnings),
                     }
                 )

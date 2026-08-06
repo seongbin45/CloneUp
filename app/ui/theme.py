@@ -622,6 +622,7 @@ def app_stylesheet(palette: Palette | None = None) -> str:
     QLabel#labelRepoName,
     QLabel#labelCommitMessage,
     QLabel#labelCloneUrl,
+    QLabel#labelCloneBranch,
     QLabel#labelCloneParent,
     QLabel#labelCloneDirName,
     QLabel#labelSyncFolder,

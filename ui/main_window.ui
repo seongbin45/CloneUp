@@ -424,12 +424,44 @@
         <item>
          <widget class="QLabel" name="labelCloneHint">
           <property name="text">
-           <string>저장소 루트 주소를 붙여넣으세요. /tree/main 이 붙은 주소는 자동으로 정리됩니다.</string>
+           <string>주소를 붙여넣으면 github.com/사용자/저장소 까지만 남깁니다. 받을 줄은 아래 브랜치에서 고르세요.</string>
           </property>
           <property name="wordWrap">
            <bool>true</bool>
           </property>
          </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="cloneBranchLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="labelCloneBranch">
+            <property name="text">
+             <string>브랜치</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="comboCloneBranch">
+            <property name="editable">
+             <bool>true</bool>
+            </property>
+            <property name="toolTip">
+             <string>비우거나 「기본 브랜치」면 저장소 기본 줄을 받습니다. 목록은 주소 입력 후 불러옵니다.</string>
+            </property>
+            <item>
+             <property name="text">
+              <string>기본 브랜치</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+         </layout>
         </item>
         <item>
          <layout class="QHBoxLayout" name="cloneParentLayout">

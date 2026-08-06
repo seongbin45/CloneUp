@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QObject, Slot
+from PySide6.QtCore import QEvent, QFile, QObject, QTimer, Slot
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -177,12 +177,17 @@ class MainController(QObject):
 
         # --- clone ---
         self.editCloneUrl = window.findChild(QLineEdit, "editCloneUrl")
+        self.comboCloneBranch = window.findChild(QComboBox, "comboCloneBranch")
         self.editCloneParent = window.findChild(QLineEdit, "editCloneParent")
         self.btnCloneBrowseParent = window.findChild(QPushButton, "btnCloneBrowseParent")
         self.editCloneDirName = window.findChild(QLineEdit, "editCloneDirName")
         self.checkCloneUseToken = window.findChild(QCheckBox, "checkCloneUseToken")
         self.btnClone = window.findChild(QPushButton, "btnClone")
         self.btnCloneCancel = window.findChild(QPushButton, "btnCloneCancel")
+        self._clone_url_timer = QTimer(self)
+        self._clone_url_timer.setSingleShot(True)
+        self._clone_url_timer.setInterval(350)
+        self._clone_url_timer.timeout.connect(self._normalize_clone_url_field)
 
         # --- sync ---
         self.editSyncFolder = window.findChild(QLineEdit, "editSyncFolder")
@@ -206,8 +211,6 @@ class MainController(QObject):
         self._refresh_status_bar()
         self._log("CloneUp — 만들고 올리기 / 받기 / 동기화 탭 사용 가능")
         # DG1 — first-run Git check (plan D): after UI is up
-        from PySide6.QtCore import QTimer
-
         QTimer.singleShot(0, self._ensure_git_bootstrap)
         QTimer.singleShot(0, self._log_token_age_hint)
 
@@ -253,7 +256,7 @@ class MainController(QObject):
             (
                 "labelTabIntroClone",
                 "GitHub에 있는 폴더를 내 컴퓨터로 복사합니다.",
-                "• 저장소 루트 주소만 쓰세요. /tree/main 은 자동으로 정리됩니다.\n"
+                "• 주소를 붙여넣으면 저장소 루트만 남습니다. 브랜치는 아래에서 고르세요.\n"
                 "• 같은 이름의 폴더가 이미 있으면 실패합니다. 이름을 바꾸세요.\n"
                 "• 비공개 저장소는 「비공개 저장소 받을 때 GitHub 연결 사용」을 켠 뒤 연결하세요.",
             ),
@@ -358,6 +361,7 @@ class MainController(QObject):
             self.btnClone,
             self.btnCloneBrowseParent,
             self.editCloneUrl,
+            self.comboCloneBranch,
             self.editCloneParent,
             self.editCloneDirName,
             self.checkCloneUseToken,
@@ -529,7 +533,8 @@ class MainController(QObject):
         if self.btnCloneCancel:
             self.btnCloneCancel.clicked.connect(self.on_cancel)
         if self.editCloneUrl:
-            self.editCloneUrl.editingFinished.connect(self._maybe_fill_clone_dirname)
+            self.editCloneUrl.editingFinished.connect(self._normalize_clone_url_field)
+            self.editCloneUrl.textChanged.connect(self._on_clone_url_text_changed)
 
         if self.btnSyncBrowse:
             self.btnSyncBrowse.clicked.connect(self.on_sync_browse)
@@ -1065,22 +1070,99 @@ class MainController(QObject):
             self._go_sync_tab(folder)
 
     # ----- clone -----
+    _DEFAULT_BRANCH_LABEL = "기본 브랜치"
+
     @Slot()
-    def _maybe_fill_clone_dirname(self) -> None:
-        if not self.editCloneUrl or not self.editCloneDirName:
-            return
-        if (self.editCloneDirName.text() or "").strip():
+    def _on_clone_url_text_changed(self, _text: str = "") -> None:
+        """Debounce paste so long /tree/… URLs collapse to owner/repo."""
+        self._clone_url_timer.start()
+
+    @Slot()
+    def _normalize_clone_url_field(self) -> None:
+        """
+        Strip everything after github.com/user/repo and refresh branch list.
+
+        Branch from /tree/… becomes a combo suggestion; user still chooses.
+        """
+        if not self.editCloneUrl:
             return
         raw = (self.editCloneUrl.text() or "").strip()
         if not raw:
             return
         try:
             n = normalize_github_clone_url(raw)
-            self.editCloneDirName.setText(n.repo)
+        except UrlError:
+            return
+
+        # Rewrite field to clean root (no .git, no subpaths)
+        if (self.editCloneUrl.text() or "").strip() != n.display_url:
+            self.editCloneUrl.blockSignals(True)
+            self.editCloneUrl.setText(n.display_url)
+            self.editCloneUrl.blockSignals(False)
             for w in n.warnings:
                 self._log(f"URL 안내: {w}")
-        except UrlError:
-            pass
+
+        if self.editCloneDirName is not None:
+            if not (self.editCloneDirName.text() or "").strip():
+                self.editCloneDirName.setText(n.repo)
+
+        self._refresh_clone_branches(
+            n.owner, n.repo, suggested=n.suggested_branch
+        )
+
+    def _refresh_clone_branches(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        suggested: str | None = None,
+    ) -> None:
+        """Fill branch combo: 기본 브랜치 + API list + URL hint."""
+        if self.comboCloneBranch is None:
+            return
+        current = (self.comboCloneBranch.currentText() or "").strip()
+        names: list[str] = []
+        token = load_token()
+        try:
+            from app.github.api_client import list_repo_branches
+
+            names = list_repo_branches(owner, repo, access_token=token)
+        except Exception as e:
+            self._log(f"브랜치 목록: 불러오지 못함 ({e.__class__.__name__})")
+
+        self.comboCloneBranch.blockSignals(True)
+        self.comboCloneBranch.clear()
+        self.comboCloneBranch.addItem(self._DEFAULT_BRANCH_LABEL)
+        for name in names:
+            self.comboCloneBranch.addItem(name)
+        if suggested and suggested not in names:
+            self.comboCloneBranch.addItem(suggested)
+
+        # Prefer URL-suggested branch, else keep prior choice if still listed
+        pick = self._DEFAULT_BRANCH_LABEL
+        if suggested and (
+            suggested in names or self.comboCloneBranch.findText(suggested) >= 0
+        ):
+            pick = suggested
+        elif current and current != self._DEFAULT_BRANCH_LABEL:
+            if self.comboCloneBranch.findText(current) >= 0:
+                pick = current
+        idx = self.comboCloneBranch.findText(pick)
+        self.comboCloneBranch.setCurrentIndex(idx if idx >= 0 else 0)
+        self.comboCloneBranch.blockSignals(False)
+
+        if names:
+            self._log(f"브랜치 목록: {len(names)}개")
+        if suggested:
+            self._log(f"주소에서 본 브랜치 후보: {suggested}")
+
+    def _selected_clone_branch(self) -> str | None:
+        if self.comboCloneBranch is None:
+            return None
+        text = (self.comboCloneBranch.currentText() or "").strip()
+        if not text or text == self._DEFAULT_BRANCH_LABEL:
+            return None
+        return text
 
     @Slot()
     def on_clone_browse_parent(self) -> None:
@@ -1144,18 +1226,26 @@ class MainController(QObject):
             return
         try:
             norm = normalize_github_clone_url(url)
+            # Ensure field shows cleaned root before work starts
+            if self.editCloneUrl is not None:
+                self.editCloneUrl.blockSignals(True)
+                self.editCloneUrl.setText(norm.display_url)
+                self.editCloneUrl.blockSignals(False)
             for w in norm.warnings:
                 self._log(f"URL 안내: {w}")
         except UrlError as e:
             QMessageBox.warning(self.window, "주소 오류", str(e))
             return
 
-        self._log(f"--- Clone: {norm.clone_url} ---")
+        branch = self._selected_clone_branch()
+        branch_note = branch or "기본 브랜치"
+        self._log(f"--- 받기: {norm.display_url} · {branch_note} ---")
         w = CloneWorker(
-            url=url.strip(),
+            url=norm.display_url,
             parent_dir=str(Path(parent).expanduser().resolve()),
             dir_name=name.strip(),
             use_token=use_token,
+            branch=branch,
             parent=self,
         )
         w.succeeded.connect(self._on_clone_ok)
@@ -1309,7 +1399,4 @@ class MainController(QObject):
         # refresh status after action
         if self.editSyncFolder and (self.editSyncFolder.text() or "").strip():
             # chain a status refresh without blocking — schedule after busy clears
-            # call after finished: use QTimer single shot
-            from PySide6.QtCore import QTimer
-
             QTimer.singleShot(100, self.on_sync_refresh)
