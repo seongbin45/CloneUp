@@ -170,9 +170,22 @@ git push origin v0.1.1
 ```
 
 ### 4-2. 설치 파일 만들기 (한 번에)
+
+`scripts\build_installer.ps1` 은 **PowerShell 스크립트(`.ps1`)** 입니다.  
+(직접 긴 빌드 명령을 치지 않도록 적어 둔 레시피입니다.)
+
+- **무엇을 하는지·줄 단위 설명:** [docs/POWERSHELL_BUILD_SCRIPTS.md](docs/POWERSHELL_BUILD_SCRIPTS.md)  
+- **짧은 목록:** [scripts/README.md](scripts/README.md)
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 ```
+
+| 부분 | 의미 |
+|------|------|
+| `powershell` | Windows PowerShell 실행 |
+| `-ExecutionPolicy Bypass` | 이 실행에 한해 스크립트 실행 정책 완화 (우리가 만든 스크립트용) |
+| `-File scripts\...ps1` | 해당 레시피 파일 실행 |
 
 | 결과물 | 경로 | 설명 |
 |--------|------|------|

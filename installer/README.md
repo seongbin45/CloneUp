@@ -23,6 +23,9 @@
 powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 ```
 
+이 명령이 부르는 **`.ps1` 스크립트가 무엇인지** (exe 빌드 → Setup 컴파일 순서)는  
+초심자용 설명 문서: [docs/POWERSHELL_BUILD_SCRIPTS.md](../docs/POWERSHELL_BUILD_SCRIPTS.md)
+
 ### 결과물
 ```
 installer\Output\CloneUp-Setup.exe

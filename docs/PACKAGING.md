@@ -1,5 +1,14 @@
 # CloneUp 패키징 (P1 + DG3)
 
+## PowerShell 빌드 스크립트(`.ps1`)를 먼저 이해하려면
+
+exe / Setup 을 만들기 **전에**, `scripts\build_exe.ps1` · `build_installer.ps1` 이  
+무엇인지·왜 있는지·줄마다 무엇을 하는지는 아래 문서를 보세요.
+
+→ **[POWERSHELL_BUILD_SCRIPTS.md](POWERSHELL_BUILD_SCRIPTS.md)** (초심자용 상세 설명)
+
+한 줄 요약: `.ps1` 은 Windows에서 빌드 명령을 **순서대로 대신 실행해 주는 레시피 파일**입니다.
+
 ## 단계
 
 | 단계 | 내용 | 상태 |

@@ -8,6 +8,7 @@
 |------|------|
 | [UX_GUIDANCE.md](UX_GUIDANCE.md) | 초심자 안내 4층 (팁 카드, G3 확인, 「다음:」) |
 | [PACKAGING.md](PACKAGING.md) | exe / Setup 빌드 |
+| [POWERSHELL_BUILD_SCRIPTS.md](POWERSHELL_BUILD_SCRIPTS.md) | **`.ps1` 빌드 스크립트 초심자 설명** (exe 만들기 전) |
 | [GIT_BOOTSTRAP.md](GIT_BOOTSTRAP.md) | Git 없을 때 설치 도우미 (D방식) |
 | [FAILURE_CASES.md](FAILURE_CASES.md) | 실패 시나리오 체크리스트 |
 | [PII_CROSS_VERIFY.md](PII_CROSS_VERIFY.md) | 비밀파일·개인정보 스캔 교차검증 |
