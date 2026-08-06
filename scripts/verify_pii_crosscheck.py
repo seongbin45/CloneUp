@@ -217,8 +217,8 @@ def main() -> int:
     # sync_ops: secrets only at worker (G3 covers PII on UI push)
     sync_src = (ROOT / "app" / "git" / "sync_ops.py").read_text(encoding="utf-8")
     check(
-        "sync_ops uses filename secrets",
-        "find_secret_candidates" in sync_src,
+        "sync_ops uses safety checks",
+        "run_safety_checks" in sync_src or "find_secret_candidates" in sync_src,
     )
     check(
         "sync_ops does not re-scan PII (UI G3 does)",

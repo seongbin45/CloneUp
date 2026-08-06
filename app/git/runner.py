@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.git.env import noninteractive_git_env
 from app.util.log_mask import mask_secrets_in_text
@@ -27,6 +30,64 @@ class GitResult:
 
 
 _VERSION_RE = re.compile(r"git version (\d+)\.(\d+)(?:\.(\d+))?")
+_empty_hooks_dir: Path | None = None
+
+
+def empty_hooks_directory() -> Path:
+    """
+    Empty directory used as core.hooksPath so repo hooks never run (M4).
+
+    CloneUp is not a full desktop client — we must not execute untrusted
+    pre-commit hooks from a folder the user just opened.
+    """
+    global _empty_hooks_dir
+    if _empty_hooks_dir is not None and _empty_hooks_dir.is_dir():
+        return _empty_hooks_dir
+    base = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
+    d = Path(base) / "CloneUp" / "empty-hooks"
+    d.mkdir(parents=True, exist_ok=True)
+    _empty_hooks_dir = d
+    return d
+
+
+def safe_git_config_pairs() -> list[tuple[str, str]]:
+    """
+    Always-on -c overrides so a malicious .git/config cannot run helpers (M4).
+
+    Caller-supplied config is merged *after* these (so identity / credential
+    helpers still work).
+    """
+    hooks = empty_hooks_directory().resolve().as_posix()
+    return [
+        ("core.fsmonitor", ""),
+        ("core.pager", "cat"),
+        ("core.hooksPath", hooks),
+        ("core.sshCommand", ""),
+        # Avoid unexpected insteadOf / external tools from repo config affecting us
+        # when we only operate over HTTPS github.com.
+    ]
+
+
+def _merge_config(
+    extra: list[tuple[str, str]] | None,
+) -> list[tuple[str, str]]:
+    """Safe defaults first; later keys can override for the same git -c chain."""
+    merged: list[tuple[str, str]] = list(safe_git_config_pairs())
+    if extra:
+        merged.extend(extra)
+    return merged
+
+
+def _with_commit_no_verify(args: list[str]) -> list[str]:
+    """Append --no-verify to commit so hooksPath + hooks are both neutralized."""
+    if not args:
+        return args
+    if args[0] != "commit":
+        return args
+    if "--no-verify" in args or "-n" in args:
+        return args
+    # insert after 'commit'
+    return ["commit", "--no-verify", *args[1:]]
 
 
 def git_executable() -> str:
@@ -62,19 +123,25 @@ def run_git(
     extra_env: dict[str, str] | None = None,
     config: list[tuple[str, str]] | None = None,
     timeout: int = 120,
+    safe_defaults: bool = True,
 ) -> GitResult:
     """
     Run `git [ -c key=value ... ] <args>`.
 
     Never put secrets in `args` (visible in process lists). Tokens belong in a
     credential helper file referenced only by path.
+
+    ``safe_defaults`` (default True): inject core.hooksPath / pager / fsmonitor
+    overrides and add ``commit --no-verify`` so untrusted repo config/hooks
+    cannot run under CloneUp (M4 / CLONEUP_SECURITY_REVIEW).
     """
     exe = git_executable()
+    use_args = _with_commit_no_verify(list(args)) if safe_defaults else list(args)
     cmd: list[str] = [exe]
-    if config:
-        for key, value in config:
-            cmd.extend(["-c", f"{key}={value}"])
-    cmd.extend(args)
+    cfg = _merge_config(config) if safe_defaults else list(config or [])
+    for key, value in cfg:
+        cmd.extend(["-c", f"{key}={value}"])
+    cmd.extend(use_args)
 
     env = noninteractive_git_env()
     if extra_env:
@@ -94,7 +161,7 @@ def run_git(
         )
     except subprocess.TimeoutExpired as e:
         raise GitError(
-            f"git 시간 초과 ({timeout}s): {' '.join(args)}",
+            f"git 시간 초과 ({timeout}s): {' '.join(use_args)}",
             returncode=None,
             stderr="timeout",
         ) from e
@@ -113,7 +180,7 @@ def run_git(
             or f"exit {proc.returncode}"
         )
         raise GitError(
-            f"git {' '.join(args)} 실패: {msg}",
+            f"git {' '.join(use_args)} 실패: {msg}",
             returncode=proc.returncode,
             stderr=safe_err,
         )

@@ -47,6 +47,44 @@ class UrlError(Exception):
     pass
 
 
+def is_github_https_host(host: str | None) -> bool:
+    h = (host or "").lower().strip()
+    return h in _GITHUB_HOSTS
+
+
+def assert_github_https_remote(url: str, *, what: str = "origin") -> str:
+    """
+    Ensure a remote URL is clean https://github.com/... (P2 / M3 review).
+
+    Rejects SSH, non-github hosts, and credential-embedded URLs.
+    Returns the stripped URL for convenience.
+    """
+    s = (url or "").strip()
+    if not s:
+        raise UrlError(f"{what} 주소가 비어 있습니다.")
+    low = s.lower()
+    if "x-access-token" in low:
+        raise UrlError(
+            f"{what} 주소에 비밀 정보가 들어 있습니다. 안전을 위해 막았습니다."
+        )
+    if re.match(r"^git@([^:]+):", s, re.I):
+        raise UrlError(
+            f"{what} 이 SSH 주소입니다. CloneUp은 https://github.com/… 만 지원합니다."
+        )
+    raw = s if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", s) else "https://" + s
+    parsed = urlparse(raw)
+    host = (parsed.hostname or "").lower()
+    if not is_github_https_host(host):
+        raise UrlError(
+            f"{what} 이 github.com 이 아닙니다 ({host or '?'}).\n"
+            "CloneUp은 github.com HTTPS 원격만 지원합니다."
+        )
+    if parsed.username or parsed.password:
+        raise UrlError(
+            f"{what} 주소에 사용자/비밀번호가 들어 있습니다. 깨끗한 HTTPS 주소만 쓰세요."
+        )
+    return s
+
 @dataclass(frozen=True)
 class NormalizedCloneUrl:
     clone_url: str  # https://github.com/owner/repo.git

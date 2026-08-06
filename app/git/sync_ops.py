@@ -12,11 +12,18 @@ from app.git.credentials import (
 )
 from app.git.publish import resolve_commit_identity
 from app.git.runner import require_git, run_git
-from app.git.safety import find_secret_candidates, scan_secret_in_contents
+from app.git.url_utils import UrlError, assert_github_https_remote
 
 
 class SyncError(Exception):
     pass
+
+
+def _assert_safe_origin(origin_url: str) -> None:
+    try:
+        assert_github_https_remote(origin_url, what="origin")
+    except UrlError as e:
+        raise SyncError(str(e)) from e
 
 
 @dataclass(frozen=True)
@@ -166,6 +173,7 @@ def pull_repo(folder: Path, *, token: str | None = None) -> str:
             "이 폴더는 아직 GitHub와 연결되어 있지 않습니다.\n"
             "「만들고 올리기」로 먼저 올리거나, 「받기」로 받은 폴더를 선택하세요."
         )
+    _assert_safe_origin(st.origin_url)
 
     cred_path = None
     config = None
@@ -241,11 +249,7 @@ def commit_and_push(
             "이 폴더는 아직 GitHub와 연결되어 있지 않습니다.\n"
             "「만들고 올리기」로 먼저 올리거나, 「받기」로 받은 폴더를 선택하세요."
         )
-    if "x-access-token" in st.origin_url.lower():
-        raise SyncError(
-            "GitHub 주소에 비밀번호 정보가 잘못 들어 있습니다.\n"
-            "이 폴더는 안전을 위해 올리기를 막았습니다. 다른 폴더로 다시 받아 보세요."
-        )
+    _assert_safe_origin(st.origin_url)
 
     # Prefer full safety report (publishable paths + hard content keys).
     from app.git.safety import run_safety_checks

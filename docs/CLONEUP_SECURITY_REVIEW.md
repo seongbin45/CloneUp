@@ -9,8 +9,11 @@
 > - **H2** 수정: `store --file='…'` 인용 + 위험 문자 거부 + `%LOCALAPPDATA%\CloneUp\tmp`  
 > - **H3** 수정: 서명 검사 fail-open 제거, 빈 subject 거부, PowerShell/clip 절대경로  
 > - **M1** stdout 마스킹 적용 · **M2** `_TOKEN_LEAK_RE`에 `ghp_` 포함  
-> - 회귀: `tests/test_p0_security.py` (3) + `verify_security_crosscheck` / `verify_pii_crosscheck`  
-> - P1 나머지(M4 hooks, M5 private default) · P2/CI 는 후속
+> - **M4** `run_git` 안전 `-c` (hooksPath 빈 디렉터리, pager=cat, fsmonitor off) + `commit --no-verify`  
+> - **M5** 기본 비공개 (`last_private` / UI radio / API default)  
+> - **P2 origin** sync pull/push 전 `assert_github_https_remote`  
+> - 회귀: `tests/` + `verify_*` + GitHub Actions CI  
+> - 잔여: 코드 서명(P2/M6), requirements hash pin, Device Flow 릴리스 빌드 제외
 
 ---
 

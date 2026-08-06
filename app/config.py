@@ -19,8 +19,9 @@ from dotenv import load_dotenv
 
 # Built-in default for packaged / end-user runs (not a secret).
 DEFAULT_GITHUB_CLIENT_ID = "Ov23liuwynj1IgDmz8Tj"
-# Full repo access from first login so public *and* private create/push work.
-# Trade-off: broader than public_repo — user authorizes once with eyes open.
+# Classic PAT scope for private create/push (default publish is private — M5).
+# Prefer fine-grained PAT limited to one repo when possible (login UI copy).
+# public_repo alone cannot create private repos.
 DEFAULT_GITHUB_SCOPES = "repo"
 
 # --- OAuth App ownership (transparency for Device Flow; PAT ignores this) ---

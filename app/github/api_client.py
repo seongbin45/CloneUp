@@ -129,7 +129,7 @@ def create_repo(
     access_token: str,
     name: str,
     *,
-    private: bool = False,
+    private: bool = True,
     description: str = "",
     auto_init: bool = False,
 ) -> dict[str, Any]:

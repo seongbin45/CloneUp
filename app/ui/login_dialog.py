@@ -300,7 +300,8 @@ class ConnectGitHubWizard(QDialog):
         lead.setWordWrap(True)
 
         box = QLabel(
-            "· 저장소 권한(repo) 켜기\n"
+            "· 저장소 권한(repo) 켜기  (비공개 올리기용)\n"
+            "· 가능하면 세분 키: 해당 저장소만 · Contents 읽기/쓰기\n"
             "· 만료일: 90일 또는 없음 권장\n"
             "· 생성 후 초록 키 전체 복사"
         )

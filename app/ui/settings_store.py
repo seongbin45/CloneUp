@@ -41,7 +41,8 @@ def remember_folder(folder: str) -> list[str]:
 
 
 def load_last_private() -> bool:
-    return bool(_settings().value("last_private", False, type=bool))
+    """Default True: beginner-safe private repos (M5 / security review)."""
+    return bool(_settings().value("last_private", True, type=bool))
 
 
 def save_last_private(private: bool) -> None:
