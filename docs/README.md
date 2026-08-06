@@ -16,7 +16,7 @@
 | [GIT_BOOTSTRAP.md](GIT_BOOTSTRAP.md) | Git 없을 때 설치 도우미 (D방식) |
 | [FAILURE_CASES.md](FAILURE_CASES.md) | 실패 시나리오 체크리스트 |
 | [PII_CROSS_VERIFY.md](PII_CROSS_VERIFY.md) | 비밀파일·개인정보 스캔 교차검증 |
-| [SECURITY_CROSS_VERIFY.md](SECURITY_CROSS_VERIFY.md) | **보안 취약점 교차검증** (인증·토큰·git·로그) |
+| [SECURITY_CROSS_VERIFY.md](SECURITY_CROSS_VERIFY.md) | **보안 전면 교차검증** + `scripts/verify_security_crosscheck.py` |
 | [ICON_CROSS_VERIFY.md](ICON_CROSS_VERIFY.md) | 아이콘 시안 대조 |
 | [DESIGN_PHASES.md](DESIGN_PHASES.md) | UI 디자인 단계 |
 | [PLAYWRIGHT_DEVICE_FLOW.md](PLAYWRIGHT_DEVICE_FLOW.md) | 실험용 Playwright 로그인 |
