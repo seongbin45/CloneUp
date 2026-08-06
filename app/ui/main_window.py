@@ -66,100 +66,28 @@ from app.ui.settings_store import (
 from app.ui.tab_workers import CloneWorker, SyncActionWorker, SyncStatusWorker
 from app.ui.theme import active_palette
 
-# Full path kept separately so the field can show middle-elided text when idle.
-_PATH_PROP = "cloneup_full_path"
-
 
 def _ui_path() -> Path:
     return app_root() / "ui" / "main_window.ui"
 
 
 def _folder_path(edit: QLineEdit | None) -> str:
-    """Real folder path from a path line edit (ignores elided display text)."""
+    """Full folder path from a path line edit (always the real text, no elide)."""
     if edit is None:
         return ""
-    full = edit.property(_PATH_PROP)
-    if isinstance(full, str) and full.strip():
-        return full.strip()
     return (edit.text() or "").strip()
 
 
-def _elide_folder_display(edit: QLineEdit) -> None:
-    """Show middle-elided path when unfocused so the folder name stays visible."""
-    if edit.hasFocus():
-        return
-    full = edit.property(_PATH_PROP)
-    if not isinstance(full, str):
-        full = (edit.text() or "").strip()
-        edit.setProperty(_PATH_PROP, full)
-    if not full:
-        if edit.text():
-            edit.blockSignals(True)
-            edit.setText("")
-            edit.blockSignals(False)
-        return
-    # padding ~10px each side + border
-    avail = max(48, edit.width() - 28)
-    elided = edit.fontMetrics().elidedText(
-        full, Qt.TextElideMode.ElideMiddle, avail
-    )
-    if edit.text() != elided:
-        edit.blockSignals(True)
-        edit.setText(elided)
-        edit.blockSignals(False)
-
-
 def _set_folder_path(edit: QLineEdit | None, path: str) -> None:
-    """Store full path, tooltip, and elided or full display."""
+    """Show the complete path in the field; tooltip mirrors it for hover copy."""
     if edit is None:
         return
     path = (path or "").strip()
-    edit.setProperty(_PATH_PROP, path)
-    edit.setToolTip(path if path else edit.toolTip() or "")
-    if edit.hasFocus():
-        if edit.text() != path:
-            edit.blockSignals(True)
-            edit.setText(path)
-            edit.blockSignals(False)
-    else:
-        _elide_folder_display(edit)
-
-
-class _PathFieldFilter(QObject):
-    """Focus/resize: restore full path for editing; elide when idle."""
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if not isinstance(watched, QLineEdit):
-            return False
-        et = event.type()
-        if et == QEvent.Type.FocusIn:
-            full = watched.property(_PATH_PROP)
-            if isinstance(full, str) and full:
-                if watched.text() != full:
-                    watched.blockSignals(True)
-                    watched.setText(full)
-                    watched.blockSignals(False)
-                watched.setCursorPosition(len(full))
-        elif et == QEvent.Type.FocusOut:
-            # Commit typed path before eliding
-            typed = (watched.text() or "").strip()
-            prev = watched.property(_PATH_PROP)
-            if isinstance(prev, str) and prev.strip():
-                avail = max(48, watched.width() - 28)
-                elided = watched.fontMetrics().elidedText(
-                    prev.strip(), Qt.TextElideMode.ElideMiddle, avail
-                )
-                # Unchanged elided display → keep full path; otherwise user edited
-                if typed in (elided, prev.strip()):
-                    typed = prev.strip()
-            watched.setProperty(_PATH_PROP, typed)
-            if typed:
-                watched.setToolTip(typed)
-            _elide_folder_display(watched)
-        elif et == QEvent.Type.Resize:
-            if not watched.hasFocus():
-                _elide_folder_display(watched)
-        return False
+    edit.setText(path)
+    if path:
+        edit.setToolTip(path)
+    # Keep caret at start so drive/root is visible; user can scroll for the rest.
+    edit.setCursorPosition(0)
 
 
 def _format_commit_email_g3(
@@ -266,9 +194,6 @@ class MainController(QObject):
         self.editFolder = window.findChild(QLineEdit, "editFolder")
         self.btnBrowseFolder = window.findChild(QPushButton, "btnBrowseFolder")
         self.comboRecent = window.findChild(QComboBox, "comboRecent")
-        self._path_field_filter = _PathFieldFilter(self)
-        if self.editFolder is not None:
-            self.editFolder.installEventFilter(self._path_field_filter)
         self.editRepoName = window.findChild(QLineEdit, "editRepoName")
         self.radioPublic = window.findChild(QRadioButton, "radioPublic")
         self.radioPrivate = window.findChild(QRadioButton, "radioPrivate")
@@ -309,8 +234,6 @@ class MainController(QObject):
         self.comboSyncRecent = window.findChild(QComboBox, "comboSyncRecent")
         self.btnSyncBrowse = window.findChild(QPushButton, "btnSyncBrowse")
         self.btnSyncRefresh = window.findChild(QPushButton, "btnSyncRefresh")
-        if self.editSyncFolder is not None:
-            self.editSyncFolder.installEventFilter(self._path_field_filter)
         self.labelSyncBranchTitle = window.findChild(QLabel, "labelSyncBranchTitle")
         self.labelSyncBranch = window.findChild(QLabel, "labelSyncBranch")
         if self.labelSyncBranch is not None:
@@ -671,9 +594,6 @@ class MainController(QObject):
             self.btnLogout.clicked.connect(self.on_logout)
         if self.editFolder:
             self.editFolder.editingFinished.connect(self._maybe_fill_repo_name)
-            self.editFolder.editingFinished.connect(
-                lambda: self._commit_path_field(self.editFolder)
-            )
         if self.comboRecent:
             self.comboRecent.activated.connect(self._on_recent_activated)
 
@@ -742,23 +662,6 @@ class MainController(QObject):
         if self.comboPublishBranch is None:
             return "main"
         return (self.comboPublishBranch.currentText() or "").strip() or "main"
-
-    def _commit_path_field(self, edit: QLineEdit | None) -> None:
-        """Sync stored full path from focused line edit text."""
-        if edit is None:
-            return
-        typed = (edit.text() or "").strip()
-        prev = edit.property(_PATH_PROP)
-        if isinstance(prev, str) and prev.strip():
-            avail = max(48, edit.width() - 28)
-            elided = edit.fontMetrics().elidedText(
-                prev.strip(), Qt.TextElideMode.ElideMiddle, avail
-            )
-            if typed in (elided, prev.strip()):
-                typed = prev.strip()
-        edit.setProperty(_PATH_PROP, typed)
-        if typed:
-            edit.setToolTip(typed)
 
     def _reload_recent_combo(self) -> None:
         items = load_recent_folders()
@@ -1816,16 +1719,17 @@ class MainController(QObject):
     @Slot()
     def _on_sync_folder_text_changed(self, _text: str = "") -> None:
         """Debounce while pasting/typing a path (improvement 2)."""
-        # While focused the field holds the real path — keep property in sync.
-        ed = self.editSyncFolder
-        if ed is not None and ed.hasFocus():
-            ed.setProperty(_PATH_PROP, (ed.text() or "").strip())
         self._sync_folder_timer.start()
 
     @Slot()
     def _on_sync_folder_editing_finished(self) -> None:
-        self._commit_path_field(self.editSyncFolder)
         self._sync_folder_timer.stop()
+        # Keep tooltip in sync with whatever the user typed (full path always).
+        ed = self.editSyncFolder
+        if ed is not None:
+            t = (ed.text() or "").strip()
+            if t:
+                ed.setToolTip(t)
         self._sync_folder_maybe_refresh()
 
     @Slot()
@@ -1833,8 +1737,6 @@ class MainController(QObject):
         """Auto status refresh when folder field settles (browse / paste / type)."""
         if self._busy():
             return
-        if self.editSyncFolder is not None and self.editSyncFolder.hasFocus():
-            self._commit_path_field(self.editSyncFolder)
         folder = _folder_path(self.editSyncFolder)
         if not folder:
             self._clear_sync_status_labels()
