@@ -660,6 +660,17 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         font-size: 12.5px;
         margin-left: 102px;
     }}
+    QLabel#labelSyncBranch {{
+        background: {BG_HINT};
+        color: {PRIMARY};
+        border: 1px solid {BORDER_SOFT};
+        border-left: 4px solid {PRIMARY};
+        border-radius: 6px;
+        padding: 10px 14px;
+        margin-left: 102px;
+        font-size: 14px;
+        font-weight: 700;
+    }}
     QLabel#labelSyncStatus {{
         background: {BG_MUTED};
         color: {TEXT_MUTED};

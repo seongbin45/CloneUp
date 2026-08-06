@@ -210,6 +210,7 @@ class MainController(QObject):
         self.editSyncFolder = window.findChild(QLineEdit, "editSyncFolder")
         self.btnSyncBrowse = window.findChild(QPushButton, "btnSyncBrowse")
         self.btnSyncRefresh = window.findChild(QPushButton, "btnSyncRefresh")
+        self.labelSyncBranch = window.findChild(QLabel, "labelSyncBranch")
         self.labelSyncStatus = window.findChild(QLabel, "labelSyncStatus")
         self.editSyncMessage = window.findChild(QLineEdit, "editSyncMessage")
         self.checkSyncHideEmail = window.findChild(QCheckBox, "checkSyncHideEmail")
@@ -218,6 +219,11 @@ class MainController(QObject):
         self.btnSyncPush = window.findChild(QPushButton, "btnSyncPush")
         self.btnSyncAbort = window.findChild(QPushButton, "btnSyncAbort")
         self.btnSyncCancel = window.findChild(QPushButton, "btnSyncCancel")
+        # Debounce path paste/type → auto status refresh (2)
+        self._sync_folder_timer = QTimer(self)
+        self._sync_folder_timer.setSingleShot(True)
+        self._sync_folder_timer.setInterval(400)
+        self._sync_folder_timer.timeout.connect(self._sync_folder_maybe_refresh)
 
         if self.textLog is None or self.btnPublish is None:
             raise RuntimeError("필수 UI 위젯 누락")
@@ -283,8 +289,9 @@ class MainController(QObject):
                 "labelTabIntroSync",
                 "이미 연결된 폴더의 변경사항을 주고받습니다.",
                 "• 이 폴더에 .git 이 있어야 합니다. 없으면 「받기」나 「만들고 올리기」를 먼저 하세요.\n"
-                "• 올리기 전에 비밀 파일 후보가 있는지 확인하세요.\n"
-                "• 권한 오류가 나면 위쪽 「GitHub: 연결」에서 키를 다시 연결하세요.",
+                "• 「지금 branch」에 이 폴더에서 작업 중인 branch가 보입니다.\n"
+                "• 폴더를 고르거나 경로를 붙이면 상태가 자동으로 다시 읽힙니다.\n"
+                "• 올리기 전에 비밀 파일 후보가 있는지 확인하세요.",
             ),
         ]
         for obj_name, summary, body in tips:
@@ -560,6 +567,11 @@ class MainController(QObject):
             self.btnSyncBrowse.clicked.connect(self.on_sync_browse)
         if self.btnSyncRefresh:
             self.btnSyncRefresh.clicked.connect(self.on_sync_refresh)
+        if self.editSyncFolder is not None:
+            self.editSyncFolder.editingFinished.connect(
+                self._on_sync_folder_editing_finished
+            )
+            self.editSyncFolder.textChanged.connect(self._on_sync_folder_text_changed)
         if self.btnSyncPull:
             self.btnSyncPull.clicked.connect(lambda: self.on_sync_action("pull"))
         if self.btnSyncPush:
@@ -1163,6 +1175,8 @@ class MainController(QObject):
         """Fill Sync folder field and switch to the Sync tab (V5 next step)."""
         if folder and self.editSyncFolder is not None:
             self.editSyncFolder.setText(str(folder))
+            # Auto-refresh so 「지금 branch」 is visible immediately
+            QTimer.singleShot(0, self.on_sync_refresh)
         if self.tabWidget is not None:
             # tab order in main_window.ui: 0 publish, 1 clone, 2 sync
             for i in range(self.tabWidget.count()):
@@ -1520,6 +1534,63 @@ class MainController(QObject):
             self._go_sync_tab(path)
 
     # ----- sync -----
+    def _clear_sync_status_labels(self) -> None:
+        if self.labelSyncBranch is not None:
+            self.labelSyncBranch.setText("지금 branch: (폴더를 선택하세요)")
+        if self.labelSyncStatus is not None:
+            self.labelSyncStatus.setText("상태: (폴더를 선택하세요)")
+
+    def _set_sync_branch_label(self, branch: str | None) -> None:
+        """Prominent current-branch line (improvement 1)."""
+        if self.labelSyncBranch is None:
+            return
+        b = (branch or "").strip()
+        if not b:
+            self.labelSyncBranch.setText("지금 branch: (알 수 없음)")
+            return
+        if b.startswith("("):
+            self.labelSyncBranch.setText(
+                f"지금 branch: {b}  ·  특정 커밋만 가리키는 상태"
+            )
+        else:
+            self.labelSyncBranch.setText(f"지금 branch: {b}")
+
+    @Slot()
+    def _on_sync_folder_text_changed(self, _text: str = "") -> None:
+        """Debounce while pasting/typing a path (improvement 2)."""
+        self._sync_folder_timer.start()
+
+    @Slot()
+    def _on_sync_folder_editing_finished(self) -> None:
+        self._sync_folder_timer.stop()
+        self._sync_folder_maybe_refresh()
+
+    @Slot()
+    def _sync_folder_maybe_refresh(self) -> None:
+        """Auto status refresh when folder field settles (browse / paste / type)."""
+        if self._busy():
+            return
+        folder = (self.editSyncFolder.text() if self.editSyncFolder else "") or ""
+        folder = folder.strip()
+        if not folder:
+            self._clear_sync_status_labels()
+            return
+        try:
+            p = Path(folder).expanduser()
+            if not p.is_dir():
+                return  # incomplete path while typing
+            if not (p / ".git").is_dir():
+                if self.labelSyncBranch is not None:
+                    self.labelSyncBranch.setText(
+                        "지금 branch: (.git 없음 — 「받기」또는 「만들고 올리기」먼저)"
+                    )
+                if self.labelSyncStatus is not None:
+                    self.labelSyncStatus.setText("상태: Git 저장소가 아닙니다")
+                return
+        except OSError:
+            return
+        self.on_sync_refresh(quiet=True)
+
     @Slot()
     def on_sync_browse(self) -> None:
         if not self.editSyncFolder:
@@ -1527,32 +1598,63 @@ class MainController(QObject):
         start = (self.editSyncFolder.text() or "").strip() or str(Path.home())
         path = QFileDialog.getExistingDirectory(self.window, "로컬 저장소", start)
         if path:
+            self.editSyncFolder.blockSignals(True)
             self.editSyncFolder.setText(path)
-            self.on_sync_refresh()
+            self.editSyncFolder.blockSignals(False)
+            self.on_sync_refresh(quiet=True)
 
     @Slot()
-    def on_sync_refresh(self) -> None:
+    def on_sync_refresh(self, quiet: bool = False) -> None:
         if self._busy():
             return
         folder = (self.editSyncFolder.text() if self.editSyncFolder else "") or ""
         if not folder.strip():
-            QMessageBox.warning(self.window, "CloneUp", "동기화할 폴더를 선택하세요.")
+            if not quiet:
+                QMessageBox.warning(
+                    self.window, "CloneUp", "동기화할 폴더를 선택하세요."
+                )
+            else:
+                self._clear_sync_status_labels()
             return
         self._log(f"--- 상태: {folder} ---")
         w = SyncStatusWorker(folder=folder.strip(), parent=self)
         w.succeeded.connect(self._on_sync_status)
-        w.failed.connect(self._on_fail_msg)
-        # status has no log_line always — connect if present
+        w.failed.connect(
+            lambda msg, q=quiet: self._on_sync_status_failed(msg, quiet=q)
+        )
         if hasattr(w, "log_line"):
             w.log_line.connect(self._log)
         self._start_worker(w)
 
+    @Slot(str)
+    def _on_sync_status_failed(self, message: str, *, quiet: bool = False) -> None:
+        if self.labelSyncBranch is not None:
+            self.labelSyncBranch.setText("지금 branch: (확인 실패)")
+        if self.labelSyncStatus is not None:
+            short = (message or "").strip().splitlines()[0][:120]
+            self.labelSyncStatus.setText(f"상태: {short}" if short else "상태: 확인 실패")
+        if quiet:
+            self._log(message)
+        else:
+            self._on_fail_msg(message)
+
     @Slot(dict)
     def _on_sync_status(self, st: dict) -> None:
+        branch = str(st.get("branch") or "").strip()
         summary = st.get("summary") or ""
+        self._set_sync_branch_label(branch)
         if self.labelSyncStatus is not None:
-            self.labelSyncStatus.setText(f"상태: {summary}")
-        self._log(summary)
+            self.labelSyncStatus.setText(
+                f"상태: {summary}" if summary else "상태: 확인됨"
+            )
+        # Log both so the log pane mirrors the UI
+        if branch:
+            if branch.startswith("("):
+                self._log(f"지금 branch: {branch}")
+            else:
+                self._log(f"지금 branch: {branch}")
+        if summary:
+            self._log(summary)
         if st.get("conflict"):
             QMessageBox.warning(
                 self.window,

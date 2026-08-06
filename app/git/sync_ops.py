@@ -149,11 +149,8 @@ def get_repo_status(folder: Path) -> RepoStatus:
             if len(parts) == 2:
                 ahead, behind = int(parts[0]), int(parts[1])
 
-    # Beginner-facing summary (avoid origin/ahead/behind jargon)
-    if branch.startswith("("):
-        bits = ["branch: (detached)"]
-    else:
-        bits = [f"branch: {branch}"]
+    # Beginner-facing summary (branch is shown separately in UI as 「지금 branch」)
+    bits: list[str] = []
 
     if has_origin:
         bits.append("GitHub와 연결됨")
@@ -178,6 +175,9 @@ def get_repo_status(folder: Path) -> RepoStatus:
                 parts_ab.append(f"받을 내용 {behind}개")
             if parts_ab:
                 bits.append(" · ".join(parts_ab))
+
+    if not bits:
+        bits.append("상태 확인됨")
 
     return RepoStatus(
         folder=folder,
