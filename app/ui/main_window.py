@@ -289,7 +289,7 @@ class MainController(QObject):
                 "labelTabIntroSync",
                 "이미 연결된 폴더의 변경사항을 주고받습니다.",
                 "• 이 폴더에 .git 이 있어야 합니다. 없으면 「받기」나 「만들고 올리기」를 먼저 하세요.\n"
-                "• 「작업 중인 줄 이름」이 이 폴더에서 작업하는 줄입니다 (branch).\n"
+                "• 「이 폴더에서 작업 중」에 지금 쓰는 작업 이름이 보입니다.\n"
                 "• 폴더를 고르거나 경로를 붙이면 상태가 자동으로 다시 읽힙니다.\n"
                 "• 올리기 전에 비밀 파일 후보가 있는지 확인하세요.",
             ),
@@ -1537,8 +1537,8 @@ class MainController(QObject):
     def _clear_sync_status_labels(self) -> None:
         if self.labelSyncBranch is not None:
             self.labelSyncBranch.setText(
-                "작업 중인 줄 이름\n"
-                "(폴더를 고르면 여기에 표시됩니다)"
+                "이 폴더에서 작업 중\n"
+                "(폴더를 고르면 이름이 표시됩니다)"
             )
         if self.labelSyncStatus is not None:
             self.labelSyncStatus.setText(
@@ -1548,33 +1548,32 @@ class MainController(QObject):
 
     def _set_sync_branch_label(self, branch: str | None) -> None:
         """
-        Show current checkout in plain Korean for beginners.
+        Show current checkout in everyday Korean.
 
-        Technical term ``branch`` only in a short parenthetical, not as the title.
+        Avoid metaphors like 「줄」. Name first, then one short why-line.
         """
         if self.labelSyncBranch is None:
             return
         b = (branch or "").strip()
         if not b:
             self.labelSyncBranch.setText(
-                "작업 중인 줄 이름\n"
-                "(아직 알 수 없습니다. 「상태 새로고침」을 눌러 보세요.)"
+                "이 폴더에서 작업 중\n"
+                "(아직 모릅니다. 「상태 새로고침」을 눌러 보세요.)"
             )
             return
         if b.startswith("("):
-            # detached HEAD — avoid jargon
             self.labelSyncBranch.setText(
-                "작업 중인 줄 이름: (고정된 한 지점)\n"
-                "특정 저장 시점만 보고 있어, 일반 작업 줄이 아닙니다.\n"
-                "보통은 main 같은 줄 이름에서 작업합니다."
+                "이 폴더에서 작업 중: (한 저장 시점만 보는 중)\n"
+                "보통의 작업 이름(예: main)이 아닌 상태입니다.\n"
+                "가능하면 main 같은 이름으로 다시 맞춰 주세요."
             )
             return
+        # Name on its own line so it scans like a title
         self.labelSyncBranch.setText(
-            f"작업 중인 줄 이름: {b}\n"
-            "이 폴더에서 올리기·받기가 이 이름을 기준으로 진행됩니다.\n"
-            f"(Git에서는 branch 라고 부릅니다 · 예: {b})"
-        )
-    @Slot()
+            f"이 폴더에서 작업 중\n"
+            f"{b}\n"
+            "올리기·받기가 이 이름을 기준으로 합니다."
+        )    @Slot()
     def _on_sync_folder_text_changed(self, _text: str = "") -> None:
         """Debounce while pasting/typing a path (improvement 2)."""
         self._sync_folder_timer.start()
@@ -1601,14 +1600,14 @@ class MainController(QObject):
             if not (p / ".git").is_dir():
                 if self.labelSyncBranch is not None:
                     self.labelSyncBranch.setText(
-                        "작업 중인 줄 이름: 없음\n"
-                        "이 폴더는 아직 Git 저장소가 아닙니다.\n"
+                        "이 폴더에서 작업 중: (아직 없음)\n"
+                        "Git 저장소가 아닙니다.\n"
                         "「받기」또는 「만들고 올리기」를 먼저 하세요."
                     )
                 if self.labelSyncStatus is not None:
                     self.labelSyncStatus.setText(
                         "이 폴더 상태: 동기화할 수 없음\n"
-                        "(.git 폴더가 없습니다)"
+                        "(아직 Git으로 준비한 폴더가 아닙니다)"
                     )
                 return
         except OSError:
@@ -1654,7 +1653,7 @@ class MainController(QObject):
     def _on_sync_status_failed(self, message: str, *, quiet: bool = False) -> None:
         if self.labelSyncBranch is not None:
             self.labelSyncBranch.setText(
-                "작업 중인 줄 이름\n"
+                "이 폴더에서 작업 중\n"
                 "(확인하지 못했습니다)"
             )
         if self.labelSyncStatus is not None:
@@ -1681,9 +1680,9 @@ class MainController(QObject):
                 self.labelSyncStatus.setText("이 폴더 상태\n· 확인됨")
         # Log both so the log pane mirrors the UI
         if branch and not branch.startswith("("):
-            self._log(f"작업 중인 줄 이름: {branch} (branch)")
+            self._log(f"이 폴더에서 작업 중: {branch}")
         elif branch:
-            self._log(f"작업 중인 줄: 고정된 한 지점 ({branch})")
+            self._log("이 폴더에서 작업 중: (한 저장 시점만 보는 중)")
         if summary:
             self._log(summary)
         if st.get("conflict"):
