@@ -100,19 +100,35 @@ def get_repo_status(folder: Path) -> RepoStatus:
             if len(parts) == 2:
                 ahead, behind = int(parts[0]), int(parts[1])
 
-    bits = [f"브랜치: {branch}"]
+    # Beginner-facing summary (avoid origin/ahead/behind jargon)
+    if branch.startswith("("):
+        bits = ["작업 위치: 특수 상태"]
+    else:
+        bits = [f"작업 줄: {branch}"]
+
     if has_origin:
-        bits.append(f"origin: {origin_url or '(있음)'}")
+        bits.append("GitHub와 연결됨")
     else:
-        bits.append("origin: 없음")
+        bits.append("GitHub 연결 없음")
+
     if conflict:
-        bits.append("⚠ 병합 충돌 중")
+        bits.append("⚠ 변경이 겹쳐 막힘")
     elif dirty:
-        bits.append("변경 있음")
+        bits.append("저장할 변경 있음")
     else:
-        bits.append("깨끗함")
-    if ahead is not None:
-        bits.append(f"ahead {ahead} / behind {behind}")
+        bits.append("로컬 변경 없음")
+
+    if ahead is not None and behind is not None:
+        if ahead == 0 and behind == 0:
+            bits.append("GitHub와 같음")
+        else:
+            parts_ab: list[str] = []
+            if ahead:
+                parts_ab.append(f"올릴 내용 {ahead}개")
+            if behind:
+                parts_ab.append(f"받을 내용 {behind}개")
+            if parts_ab:
+                bits.append(" · ".join(parts_ab))
 
     return RepoStatus(
         folder=folder,
@@ -129,15 +145,27 @@ def get_repo_status(folder: Path) -> RepoStatus:
     )
 
 
+def _git_detail(out: str, *, limit: int = 500) -> str:
+    """Short optional technical detail for dialogs (not the main sentence)."""
+    text = (out or "").strip()
+    if not text:
+        return ""
+    return "\n\n(참고)\n" + text[:limit]
+
+
 def pull_repo(folder: Path, *, token: str | None = None) -> str:
     folder = _ensure_git_repo(folder)
     st = get_repo_status(folder)
     if st.conflict:
         raise SyncError(
-            "이미 충돌 상태입니다. 「충돌 취소 (merge --abort)」를 먼저 사용하세요."
+            "이미 변경이 겹쳐 막힌 상태입니다.\n"
+            "먼저 「충돌 취소」로 되돌린 뒤 다시 받아 오세요."
         )
     if not st.has_origin:
-        raise SyncError("origin remote 가 없습니다.")
+        raise SyncError(
+            "이 폴더는 아직 GitHub와 연결되어 있지 않습니다.\n"
+            "「만들고 올리기」로 먼저 올리거나, 「받기」로 받은 폴더를 선택하세요."
+        )
 
     cred_path = None
     config = None
@@ -158,13 +186,18 @@ def pull_repo(folder: Path, *, token: str | None = None) -> str:
             st2 = get_repo_status(folder)
             if st2.conflict:
                 raise SyncError(
-                    "병합 충돌이 발생했습니다.\n"
-                    "이 앱으로 충돌 내용을 해결하지 않습니다.\n"
-                    "「충돌 취소」로 되돌리거나, 에디터에서 수동 해결 후 커밋하세요.\n\n"
-                    + out[:800]
+                    "GitHub 내용과 이 폴더 내용이 겹쳐 자동으로 합치지 못했습니다.\n"
+                    "「충돌 취소」로 되돌리거나, 다른 프로그램에서 파일을 고친 뒤 다시 올리세요."
+                    + _git_detail(out)
                 )
-            raise SyncError(f"pull 실패:\n{out[:800]}")
-        return out or "pull 완료 (이미 최신일 수 있음)"
+            raise SyncError(
+                "GitHub에서 받아오기에 실패했습니다.\n"
+                "인터넷과 「GitHub: 연결」을 확인한 뒤 다시 시도하세요."
+                + _git_detail(out)
+            )
+        if out and ("Already up to date" in out or "이미 업데이트" in out):
+            return "이미 최신입니다. 받을 새 내용이 없습니다."
+        return "받아오기가 끝났습니다." if not out else f"받아오기 완료.\n{out[:400]}"
     finally:
         delete_credential_file(cred_path)
 
@@ -179,13 +212,12 @@ def abort_merge(folder: Path) -> str:
         out2 = ((r2.stdout or "") + "\n" + (r2.stderr or "")).strip()
         if r2.returncode != 0:
             raise SyncError(
-                "merge/rebase abort 실패. 충돌 중이 아니거나 이미 정리됐을 수 있습니다.\n"
-                + out
-                + "\n"
-                + out2
+                "겹친 상태를 되돌리지 못했습니다.\n"
+                "이미 정리됐거나, 충돌 중이 아닐 수 있습니다."
+                + _git_detail(out + "\n" + out2)
             )
-        return out2 or "rebase --abort 완료"
-    return out or "merge --abort 완료"
+        return "겹친 상태를 되돌렸습니다."
+    return "겹친 상태를 되돌렸습니다."
 
 
 def commit_and_push(
@@ -200,18 +232,27 @@ def commit_and_push(
     folder = _ensure_git_repo(folder)
     st = get_repo_status(folder)
     if st.conflict:
-        raise SyncError("충돌 상태에서는 커밋/푸시할 수 없습니다.")
+        raise SyncError(
+            "변경이 겹쳐 막힌 상태에서는 올릴 수 없습니다.\n"
+            "「충돌 취소」로 되돌린 뒤 다시 시도하세요."
+        )
     if not st.has_origin:
-        raise SyncError("origin 이 없습니다. Publish 또는 remote 설정이 필요합니다.")
+        raise SyncError(
+            "이 폴더는 아직 GitHub와 연결되어 있지 않습니다.\n"
+            "「만들고 올리기」로 먼저 올리거나, 「받기」로 받은 폴더를 선택하세요."
+        )
     if "x-access-token" in st.origin_url.lower():
-        raise SyncError("origin URL 에 토큰이 있습니다. 깨끗한 HTTPS URL 로 고치세요.")
+        raise SyncError(
+            "GitHub 주소에 비밀번호 정보가 잘못 들어 있습니다.\n"
+            "이 폴더는 안전을 위해 올리기를 막았습니다. 다른 폴더로 다시 받아 보세요."
+        )
 
     secrets = find_secret_candidates(folder)
     if secrets and not allow_secrets:
         raise SyncError(
             "비밀 파일로 보이는 항목이 있습니다:\n"
             + ", ".join(secrets)
-            + "\n제거하거나 고급 옵션으로 허용하세요."
+            + "\n파일을 빼거나, 「비밀 파일도 커밋 (고급)」을 켠 뒤 다시 시도하세요."
         )
 
     run_git(["add", "-A"], cwd=str(folder), check=True)
@@ -219,7 +260,7 @@ def commit_and_push(
     diff = run_git(["diff", "--cached", "--quiet"], cwd=str(folder), check=False)
     if diff.returncode == 0:
         # nothing to commit — still allow push of existing commits
-        print("커밋할 새 변경 없음 → push 만 시도")
+        print("새로 저장할 변경 없음 → GitHub로 보내기만 시도")
     else:
         msg = (message or "").strip() or "변경 사항 반영"
         identity = resolve_commit_identity(
@@ -231,7 +272,7 @@ def commit_and_push(
             check=True,
             config=identity or None,
         )
-        print(f"commit: {msg}")
+        print(f"저장 완료: {msg}")
 
     cred_path = write_credential_file(token)
     try:
@@ -244,7 +285,11 @@ def commit_and_push(
         )
         out = ((r.stdout or "") + "\n" + (r.stderr or "")).strip()
         if r.returncode != 0:
-            raise SyncError(f"push 실패:\n{out[:800]}")
-        return out or "push 완료"
+            raise SyncError(
+                "GitHub로 보내기에 실패했습니다.\n"
+                "인터넷과 「GitHub: 연결」을 확인한 뒤 다시 시도하세요."
+                + _git_detail(out)
+            )
+        return "GitHub로 보내기가 끝났습니다."
     finally:
         delete_credential_file(cred_path)

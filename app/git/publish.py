@@ -127,15 +127,21 @@ def resolve_commit_identity(
 def assert_git_config_has_no_token(folder: Path, token: str) -> None:
     cfg = folder / ".git" / "config"
     if not cfg.is_file():
-        raise PublishError(".git/config 가 없습니다 (init 실패?)")
+        raise PublishError("폴더 준비에 실패했습니다. 다시 시도해 주세요.")
     text = cfg.read_text(encoding="utf-8", errors="replace")
     if token and token in text:
-        raise PublishError("보안 실패: 토큰이 .git/config 에 남아 있습니다.")
+        raise PublishError(
+            "보안 문제: 연결 정보가 폴더 설정에 남아 있습니다. 다시 시도해 주세요."
+        )
     if _TOKEN_LEAK_RE.search(text):
-        raise PublishError("보안 실패: .git/config 에 토큰 형태 문자열이 있습니다.")
+        raise PublishError(
+            "보안 문제: 폴더 설정에 비밀 정보처럼 보이는 값이 있습니다."
+        )
     # remote url must be clean
     if "x-access-token" in text.lower():
-        raise PublishError("보안 실패: remote URL 에 x-access-token 이 있습니다.")
+        raise PublishError(
+            "보안 문제: GitHub 주소에 비밀 정보가 들어 있습니다."
+        )
 
 
 # Back-compat aliases for spikes / older imports
@@ -205,8 +211,8 @@ def publish_local_to_existing_remote(
         names = {n.strip() for n in (remotes.stdout or "").splitlines() if n.strip()}
         if "origin" in names:
             raise PublishError(
-                "이미 origin remote 가 있습니다. "
-                "스파이크 3은 '새 폴더 → 새 원격' 경로만 지원합니다."
+                "이 폴더는 이미 GitHub와 연결되어 있습니다.\n"
+                "새로 만들려면 다른 폴더를 쓰거나, 「동기화」탭에서 올리고 보내기를 사용하세요."
             )
         # ensure on a branch that can push; leave existing history alone
     else:
@@ -216,17 +222,15 @@ def publish_local_to_existing_remote(
         folder, user, hide_real_email=hide_real_email
     )
     if identity:
-        print(
-            "커밋 identity 임시 주입 (-c, global 설정 변경 없음): "
-            + ", ".join(f"{k}={v}" for k, v in identity)
-        )
+        print("작성자 정보: 이번 저장에만 적용 (PC Git 설정은 그대로)")
     else:
-        print("기존 git user.name / user.email 사용 (존중)")
+        print("작성자 정보: 이 PC Git 설정 사용")
 
     run_git(["add", "-A"], cwd=str(folder), check=True)
     if not _has_staged_changes(folder):
         raise PublishError(
-            "스테이징된 파일이 없습니다. 모든 파일이 .gitignore 되었을 수 있습니다."
+            "올릴 파일이 없습니다.\n"
+            "폴더가 비었거나, 무시 목록(.gitignore) 때문에 제외됐을 수 있습니다."
         )
 
     run_git(
@@ -243,7 +247,7 @@ def publish_local_to_existing_remote(
     try:
         cred_path = write_credential_file(token)
         helper_cfg = credential_helper_configs(cred_path)
-        print("push (임시 credential.helper store 파일, 종료 후 삭제)…")
+        print("GitHub로 보내는 중…")
         try:
             run_git(
                 ["push", "-u", "origin", "HEAD"],
@@ -254,9 +258,11 @@ def publish_local_to_existing_remote(
             )
         except GitError as e:
             # surface friendly text without token
+            detail = mask_secrets_in_text(str(e))
             raise PublishError(
-                mask_secrets_in_text(str(e))
-                + "\n\n다음: 창 위쪽 「GitHub: 연결」에서 키를 다시 연결한 뒤 올려 보세요."
+                "GitHub로 보내기에 실패했습니다.\n"
+                "인터넷과 「GitHub: 연결」을 확인한 뒤 다시 올려 보세요."
+                + (f"\n\n(참고)\n{detail[:500]}" if detail else "")
             ) from e
     finally:
         delete_credential_file(cred_path)
@@ -266,7 +272,10 @@ def publish_local_to_existing_remote(
     rv = run_git(["remote", "-v"], cwd=str(folder), check=True)
     remote_out = rv.stdout or ""
     if token in remote_out or "x-access-token" in remote_out.lower():
-        raise PublishError("보안 실패: git remote -v 출력에 토큰이 있습니다.")
+        raise PublishError(
+            "보안 문제: GitHub 주소에 비밀 정보가 남아 있습니다.\n"
+            "이 폴더로 다시 시도하기 전에 로그를 확인하세요."
+        )
 
     return PublishResult(
         folder=folder,

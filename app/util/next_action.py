@@ -20,10 +20,14 @@ def next_step_for_error(message: str) -> str | None:
     low = msg.lower()
 
     # Missing repo scope on PAT
-    if "저장소(repo) 권한" in msg or ("repo" in low and "권한" in msg and "없" in msg):
+    if (
+        "저장소(repo) 권한" in msg
+        or "저장소 권한" in msg
+        or ("repo" in low and "권한" in msg and "없" in msg)
+    ):
         return (
-            "repo 권한을 켠 새 키를 만드세요. "
-            "안내 창의 「repo 켠 채로 키 만들기」→ 복사 → 다시 연결."
+            "저장소 권한을 켠 새 키를 만드세요. "
+            "안내 창의 「새 키 만들기」→ 복사 → 다시 연결."
         )
 
     # Expired / revoked PAT
@@ -33,7 +37,7 @@ def next_step_for_error(message: str) -> str | None:
         or "취소되었습니다" in msg
     ):
         return (
-            "GitHub에서 새 키를 만드세요 (repo 권한, 만료일 90일 이상 권장). "
+            "GitHub에서 새 키를 만드세요 (저장소 권한, 만료일 90일 이상 권장). "
             "그다음 「GitHub: 연결」에서 붙여 넣으세요."
         )
 
@@ -96,19 +100,30 @@ def next_step_for_error(message: str) -> str | None:
     if "owner/repo" in msg or "저장소 주소" in msg or "주소를 입력" in msg:
         return "GitHub 저장소 루트 주소(…/owner/repo)만 붙여넣으세요."
 
-    # Not a git repo / no origin (sync)
+    # Not a git repo / no GitHub link (sync)
     if ".git" in msg and ("없" in msg or "git 저장소" in msg):
         return "「받기」또는 「만들고 올리기」로 먼저 연결하세요."
-    if "origin" in low and ("없" in msg or "없습니다" in msg):
-        return "「만들고 올리기」로 원격 저장소를 먼저 만들거나, remote를 확인하세요."
+    if (
+        "GitHub와 연결" in msg
+        and (
+            "없" in msg
+            or "있지 않" in msg
+            or "아니" in msg
+        )
+    ) or ("origin" in low and ("없" in msg or "없습니다" in msg)):
+        return "「만들고 올리기」로 먼저 올리거나, 「받기」로 받은 폴더를 선택하세요."
 
     # Conflict
-    if "충돌" in msg:
-        return "「충돌 취소」로 되돌리거나, 에디터에서 충돌을 해결하세요."
+    if "충돌" in msg or "겹쳐" in msg:
+        return "「충돌 취소」로 되돌리거나, 다른 프로그램에서 파일을 고친 뒤 다시 시도하세요."
 
-    # Staging empty
-    if "staging" in low or "staged" in low or "스테이징" in msg:
-        return ".gitignore 때문에 제외된 파일이 없는지 확인하세요."
+    # Nothing to upload
+    if "staging" in low or "staged" in low or "스테이징" in msg or "올릴 파일이 없" in msg:
+        return "폴더에 파일을 넣었는지, 무시 목록에 전부 들어가지 않았는지 확인하세요."
+
+    # Send/receive failed (Korean lead sentences)
+    if "보내기에 실패" in msg or "받아오기에 실패" in msg:
+        return "인터넷과 「GitHub: 연결」을 확인한 뒤 다시 시도하세요."
 
     # Network / generic git failure
     if "네트워크" in msg or "timed out" in low or "could not resolve" in low:

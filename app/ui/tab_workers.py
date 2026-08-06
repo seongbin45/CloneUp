@@ -196,7 +196,7 @@ class SyncActionWorker(QThread):
                     )
                     self.succeeded.emit(msg)
                 elif self.action == "abort":
-                    self._log("merge/rebase --abort…")
+                    self._log("겹친 상태 되돌리는 중…")
                     msg = abort_merge(folder)
                     self.succeeded.emit(msg)
                 else:

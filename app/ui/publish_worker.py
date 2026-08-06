@@ -128,10 +128,10 @@ class PatLoginWorker(QThread):
                 if self.isInterruptionRequested():
                     self.failed.emit("취소됨")
                     return
-                self._log("GitHub 로그인 (개인 액세스 토큰)…")
+                self._log("GitHub 키로 연결 중…")
                 token, user = login_with_pat(self._token)
                 if self.isInterruptionRequested():
-                    self.failed.emit("로그인이 취소되었습니다.")
+                    self.failed.emit("연결이 취소되었습니다.")
                     return
                 self.succeeded.emit(
                     {
@@ -144,7 +144,7 @@ class PatLoginWorker(QThread):
         except AuthError as e:
             self.failed.emit(str(e))
         except OSError as e:
-            self.failed.emit(f"네트워크: {e}")
+            self.failed.emit(f"네트워크 오류: {e}")
         except Exception as e:
             self.failed.emit(mask_secrets_in_text(f"예상치 못한 오류: {e}"))
         finally:
@@ -211,12 +211,15 @@ class PublishWorker(QThread):
             return
 
         vis = "private" if self.private else "public"
-        self._log(f"시작: {folder} → GitHub/{name} ({vis})")
+        self._log(
+            f"시작: {folder} → GitHub/{name} "
+            f"({'비공개' if self.private else '공개'})"
+        )
         if self._cancelled():
             return
 
         try:
-            self._log("인증 확인 (저장된 키)…")
+            self._log("연결 확인 중…")
 
             # Never auto-start Device Flow — PAT must already be in keyring.
             token, user = ensure_valid_token(
@@ -273,5 +276,5 @@ class PublishWorker(QThread):
             "config_clean": result.config_clean,
             "private": self.private,
         }
-        self._log(f"완료: {result.html_url} (config_clean={result.config_clean})")
+        self._log(f"완료: {result.html_url}")
         self.succeeded.emit(payload)
