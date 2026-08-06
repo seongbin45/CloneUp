@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -18,7 +20,9 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
+    QSizePolicy,
     QTabWidget,
+    QWidget,
 )
 
 from app.git.publish import preview_commit_email
@@ -212,6 +216,20 @@ class MainController(QObject):
         self.btnSyncRefresh = window.findChild(QPushButton, "btnSyncRefresh")
         self.labelSyncBranch = window.findChild(QLabel, "labelSyncBranch")
         self.labelSyncStatus = window.findChild(QLabel, "labelSyncStatus")
+        self.labelSyncStatusTitle = window.findChild(QLabel, "labelSyncStatusTitle")
+        self.frameSyncStatus = window.findChild(QFrame, "frameSyncStatus")
+        self._sync_chips_layout: QHBoxLayout | None = None
+        if self.frameSyncStatus is not None:
+            vlay = self.frameSyncStatus.layout()
+            if vlay is not None:
+                for i in range(vlay.count()):
+                    item = vlay.itemAt(i)
+                    if item is None:
+                        continue
+                    sub = item.layout()
+                    if sub is not None and sub.objectName() == "syncStatusChipsLayout":
+                        self._sync_chips_layout = sub  # type: ignore[assignment]
+                        break
         self.editSyncMessage = window.findChild(QLineEdit, "editSyncMessage")
         self.checkSyncHideEmail = window.findChild(QCheckBox, "checkSyncHideEmail")
         self.checkSyncAllowSecrets = window.findChild(QCheckBox, "checkSyncAllowSecrets")
@@ -1534,11 +1552,97 @@ class MainController(QObject):
             self._go_sync_tab(path)
 
     # ----- sync -----
+    def _clear_sync_chips(self) -> None:
+        """Remove dynamic status chips; keep the placeholder label if present."""
+        lay = self._sync_chips_layout
+        if lay is None:
+            return
+        # Remove everything except labelSyncStatus (placeholder) and spacer
+        for i in reversed(range(lay.count())):
+            item = lay.itemAt(i)
+            if item is None:
+                continue
+            w = item.widget()
+            if w is None:
+                continue
+            name = w.objectName() or ""
+            if name == "labelSyncStatus":
+                w.show()
+                w.setText("폴더를 고르면 표시됩니다")
+                continue
+            if name.startswith("syncChip_"):
+                lay.removeWidget(w)
+                w.deleteLater()
+
+    def _add_sync_chip(self, text: str, kind: str) -> None:
+        """
+        Add a colored pill. kind: ok | warn | bad | info | muted
+        """
+        lay = self._sync_chips_layout
+        if lay is None:
+            return
+        # Hide plain-text placeholder once we show chips
+        if self.labelSyncStatus is not None:
+            self.labelSyncStatus.hide()
+        chip = QLabel(text)
+        chip.setObjectName(f"syncChip_{kind}")
+        chip.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        # Re-apply stylesheet on the chip via parent polish
+        chip.setProperty("class", f"syncChip_{kind}")
+        # Insert before trailing spacer (last item)
+        idx = max(0, lay.count() - 1)
+        lay.insertWidget(idx, chip)
+        # Ensure theme QSS applies to dynamically created widgets
+        host = self.window
+        if host is not None:
+            chip.style().unpolish(chip)
+            chip.style().polish(chip)
+
+    def _render_sync_status_chips(self, st: dict) -> None:
+        """Visual chips for GitHub / local / push-pull (beginner scannable)."""
+        self._clear_sync_chips()
+        conflict = bool(st.get("conflict"))
+        has_origin = bool(st.get("has_origin"))
+        dirty = bool(st.get("dirty"))
+        ahead = st.get("ahead")
+        behind = st.get("behind")
+
+        if conflict:
+            self._add_sync_chip("●  변경 겹침", "bad")
+        if has_origin:
+            self._add_sync_chip("●  GitHub 연결", "ok")
+        else:
+            self._add_sync_chip("○  GitHub 없음", "muted")
+
+        if conflict:
+            pass  # local dirty is secondary
+        elif dirty:
+            self._add_sync_chip("●  로컬 변경", "warn")
+        else:
+            self._add_sync_chip("●  로컬 깨끗", "info")
+
+        if has_origin and ahead is not None and behind is not None:
+            try:
+                a, b = int(ahead), int(behind)
+            except (TypeError, ValueError):
+                a, b = 0, 0
+            if a == 0 and b == 0:
+                self._add_sync_chip("●  GitHub와 같음", "ok")
+            else:
+                if a > 0:
+                    self._add_sync_chip(f"↑  보낼 커밋 {a}", "info")
+                if b > 0:
+                    self._add_sync_chip(f"↓  받을 커밋 {b}", "info")
+        elif has_origin:
+            self._add_sync_chip("·  비교 정보 없음", "muted")
+
     def _clear_sync_status_labels(self) -> None:
         if self.labelSyncBranch is not None:
             self.labelSyncBranch.setText("branch\n(폴더를 고르면 표시됩니다)")
+        self._clear_sync_chips()
         if self.labelSyncStatus is not None:
-            self.labelSyncStatus.setText("상태\n(폴더를 고르면 표시됩니다)")
+            self.labelSyncStatus.show()
+            self.labelSyncStatus.setText("폴더를 고르면 표시됩니다")
 
     def _set_sync_branch_label(self, branch: str | None) -> None:
         """Show current branch: short label + name on its own line (scannable)."""
@@ -1588,11 +1692,10 @@ class MainController(QObject):
                         "(.git 없음)\n"
                         "「받기」또는 「만들고 올리기」를 먼저 하세요."
                     )
+                self._clear_sync_chips()
+                self._add_sync_chip("○  Git 저장소 아님", "muted")
                 if self.labelSyncStatus is not None:
-                    self.labelSyncStatus.setText(
-                        "상태\n"
-                        "Git 저장소가 아닙니다."
-                    )
+                    self.labelSyncStatus.hide()
                 return
         except OSError:
             return
@@ -1637,11 +1740,10 @@ class MainController(QObject):
     def _on_sync_status_failed(self, message: str, *, quiet: bool = False) -> None:
         if self.labelSyncBranch is not None:
             self.labelSyncBranch.setText("branch\n(확인 실패)")
+        self._clear_sync_chips()
+        self._add_sync_chip("●  확인 실패", "bad")
         if self.labelSyncStatus is not None:
-            short = (message or "").strip().splitlines()[0][:120]
-            self.labelSyncStatus.setText(
-                f"상태\n{short}" if short else "상태\n(확인 실패)"
-            )
+            self.labelSyncStatus.hide()
         if quiet:
             self._log(message)
         else:
@@ -1652,12 +1754,7 @@ class MainController(QObject):
         branch = str(st.get("branch") or "").strip()
         summary = st.get("summary") or ""
         self._set_sync_branch_label(branch)
-        if self.labelSyncStatus is not None:
-            if summary:
-                pretty = summary.replace(" · ", "\n· ")
-                self.labelSyncStatus.setText(f"상태\n· {pretty}")
-            else:
-                self.labelSyncStatus.setText("상태\n· 확인됨")
+        self._render_sync_status_chips(st)
         if branch:
             self._log(f"branch: {branch}")
         if summary:

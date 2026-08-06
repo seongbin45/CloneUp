@@ -672,13 +672,66 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         font-weight: 600;
         line-height: 1.4;
     }}
+    QFrame#frameSyncStatus {{
+        margin-left: 102px;
+        background: transparent;
+        border: none;
+    }}
+    QLabel#labelSyncStatusTitle {{
+        color: {TEXT_MUTED};
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0 2px;
+    }}
+    /* Placeholder when no chips yet */
     QLabel#labelSyncStatus {{
+        color: {TEXT_MUTED};
+        font-size: 12.5px;
+        padding: 4px 2px;
+    }}
+    /* Status chips (set objectName syncChip_ok / warn / bad / info / muted) */
+    QLabel#syncChip_ok {{
+        background: {PRIMARY};
+        color: {TEXT_ON_PRIMARY};
+        border-radius: 14px;
+        padding: 7px 12px;
+        font-size: 12.5px;
+        font-weight: 600;
+    }}
+    QLabel#syncChip_warn {{
+        background: {BG_HINT};
+        color: {WARN_TEXT};
+        border: 1px solid {WARN_BORDER};
+        border-radius: 14px;
+        padding: 7px 12px;
+        font-size: 12.5px;
+        font-weight: 600;
+    }}
+    QLabel#syncChip_bad {{
+        background: {DANGER_SOFT_BG};
+        color: {DANGER};
+        border: 1px solid {DANGER};
+        border-radius: 14px;
+        padding: 7px 12px;
+        font-size: 12.5px;
+        font-weight: 600;
+    }}
+    QLabel#syncChip_info {{
+        background: {BG_MUTED};
+        color: {TEXT_SECONDARY};
+        border: 1px solid {BORDER_SOFT};
+        border-radius: 14px;
+        padding: 7px 12px;
+        font-size: 12.5px;
+        font-weight: 600;
+    }}
+    QLabel#syncChip_muted {{
         background: {BG_MUTED};
         color: {TEXT_MUTED};
-        border-radius: 5px;
-        padding: 10px 13px;
-        margin-left: 102px;
+        border: 1px solid {BORDER_SOFT};
+        border-radius: 14px;
+        padding: 7px 12px;
         font-size: 12.5px;
-        line-height: 1.35;
+        font-weight: 500;
     }}
     """

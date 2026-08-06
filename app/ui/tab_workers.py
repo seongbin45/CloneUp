@@ -138,6 +138,8 @@ class SyncStatusWorker(QThread):
                     "origin_url": st.origin_url,
                     "dirty": st.dirty,
                     "conflict": st.conflict,
+                    "ahead": st.ahead,
+                    "behind": st.behind,
                     "folder": str(st.folder),
                 }
             )
