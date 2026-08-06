@@ -887,41 +887,31 @@ class MainController(QObject):
             if not allow_secrets:
                 QMessageBox.warning(
                     self.window,
-                    "올릴 수 없음 — 비밀 파일 후보",
-                    "이름만 봐도 비밀번호·API 키가 들어 있을 수 있는 파일입니다.\n"
-                    f"({vis_short})\n\n"
+                    "올릴 수 없음",
+                    "비밀처럼 보이는 파일이 있어 막았습니다.\n\n"
                     f"{listing}\n\n"
-                    "다음 중 하나를 하세요:\n"
-                    "  1) 폴더에서 해당 파일을 빼거나 이름 바꾸기\n"
-                    "  2) 정말 올려도 되면 「비밀 파일로 보이는 항목이 있어도 진행」을 켠 뒤 "
-                    "다시 시도\n\n"
-                    "참고: .env.example 처럼 샘플만 있는 파일도 이름 때문에 잡힐 수 있습니다. "
-                    "내용이 안전한지 확인한 뒤에만 2)를 쓰세요.",
+                    "1) 파일을 빼거나 이름 바꾸기\n"
+                    "2) 정말 필요하면 「비밀 파일도 진행 (고급)」을 켠 뒤 다시\n\n"
+                    "참고: .env.example 같은 샘플 이름도 걸릴 수 있습니다.",
                 )
                 self._log(
-                    "다음: 비밀 파일 후보를 제거·이름 변경하거나, "
-                    "확인 후 「비밀 파일… 진행」 체크"
+                    "다음: 비밀 파일을 빼거나, 「비밀 파일도 진행 (고급)」을 켠 뒤 다시"
                 )
                 return False
             parts.append(
-                "【비밀 파일 후보 — 체크를 켠 상태】\n"
-                f"{listing}\n\n"
-                f"{vis_risk}\n"
-                "오탐일 수 있습니다(예: 빈 .env.example). "
-                "내용에 실제 비밀번호가 없는지 스스로 확인하세요."
+                "【비밀 파일 — 고급 허용】\n"
+                f"{listing}\n"
+                "내용에 실제 비밀번호가 없는지 확인하세요."
             )
 
-        # Content PII (phone/email) — Command-to-commit-changes-from-Git patterns
+        # Content PII (phone/email) — keep short for readability
         pii_hits = scan_pii_in_contents(folder)
         if pii_hits:
             listing = format_pii_list(pii_hits)
             parts.append(
-                "【개인정보로 보이는 값 — 파일 내용】\n"
-                f"{listing}\n\n"
-                "전화·이메일 형태의 글자를 찾았습니다. "
-                f"{vis_risk}\n"
-                "오탐일 수 있습니다(예: 문서 속 예시 번호, 버전처럼 보이는 숫자). "
-                "실제 개인정보면 올리기 전에 지우거나 가리세요."
+                "【개인정보 후보】\n"
+                f"{listing}\n"
+                "실제 전화·이메일이면 지운 뒤 올리세요. (예시 값은 오탐일 수 있음)"
             )
 
         email = preview_commit_email(
@@ -1111,6 +1101,40 @@ class MainController(QObject):
         use_token = bool(
             self.checkCloneUseToken is None or self.checkCloneUseToken.isChecked()
         )
+
+        # A4 — 체크 ON + 미연결: 비공개/공개를 갈라 안내 (기본 체크는 유지)
+        if use_token and not load_token():
+            box = QMessageBox(self.window)
+            box.setIcon(QMessageBox.Icon.Question)
+            box.setWindowTitle("GitHub 연결")
+            box.setText(
+                "「비공개 저장소 받을 때 GitHub 연결 사용」이 켜져 있는데,\n"
+                "아직 GitHub와 연결되지 않았습니다."
+            )
+            box.setInformativeText(
+                "· 비공개 저장소 → 연결하기\n"
+                "· 공개 저장소 → 연결 없이 받기"
+            )
+            btn_connect = box.addButton(
+                "연결하기", QMessageBox.ButtonRole.AcceptRole
+            )
+            btn_public = box.addButton(
+                "연결 없이 받기", QMessageBox.ButtonRole.ActionRole
+            )
+            box.addButton("취소", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is btn_connect:
+                self.on_login()
+                return
+            if clicked is btn_public:
+                use_token = False
+                if self.checkCloneUseToken is not None:
+                    self.checkCloneUseToken.setChecked(False)
+                self._log("공개 저장소로 보고, 연결 없이 받기를 진행합니다.")
+            else:
+                self._log("받기 취소")
+                return
 
         if not url.strip():
             QMessageBox.warning(self.window, "CloneUp", "GitHub 주소를 입력하세요.")

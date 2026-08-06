@@ -495,7 +495,7 @@
            <bool>true</bool>
           </property>
           <property name="toolTip">
-           <string>공개 저장소만 받을 때는 꺼도 됩니다. 비공개 저장소는 위쪽 「GitHub: 연결」이 필요합니다.</string>
+           <string>비공개 저장소는 연결이 필요합니다. 공개만 받을 때는 꺼도 됩니다. 연결 없이 받으면 안내 창에서 고를 수 있습니다.</string>
           </property>
          </widget>
         </item>
