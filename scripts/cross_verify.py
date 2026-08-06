@@ -373,7 +373,7 @@ def main() -> int:
     # ----- UI load -----
     section("UI 로드")
     try:
-        from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
+        from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
 
         app = QApplication.instance() or QApplication([])
         from app.ui.main_window import load_main_window
@@ -387,6 +387,9 @@ def main() -> int:
             ("btnSyncAbort", QPushButton),
             ("editCloneUrl", QLineEdit),
             ("editSyncFolder", QLineEdit),
+            ("comboSyncRecent", QComboBox),
+            ("btnSyncRefresh", QPushButton),
+            ("btnSyncBrowse", QPushButton),
         ]
         missing = []
         for name, cls in need:

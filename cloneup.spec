@@ -13,7 +13,10 @@ a = Analysis(
     binaries=[],
     datas=[
         (str(ROOT / "ui" / "main_window.ui"), "ui"),
+        # Multi-size icons: CloneUp.ico + icon-{16..512}.png (+ masters)
         (str(ROOT / "assets" / "icons"), "assets/icons"),
+        # Terms of service (installer also ships a copy under {app}\legal)
+        (str(ROOT / "legal"), "legal"),
     ],
     hiddenimports=[
         "keyring.backends",

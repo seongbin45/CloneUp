@@ -321,16 +321,27 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         color: {TEXT_SECONDARY};
         background: transparent;
     }}
-    QLineEdit, QComboBox, QPlainTextEdit, QTextEdit {{
+    /* Single-line fields: same vertical rhythm as secondary buttons (h≈40) */
+    QLineEdit, QComboBox {{
         background-color: {BG_INPUT};
         color: {TEXT};
         border: 1px solid {BORDER_INPUT};
-        border-radius: 5px;
-        padding: 4px 10px;
+        border-radius: 6px;
+        padding: 6px 10px;
+        min-height: 28px;
         selection-background-color: {PRIMARY};
         selection-color: {TEXT_ON_PRIMARY};
     }}
-    QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus {{
+    QPlainTextEdit, QTextEdit {{
+        background-color: {BG_INPUT};
+        color: {TEXT};
+        border: 1px solid {BORDER_INPUT};
+        border-radius: 6px;
+        padding: 6px 10px;
+        selection-background-color: {PRIMARY};
+        selection-color: {TEXT_ON_PRIMARY};
+    }}
+    QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QTextEdit:focus {{
         border: 1px solid {PRIMARY};
     }}
     QLineEdit:disabled, QComboBox:disabled {{
@@ -412,6 +423,21 @@ def app_stylesheet(palette: Palette | None = None) -> str:
     }}
     QPushButton:pressed {{
         background-color: {HOVER_PRESSED};
+    }}
+    /* Form companions: equal width so path-row buttons don't look lopsided */
+    QPushButton#btnBrowseFolder,
+    QPushButton#btnSyncBrowse,
+    QPushButton#btnCloneBrowseParent {{
+        min-width: 96px;
+    }}
+    /* Refresh is secondary to browse — shorter label + slightly tighter pad */
+    QPushButton#btnSyncRefresh {{
+        min-width: 96px;
+        padding: 6px 12px;
+        color: {TEXT_FAINT};
+    }}
+    QPushButton#btnSyncRefresh:hover {{
+        color: {TEXT_SECONDARY};
     }}
 
     /* Primary actions */
@@ -626,6 +652,7 @@ def app_stylesheet(palette: Palette | None = None) -> str:
     QLabel#labelCloneParent,
     QLabel#labelCloneDirName,
     QLabel#labelSyncFolder,
+    QLabel#labelSyncRecent,
     QLabel#labelSyncMessage,
     QLabel#labelSyncBranchTitle,
     QLabel#labelSyncStatusTitle {{
@@ -649,7 +676,7 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         color: {TEXT_SECONDARY};
     }}
     QCheckBox#checkCloneUseToken {{
-        margin-left: 102px;
+        margin-left: 106px;
         color: {TEXT_SECONDARY};
         font-size: 12.5px;
     }}
@@ -660,7 +687,7 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         border-radius: 0 5px 5px 0;
         padding: 11px 13px;
         font-size: 12.5px;
-        margin-left: 102px;
+        margin-left: 106px;
     }}
     /* Branch value badge — short pill (width forced in code via sizeHint) */
     QLabel#labelSyncBranch {{

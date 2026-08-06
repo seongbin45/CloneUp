@@ -43,6 +43,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 
 - 스크립트: `installer/CloneUp.iss`
 - 언어: 한국어 + 영어
+- **이용약관:** `LicenseFile=installer/license/CloneUp_Terms_ko.txt`  
+  (원본 `desin/provision/CloneUp 이용약관.dc.html` → `scripts/export_terms_license.py`)
+- **아이콘:** `SetupIconFile` / `UninstallDisplayIcon` / 바로가기 모두 `CloneUp.ico` (16–256)
 - 설치 시 Git 강제 설치 없음 (방식 D: 앱 첫 실행 시 안내)
 
 ## 동결 경로

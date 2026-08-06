@@ -6,6 +6,25 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
 
+Write-Host "== Terms: export license for Inno Setup =="
+$py = Join-Path $Root ".venv\Scripts\python.exe"
+if (-not (Test-Path $py)) {
+    $py = "python"
+}
+& $py (Join-Path $Root "scripts\export_terms_license.py")
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "export_terms_license.py failed"
+}
+$license = Join-Path $Root "installer\license\CloneUp_Terms_ko.txt"
+if (-not (Test-Path $license)) {
+    Write-Error "Missing $license"
+}
+
+$ico = Join-Path $Root "assets\icons\CloneUp.ico"
+if (-not (Test-Path $ico)) {
+    Write-Error "Missing $ico — run scripts\generate_icons.py first"
+}
+
 Write-Host "== P1: PyInstaller =="
 & (Join-Path $Root "scripts\build_exe.ps1")
 

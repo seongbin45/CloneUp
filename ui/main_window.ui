@@ -343,7 +343,7 @@
            <number>18</number>
           </property>
           <property name="leftMargin">
-           <number>102</number>
+           <number>106</number>
           </property>
           <item>
            <widget class="QCheckBox" name="checkHideEmail">
@@ -673,7 +673,7 @@
           <item>
            <widget class="QLabel" name="labelSyncFolder">
             <property name="text">
-             <string>로컬 저장소</string>
+             <string>로컬 폴더</string>
             </property>
             <property name="alignment">
              <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
@@ -683,7 +683,10 @@
           <item>
            <widget class="QLineEdit" name="editSyncFolder">
             <property name="placeholderText">
-             <string>.git 이 있는 폴더</string>
+             <string>동기화할 프로젝트 폴더</string>
+            </property>
+            <property name="toolTip">
+             <string>이미 Git으로 연결된 프로젝트 폴더 경로입니다.</string>
             </property>
            </widget>
           </item>
@@ -697,7 +700,43 @@
           <item>
            <widget class="QPushButton" name="btnSyncRefresh">
             <property name="text">
-             <string>상태 새로고침</string>
+             <string>새로고침</string>
+            </property>
+            <property name="toolTip">
+             <string>branch·상태를 다시 읽습니다.</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="syncRecentLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="labelSyncRecent">
+            <property name="text">
+             <string>최근 폴더</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="comboSyncRecent">
+            <property name="editable">
+             <bool>false</bool>
+            </property>
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="toolTip">
+             <string>최근에 쓴 폴더를 고르면 바로 상태를 읽습니다.</string>
             </property>
            </widget>
           </item>
@@ -737,7 +776,7 @@
             </property>
             <property name="toolTip">
              <string>이 폴더의 현재 branch입니다. 올리기·받기의 기준이 됩니다.
-「상태 새로고침」으로 다시 읽습니다.</string>
+「새로고침」으로 다시 읽습니다.</string>
             </property>
            </widget>
           </item>
@@ -852,7 +891,7 @@
            <number>18</number>
           </property>
           <property name="leftMargin">
-           <number>102</number>
+           <number>106</number>
           </property>
           <item>
            <widget class="QCheckBox" name="checkSyncHideEmail">

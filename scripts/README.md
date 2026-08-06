@@ -38,6 +38,7 @@ PowerShell / Python 보조 도구입니다. **앱 일상 실행에는 필수가 
 | `render_icons.py` | `.py` | 선명한 아이콘 재생성 | 아이콘 수정 |
 | `import_design_pngs.py` | `.py` | 시안 PNG에서 아이콘 추출 | 디자인 export 반영 |
 | `generate_icons.py` | `.py` | 마스터 기반 리사이즈/ICO | masters/ 있을 때 |
+| `export_terms_license.py` | `.py` | 이용약관 HTML → 설치 동의 TXT | 약관 수정 후 / Setup 빌드 전 |
 | `cross_verify.py` | `.py` | 기능 교차검증 | 커밋 전 권장 |
 | `verify_pii_crosscheck.py` | `.py` | 개인정보 스캔 규칙 검증 | safety 수정 후 |
 | `verify_security_crosscheck.py` | `.py` | **보안** 교차검증 (인증·마스킹·git·H1) | 보안/auth/git 수정 후 |

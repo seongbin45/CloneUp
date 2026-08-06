@@ -66,9 +66,100 @@ from app.ui.settings_store import (
 from app.ui.tab_workers import CloneWorker, SyncActionWorker, SyncStatusWorker
 from app.ui.theme import active_palette
 
+# Full path kept separately so the field can show middle-elided text when idle.
+_PATH_PROP = "cloneup_full_path"
+
 
 def _ui_path() -> Path:
     return app_root() / "ui" / "main_window.ui"
+
+
+def _folder_path(edit: QLineEdit | None) -> str:
+    """Real folder path from a path line edit (ignores elided display text)."""
+    if edit is None:
+        return ""
+    full = edit.property(_PATH_PROP)
+    if isinstance(full, str) and full.strip():
+        return full.strip()
+    return (edit.text() or "").strip()
+
+
+def _elide_folder_display(edit: QLineEdit) -> None:
+    """Show middle-elided path when unfocused so the folder name stays visible."""
+    if edit.hasFocus():
+        return
+    full = edit.property(_PATH_PROP)
+    if not isinstance(full, str):
+        full = (edit.text() or "").strip()
+        edit.setProperty(_PATH_PROP, full)
+    if not full:
+        if edit.text():
+            edit.blockSignals(True)
+            edit.setText("")
+            edit.blockSignals(False)
+        return
+    # padding ~10px each side + border
+    avail = max(48, edit.width() - 28)
+    elided = edit.fontMetrics().elidedText(
+        full, Qt.TextElideMode.ElideMiddle, avail
+    )
+    if edit.text() != elided:
+        edit.blockSignals(True)
+        edit.setText(elided)
+        edit.blockSignals(False)
+
+
+def _set_folder_path(edit: QLineEdit | None, path: str) -> None:
+    """Store full path, tooltip, and elided or full display."""
+    if edit is None:
+        return
+    path = (path or "").strip()
+    edit.setProperty(_PATH_PROP, path)
+    edit.setToolTip(path if path else edit.toolTip() or "")
+    if edit.hasFocus():
+        if edit.text() != path:
+            edit.blockSignals(True)
+            edit.setText(path)
+            edit.blockSignals(False)
+    else:
+        _elide_folder_display(edit)
+
+
+class _PathFieldFilter(QObject):
+    """Focus/resize: restore full path for editing; elide when idle."""
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if not isinstance(watched, QLineEdit):
+            return False
+        et = event.type()
+        if et == QEvent.Type.FocusIn:
+            full = watched.property(_PATH_PROP)
+            if isinstance(full, str) and full:
+                if watched.text() != full:
+                    watched.blockSignals(True)
+                    watched.setText(full)
+                    watched.blockSignals(False)
+                watched.setCursorPosition(len(full))
+        elif et == QEvent.Type.FocusOut:
+            # Commit typed path before eliding
+            typed = (watched.text() or "").strip()
+            prev = watched.property(_PATH_PROP)
+            if isinstance(prev, str) and prev.strip():
+                avail = max(48, watched.width() - 28)
+                elided = watched.fontMetrics().elidedText(
+                    prev.strip(), Qt.TextElideMode.ElideMiddle, avail
+                )
+                # Unchanged elided display → keep full path; otherwise user edited
+                if typed in (elided, prev.strip()):
+                    typed = prev.strip()
+            watched.setProperty(_PATH_PROP, typed)
+            if typed:
+                watched.setToolTip(typed)
+            _elide_folder_display(watched)
+        elif et == QEvent.Type.Resize:
+            if not watched.hasFocus():
+                _elide_folder_display(watched)
+        return False
 
 
 def _format_commit_email_g3(
@@ -175,6 +266,9 @@ class MainController(QObject):
         self.editFolder = window.findChild(QLineEdit, "editFolder")
         self.btnBrowseFolder = window.findChild(QPushButton, "btnBrowseFolder")
         self.comboRecent = window.findChild(QComboBox, "comboRecent")
+        self._path_field_filter = _PathFieldFilter(self)
+        if self.editFolder is not None:
+            self.editFolder.installEventFilter(self._path_field_filter)
         self.editRepoName = window.findChild(QLineEdit, "editRepoName")
         self.radioPublic = window.findChild(QRadioButton, "radioPublic")
         self.radioPrivate = window.findChild(QRadioButton, "radioPrivate")
@@ -212,8 +306,11 @@ class MainController(QObject):
 
         # --- sync ---
         self.editSyncFolder = window.findChild(QLineEdit, "editSyncFolder")
+        self.comboSyncRecent = window.findChild(QComboBox, "comboSyncRecent")
         self.btnSyncBrowse = window.findChild(QPushButton, "btnSyncBrowse")
         self.btnSyncRefresh = window.findChild(QPushButton, "btnSyncRefresh")
+        if self.editSyncFolder is not None:
+            self.editSyncFolder.installEventFilter(self._path_field_filter)
         self.labelSyncBranchTitle = window.findChild(QLabel, "labelSyncBranchTitle")
         self.labelSyncBranch = window.findChild(QLabel, "labelSyncBranch")
         if self.labelSyncBranch is not None:
@@ -388,7 +485,7 @@ class MainController(QObject):
             self.radioPrivate,
             self.checkHideEmail,
             self.checkAllowSecrets,
-        ):
+        ):  # path fields stay enabled via same list
             if w is not None:
                 w.setEnabled(not busy)
         self.auth_status.set_enabled(not busy)
@@ -431,6 +528,7 @@ class MainController(QObject):
             self.btnSyncPush,
             self.btnSyncAbort,
             self.editSyncFolder,
+            self.comboSyncRecent,
             self.editSyncMessage,
             self.checkSyncHideEmail,
             self.checkSyncAllowSecrets,
@@ -573,6 +671,9 @@ class MainController(QObject):
             self.btnLogout.clicked.connect(self.on_logout)
         if self.editFolder:
             self.editFolder.editingFinished.connect(self._maybe_fill_repo_name)
+            self.editFolder.editingFinished.connect(
+                lambda: self._commit_path_field(self.editFolder)
+            )
         if self.comboRecent:
             self.comboRecent.activated.connect(self._on_recent_activated)
 
@@ -595,6 +696,8 @@ class MainController(QObject):
                 self._on_sync_folder_editing_finished
             )
             self.editSyncFolder.textChanged.connect(self._on_sync_folder_text_changed)
+        if self.comboSyncRecent is not None:
+            self.comboSyncRecent.activated.connect(self._on_sync_recent_activated)
         if self.btnSyncPull:
             self.btnSyncPull.clicked.connect(lambda: self.on_sync_action("pull"))
         if self.btnSyncPush:
@@ -625,10 +728,10 @@ class MainController(QObject):
             self.checkSyncHideEmail.setChecked(hide)
         self._reload_recent_combo()
         recent = load_recent_folders()
-        if recent and self.editFolder is not None and not self.editFolder.text():
+        if recent and self.editFolder is not None and not _folder_path(self.editFolder):
             for p in recent:
                 if Path(p).is_dir():
-                    self.editFolder.setText(p)
+                    _set_folder_path(self.editFolder, p)
                     self._maybe_fill_repo_name()
                     break
         if self.editCloneParent is not None and not self.editCloneParent.text():
@@ -640,16 +743,35 @@ class MainController(QObject):
             return "main"
         return (self.comboPublishBranch.currentText() or "").strip() or "main"
 
-    def _reload_recent_combo(self) -> None:
-        if self.comboRecent is None:
+    def _commit_path_field(self, edit: QLineEdit | None) -> None:
+        """Sync stored full path from focused line edit text."""
+        if edit is None:
             return
-        self.comboRecent.blockSignals(True)
-        self.comboRecent.clear()
-        self.comboRecent.addItem("(최근 폴더 선택)")
-        for p in load_recent_folders():
-            self.comboRecent.addItem(p)
-        self.comboRecent.setCurrentIndex(0)
-        self.comboRecent.blockSignals(False)
+        typed = (edit.text() or "").strip()
+        prev = edit.property(_PATH_PROP)
+        if isinstance(prev, str) and prev.strip():
+            avail = max(48, edit.width() - 28)
+            elided = edit.fontMetrics().elidedText(
+                prev.strip(), Qt.TextElideMode.ElideMiddle, avail
+            )
+            if typed in (elided, prev.strip()):
+                typed = prev.strip()
+        edit.setProperty(_PATH_PROP, typed)
+        if typed:
+            edit.setToolTip(typed)
+
+    def _reload_recent_combo(self) -> None:
+        items = load_recent_folders()
+        for combo in (self.comboRecent, self.comboSyncRecent):
+            if combo is None:
+                continue
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("(최근 폴더 선택)")
+            for p in items:
+                combo.addItem(p)
+            combo.setCurrentIndex(0)
+            combo.blockSignals(False)
 
     def _on_color_scheme_changed(self, *_args) -> None:
         """OS theme changed — main.py already reapplied QSS; refresh inline styles."""
@@ -727,7 +849,7 @@ class MainController(QObject):
         """
         if not self.editFolder or not self.editRepoName:
             return
-        folder = (self.editFolder.text() or "").strip()
+        folder = _folder_path(self.editFolder)
         if not folder:
             return
         try:
@@ -751,18 +873,31 @@ class MainController(QObject):
             return
         path = self.comboRecent.itemText(index)
         if self.editFolder:
-            self.editFolder.setText(path)
+            _set_folder_path(self.editFolder, path)
             self._log(f"최근 폴더: {path}")
             self._maybe_fill_repo_name()
+
+    @Slot(int)
+    def _on_sync_recent_activated(self, index: int) -> None:
+        if not self.comboSyncRecent or index <= 0:
+            return
+        path = self.comboSyncRecent.itemText(index)
+        if not path:
+            return
+        _set_folder_path(self.editSyncFolder, path)
+        remember_folder(path)
+        self._reload_recent_combo()
+        self._log(f"최근 폴더(동기화): {path}")
+        self.on_sync_refresh(quiet=True)
 
     @Slot()
     def on_browse_folder(self) -> None:
         if not self.editFolder:
             return
-        start = (self.editFolder.text() or "").strip() or str(Path.home())
+        start = _folder_path(self.editFolder) or str(Path.home())
         path = QFileDialog.getExistingDirectory(self.window, "올릴 폴더 선택", start)
         if path:
-            self.editFolder.setText(path)
+            _set_folder_path(self.editFolder, path)
             remember_folder(path)
             self._reload_recent_combo()
             self._log(f"폴더 선택: {path}")
@@ -1075,7 +1210,7 @@ class MainController(QObject):
     def on_publish(self) -> None:
         if self._busy() or not self.editFolder or not self.editRepoName:
             return
-        folder = (self.editFolder.text() or "").strip()
+        folder = _folder_path(self.editFolder)
         name = (self.editRepoName.text() or "").strip()
         msg = (
             (self.editCommitMessage.text() if self.editCommitMessage else None)
@@ -1197,7 +1332,9 @@ class MainController(QObject):
     def _go_sync_tab(self, folder: str | None = None) -> None:
         """Fill Sync folder field and switch to the Sync tab (V5 next step)."""
         if folder and self.editSyncFolder is not None:
-            self.editSyncFolder.setText(str(folder))
+            _set_folder_path(self.editSyncFolder, str(folder))
+            remember_folder(str(folder))
+            self._reload_recent_combo()
             # Auto-refresh so current work-line (branch) is visible immediately
             QTimer.singleShot(0, self.on_sync_refresh)
         if self.tabWidget is not None:
@@ -1222,7 +1359,9 @@ class MainController(QObject):
         self._log(f"Publish 성공: {url or full_name}")
         # Pre-fill Sync so 「동기화 탭으로」 is one click.
         if self.editSyncFolder is not None and folder:
-            self.editSyncFolder.setText(folder)
+            _set_folder_path(self.editSyncFolder, folder)
+            remember_folder(folder)
+            self._reload_recent_combo()
 
         steps = show_publish_success(
             self.window,
@@ -1543,7 +1682,7 @@ class MainController(QObject):
             remember_folder(path)
             self._reload_recent_combo()
         if self.editSyncFolder is not None and path:
-            self.editSyncFolder.setText(path)
+            _set_folder_path(self.editSyncFolder, path)
 
         steps = show_clone_success(
             self.window,
@@ -1677,10 +1816,15 @@ class MainController(QObject):
     @Slot()
     def _on_sync_folder_text_changed(self, _text: str = "") -> None:
         """Debounce while pasting/typing a path (improvement 2)."""
+        # While focused the field holds the real path — keep property in sync.
+        ed = self.editSyncFolder
+        if ed is not None and ed.hasFocus():
+            ed.setProperty(_PATH_PROP, (ed.text() or "").strip())
         self._sync_folder_timer.start()
 
     @Slot()
     def _on_sync_folder_editing_finished(self) -> None:
+        self._commit_path_field(self.editSyncFolder)
         self._sync_folder_timer.stop()
         self._sync_folder_maybe_refresh()
 
@@ -1689,8 +1833,9 @@ class MainController(QObject):
         """Auto status refresh when folder field settles (browse / paste / type)."""
         if self._busy():
             return
-        folder = (self.editSyncFolder.text() if self.editSyncFolder else "") or ""
-        folder = folder.strip()
+        if self.editSyncFolder is not None and self.editSyncFolder.hasFocus():
+            self._commit_path_field(self.editSyncFolder)
+        folder = _folder_path(self.editSyncFolder)
         if not folder:
             self._clear_sync_status_labels()
             return
@@ -1716,20 +1861,20 @@ class MainController(QObject):
     def on_sync_browse(self) -> None:
         if not self.editSyncFolder:
             return
-        start = (self.editSyncFolder.text() or "").strip() or str(Path.home())
-        path = QFileDialog.getExistingDirectory(self.window, "로컬 저장소", start)
+        start = _folder_path(self.editSyncFolder) or str(Path.home())
+        path = QFileDialog.getExistingDirectory(self.window, "로컬 폴더", start)
         if path:
-            self.editSyncFolder.blockSignals(True)
-            self.editSyncFolder.setText(path)
-            self.editSyncFolder.blockSignals(False)
+            _set_folder_path(self.editSyncFolder, path)
+            remember_folder(path)
+            self._reload_recent_combo()
             self.on_sync_refresh(quiet=True)
 
     @Slot()
     def on_sync_refresh(self, quiet: bool = False) -> None:
         if self._busy():
             return
-        folder = (self.editSyncFolder.text() if self.editSyncFolder else "") or ""
-        if not folder.strip():
+        folder = _folder_path(self.editSyncFolder)
+        if not folder:
             if not quiet:
                 QMessageBox.warning(
                     self.window, "CloneUp", "동기화할 폴더를 선택하세요."
@@ -1738,7 +1883,7 @@ class MainController(QObject):
                 self._clear_sync_status_labels()
             return
         self._log(f"--- 상태: {folder} ---")
-        w = SyncStatusWorker(folder=folder.strip(), parent=self)
+        w = SyncStatusWorker(folder=folder, parent=self)
         w.succeeded.connect(self._on_sync_status)
         w.failed.connect(
             lambda msg, q=quiet: self._on_sync_status_failed(msg, quiet=q)
@@ -1782,8 +1927,8 @@ class MainController(QObject):
     def on_sync_action(self, action: str) -> None:
         if self._busy():
             return
-        folder = (self.editSyncFolder.text() if self.editSyncFolder else "") or ""
-        if not folder.strip():
+        folder = _folder_path(self.editSyncFolder)
+        if not folder:
             QMessageBox.warning(self.window, "CloneUp", "동기화할 폴더를 선택하세요.")
             return
         msg = (
@@ -1849,6 +1994,6 @@ class MainController(QObject):
         self._log(message)
         QMessageBox.information(self.window, "동기화", message[:1500] or "완료")
         # refresh status after action
-        if self.editSyncFolder and (self.editSyncFolder.text() or "").strip():
+        if _folder_path(self.editSyncFolder):
             # chain a status refresh without blocking — schedule after busy clears
             QTimer.singleShot(100, self.on_sync_refresh)

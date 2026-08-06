@@ -6,11 +6,14 @@
 
 | 파일 | 용도 |
 |------|------|
-| `CloneUp.ico` | Windows 아이콘 (멀티 사이즈) |
-| `icon-16.png` … `icon-512.png` | 개별 해상도 |
+| `CloneUp.ico` | Windows 멀티 아이콘 **16·24·32·48·64·128·256** (EXE·Setup·제어판·바로가기) |
+| `icon-16.png` … `icon-512.png` | 개별 해상도 (Qt `load_app_icon`이 전부 로드) |
 | `icon-512-dark.png` | 다크 타일 |
 | `mark-glyph.png` | 타일 없는 심볼 |
 | [masters/](masters/README.md) | 원본/마스터 보관 |
+
+제어판(앱 및 기능) 아이콘: 설치 시 `{app}\CloneUp.ico` + `UninstallDisplayIcon`  
+창/작업 표시줄: `app/ui/icons.py` → ICO + 모든 PNG 크기
 
 ## 다시 만들기 (권장 경로)
 
