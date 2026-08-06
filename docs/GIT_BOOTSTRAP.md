@@ -21,6 +21,18 @@
 
 구현: `app/ui/git_setup.py` (`GitSetupOverlay`)
 
+### 개발자: 안내 화면 강제 보기
+
+이 PC에 Git이 있어도 오버레이를 보려면 (PATH 제거만으로는 부족 — 앱이 설치 폴더를 자동 탐색함):
+
+```powershell
+$env:CLONEUP_FORCE_NO_GIT = "1"
+.\.venv\Scripts\python.exe main.py
+```
+
+- 「이미 설치했어요」를 누르면 실제 Git을 찾아 **준비 완료**로 넘어갑니다.
+- 테스트 후 환경 변수를 끄거나 터미널을 닫으면 됩니다.
+
 ### DG2 구현
 
 - GitHub `git-for-windows/git` latest release → `Git-*-64-bit.exe` URL

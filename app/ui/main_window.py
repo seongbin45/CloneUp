@@ -222,10 +222,11 @@ class MainController(QObject):
 
     def _ensure_git_bootstrap(self) -> None:
         """Plan D / DG1: if Git missing, full-window simple install chooser."""
-        from app.git.bootstrap import probe_git
+        from app.git.bootstrap import force_git_setup_ui, probe_git
         from app.ui.git_setup import ensure_git_or_offer_setup
 
-        if probe_git().ok:
+        # Git installed → skip, unless CLONEUP_FORCE_NO_GIT=1 (UI test)
+        if probe_git().ok and not force_git_setup_ui():
             return
         ensure_git_or_offer_setup(self.window, log=self._log)
         self._refresh_status_bar()

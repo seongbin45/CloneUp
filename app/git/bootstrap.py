@@ -36,6 +36,17 @@ class GitProbe:
     message: str = ""
 
 
+def force_git_setup_ui() -> bool:
+    """
+    Dev/test: show the Git-missing overlay even when Git is installed.
+
+    Set env ``CLONEUP_FORCE_NO_GIT=1`` before launching the app.
+    Does not break real ``probe_git()`` (recheck still finds Git).
+    """
+    v = (os.environ.get("CLONEUP_FORCE_NO_GIT") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
 def probe_git() -> GitProbe:
     """Non-raising check: is git on PATH and runnable?"""
     # Re-scan common install dirs (PATH may lag after installer)

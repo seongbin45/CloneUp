@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from app.git.bootstrap import (
     GIT_DOWNLOAD_URL,
     download_and_run_git_installer,
+    force_git_setup_ui,
     open_git_download_page,
     probe_git,
     try_install_git_via_winget,
@@ -644,12 +645,16 @@ def ensure_git_or_offer_setup(
 
     Returns True only when Git is usable after the interaction (or was already OK).
     """
+    force = force_git_setup_ui()
     probe = probe_git()
-    if probe.ok:
+    if probe.ok and not force:
         return True
 
     if log:
-        log(f"Git 없음: {probe.message}")
+        if force and probe.ok:
+            log("테스트: CLONEUP_FORCE_NO_GIT=1 → Git 안내 화면을 강제 표시합니다.")
+        else:
+            log(f"Git 없음: {probe.message}")
 
     if parent is None:
         return False
