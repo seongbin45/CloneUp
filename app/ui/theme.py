@@ -662,7 +662,7 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         font-size: 12.5px;
         margin-left: 102px;
     }}
-    /* Branch value badge — content-sized, not full row width */
+    /* Branch value badge — short pill (width forced in code via sizeHint) */
     QLabel#labelSyncBranch {{
         background: {BG_HINT};
         color: {TEXT};
@@ -673,7 +673,6 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         font-size: 15px;
         font-weight: 600;
         min-height: 20px;
-        max-width: 280px;
     }}
     QFrame#frameSyncStatus {{
         background: transparent;

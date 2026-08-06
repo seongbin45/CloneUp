@@ -1655,17 +1655,24 @@ class MainController(QObject):
             self.labelSyncStatus.setText("폴더를 고르면 표시됩니다")
 
     def _set_sync_branch_label(self, branch: str | None) -> None:
-        """Value only — title「branch」is the left form label."""
+        """Value only — title「branch」is the left form label; badge hugs text."""
         if self.labelSyncBranch is None:
             return
         b = (branch or "").strip()
         if not b:
-            self.labelSyncBranch.setText("(알 수 없음)")
-            return
-        if b.startswith("("):
-            self.labelSyncBranch.setText(f"{b}  ·  특정 커밋만 보는 중")
-            return
-        self.labelSyncBranch.setText(b)
+            text = "(알 수 없음)"
+        elif b.startswith("("):
+            text = f"{b}  ·  특정 커밋만 보는 중"
+        else:
+            text = b
+        self.labelSyncBranch.setText(text)
+        # Content-sized badge: lift any stretch from the HBox row
+        self.labelSyncBranch.setMinimumWidth(0)
+        self.labelSyncBranch.setMaximumWidth(16777215)
+        self.labelSyncBranch.adjustSize()
+        hint_w = self.labelSyncBranch.sizeHint().width()
+        # padding safety for font metrics / QSS
+        self.labelSyncBranch.setFixedWidth(max(hint_w + 4, 48))
 
     @Slot()
     def _on_sync_folder_text_changed(self, _text: str = "") -> None:
