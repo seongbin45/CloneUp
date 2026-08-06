@@ -1536,44 +1536,28 @@ class MainController(QObject):
     # ----- sync -----
     def _clear_sync_status_labels(self) -> None:
         if self.labelSyncBranch is not None:
-            self.labelSyncBranch.setText(
-                "이 폴더에서 작업 중\n"
-                "(폴더를 고르면 이름이 표시됩니다)"
-            )
+            self.labelSyncBranch.setText("branch\n(폴더를 고르면 표시됩니다)")
         if self.labelSyncStatus is not None:
-            self.labelSyncStatus.setText(
-                "이 폴더 상태\n"
-                "(폴더를 고르면 여기에 표시됩니다)"
-            )
+            self.labelSyncStatus.setText("상태\n(폴더를 고르면 표시됩니다)")
 
     def _set_sync_branch_label(self, branch: str | None) -> None:
-        """
-        Show current checkout in everyday Korean.
-
-        Avoid metaphors like 「줄」. Name first, then one short why-line.
-        """
+        """Show current branch: short label + name on its own line (scannable)."""
         if self.labelSyncBranch is None:
             return
         b = (branch or "").strip()
         if not b:
-            self.labelSyncBranch.setText(
-                "이 폴더에서 작업 중\n"
-                "(아직 모릅니다. 「상태 새로고침」을 눌러 보세요.)"
-            )
+            self.labelSyncBranch.setText("branch\n(알 수 없음)")
             return
         if b.startswith("("):
             self.labelSyncBranch.setText(
-                "이 폴더에서 작업 중: (한 저장 시점만 보는 중)\n"
-                "보통의 작업 이름(예: main)이 아닌 상태입니다.\n"
-                "가능하면 main 같은 이름으로 다시 맞춰 주세요."
+                "branch\n"
+                f"{b}\n"
+                "특정 커밋만 보고 있습니다."
             )
             return
-        # Name on its own line so it scans like a title
-        self.labelSyncBranch.setText(
-            f"이 폴더에서 작업 중\n"
-            f"{b}\n"
-            "올리기·받기가 이 이름을 기준으로 합니다."
-        )    @Slot()
+        self.labelSyncBranch.setText(f"branch\n{b}")
+
+    @Slot()
     def _on_sync_folder_text_changed(self, _text: str = "") -> None:
         """Debounce while pasting/typing a path (improvement 2)."""
         self._sync_folder_timer.start()
