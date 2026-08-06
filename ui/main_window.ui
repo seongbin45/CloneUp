@@ -704,52 +704,80 @@
          </layout>
         </item>
         <item>
-         <widget class="QLabel" name="labelSyncBranch">
-          <property name="text">
-           <string>branch
-(폴더를 고르면 표시됩니다)</string>
+         <layout class="QHBoxLayout" name="syncBranchLayout">
+          <property name="spacing">
+           <number>10</number>
           </property>
-          <property name="wordWrap">
-           <bool>true</bool>
-          </property>
-          <property name="toolTip">
-           <string>이 폴더의 현재 branch입니다. 올리기·받기의 기준이 됩니다.
+          <item>
+           <widget class="QLabel" name="labelSyncBranchTitle">
+            <property name="text">
+             <string>branch</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
+            </property>
+            <property name="toolTip">
+             <string>이 폴더의 현재 branch입니다. 올리기·받기의 기준이 됩니다.</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="labelSyncBranch">
+            <property name="text">
+             <string>(폴더를 고르면 표시됩니다)</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="toolTip">
+             <string>이 폴더의 현재 branch입니다. 올리기·받기의 기준이 됩니다.
 「상태 새로고침」으로 다시 읽습니다.</string>
-          </property>
-         </widget>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
         <item>
-         <widget class="QFrame" name="frameSyncStatus">
-          <property name="frameShape">
-           <enum>QFrame::Shape::NoFrame</enum>
+         <layout class="QHBoxLayout" name="syncStatusRowLayout">
+          <property name="spacing">
+           <number>10</number>
           </property>
-          <layout class="QVBoxLayout" name="verticalLayoutSyncStatus">
-           <property name="spacing">
-            <number>8</number>
-           </property>
-           <property name="leftMargin">
-            <number>0</number>
-           </property>
-           <property name="topMargin">
-            <number>0</number>
-           </property>
-           <property name="rightMargin">
-            <number>0</number>
-           </property>
-           <property name="bottomMargin">
-            <number>0</number>
-           </property>
-           <item>
-            <widget class="QLabel" name="labelSyncStatusTitle">
-             <property name="text">
-              <string>상태</string>
-             </property>
-            </widget>
-           </item>
-           <item>
+          <item>
+           <widget class="QLabel" name="labelSyncStatusTitle">
+            <property name="text">
+             <string>상태</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QFrame" name="frameSyncStatus">
+            <property name="frameShape">
+             <enum>QFrame::Shape::NoFrame</enum>
+            </property>
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+              <horstretch>1</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
             <layout class="QHBoxLayout" name="syncStatusChipsLayout">
              <property name="spacing">
               <number>8</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
              </property>
              <item>
               <widget class="QLabel" name="labelSyncStatus">
@@ -775,9 +803,9 @@
               </spacer>
              </item>
             </layout>
-           </item>
-          </layout>
-         </widget>
+           </widget>
+          </item>
+         </layout>
         </item>
         <item>
          <layout class="QHBoxLayout" name="syncMessageLayout">

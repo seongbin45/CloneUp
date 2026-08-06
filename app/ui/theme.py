@@ -626,7 +626,9 @@ def app_stylesheet(palette: Palette | None = None) -> str:
     QLabel#labelCloneParent,
     QLabel#labelCloneDirName,
     QLabel#labelSyncFolder,
-    QLabel#labelSyncMessage {{
+    QLabel#labelSyncMessage,
+    QLabel#labelSyncBranchTitle,
+    QLabel#labelSyncStatusTitle {{
         min-width: 92px;
         max-width: 92px;
         color: {TEXT_SECONDARY};
@@ -660,28 +662,21 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         font-size: 12.5px;
         margin-left: 102px;
     }}
+    /* Value next to form label (title is on the left) */
     QLabel#labelSyncBranch {{
         background: {BG_HINT};
         color: {TEXT};
         border: 1px solid {BORDER_SOFT};
         border-left: 4px solid {PRIMARY};
         border-radius: 6px;
-        padding: 12px 14px;
-        margin-left: 102px;
+        padding: 8px 14px;
         font-size: 15px;
         font-weight: 600;
-        line-height: 1.4;
+        min-height: 20px;
     }}
     QFrame#frameSyncStatus {{
-        margin-left: 102px;
         background: transparent;
         border: none;
-    }}
-    QLabel#labelSyncStatusTitle {{
-        color: {TEXT_MUTED};
-        font-size: 12px;
-        font-weight: 600;
-        padding: 0 2px;
     }}
     /* Placeholder when no chips yet */
     QLabel#labelSyncStatus {{

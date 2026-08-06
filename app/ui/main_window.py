@@ -214,22 +214,19 @@ class MainController(QObject):
         self.editSyncFolder = window.findChild(QLineEdit, "editSyncFolder")
         self.btnSyncBrowse = window.findChild(QPushButton, "btnSyncBrowse")
         self.btnSyncRefresh = window.findChild(QPushButton, "btnSyncRefresh")
+        self.labelSyncBranchTitle = window.findChild(QLabel, "labelSyncBranchTitle")
         self.labelSyncBranch = window.findChild(QLabel, "labelSyncBranch")
         self.labelSyncStatus = window.findChild(QLabel, "labelSyncStatus")
         self.labelSyncStatusTitle = window.findChild(QLabel, "labelSyncStatusTitle")
         self.frameSyncStatus = window.findChild(QFrame, "frameSyncStatus")
         self._sync_chips_layout: QHBoxLayout | None = None
+        # Chips layout is the direct layout of frameSyncStatus
         if self.frameSyncStatus is not None:
-            vlay = self.frameSyncStatus.layout()
-            if vlay is not None:
-                for i in range(vlay.count()):
-                    item = vlay.itemAt(i)
-                    if item is None:
-                        continue
-                    sub = item.layout()
-                    if sub is not None and sub.objectName() == "syncStatusChipsLayout":
-                        self._sync_chips_layout = sub  # type: ignore[assignment]
-                        break
+            lay = self.frameSyncStatus.layout()
+            if isinstance(lay, QHBoxLayout):
+                self._sync_chips_layout = lay
+            elif lay is not None and lay.objectName() == "syncStatusChipsLayout":
+                self._sync_chips_layout = lay  # type: ignore[assignment]
         self.editSyncMessage = window.findChild(QLineEdit, "editSyncMessage")
         self.checkSyncHideEmail = window.findChild(QCheckBox, "checkSyncHideEmail")
         self.checkSyncAllowSecrets = window.findChild(QCheckBox, "checkSyncAllowSecrets")
@@ -307,7 +304,7 @@ class MainController(QObject):
                 "labelTabIntroSync",
                 "이미 연결된 폴더의 변경사항을 주고받습니다.",
                 "• 이 폴더에 .git 이 있어야 합니다. 없으면 「받기」나 「만들고 올리기」를 먼저 하세요.\n"
-                "• 위쪽 branch 칸에 이 폴더의 현재 branch가 보입니다.\n"
+                "• 왼쪽 branch / 상태에 이 폴더 정보가 나란히 보입니다.\n"
                 "• 폴더를 고르거나 경로를 붙이면 상태가 자동으로 다시 읽힙니다.\n"
                 "• 올리기 전에 비밀 파일 후보가 있는지 확인하세요.",
             ),
@@ -1638,28 +1635,24 @@ class MainController(QObject):
 
     def _clear_sync_status_labels(self) -> None:
         if self.labelSyncBranch is not None:
-            self.labelSyncBranch.setText("branch\n(폴더를 고르면 표시됩니다)")
+            self.labelSyncBranch.setText("(폴더를 고르면 표시됩니다)")
         self._clear_sync_chips()
         if self.labelSyncStatus is not None:
             self.labelSyncStatus.show()
             self.labelSyncStatus.setText("폴더를 고르면 표시됩니다")
 
     def _set_sync_branch_label(self, branch: str | None) -> None:
-        """Show current branch: short label + name on its own line (scannable)."""
+        """Value only — title「branch」is the left form label."""
         if self.labelSyncBranch is None:
             return
         b = (branch or "").strip()
         if not b:
-            self.labelSyncBranch.setText("branch\n(알 수 없음)")
+            self.labelSyncBranch.setText("(알 수 없음)")
             return
         if b.startswith("("):
-            self.labelSyncBranch.setText(
-                "branch\n"
-                f"{b}\n"
-                "특정 커밋만 보고 있습니다."
-            )
+            self.labelSyncBranch.setText(f"{b}  ·  특정 커밋만 보는 중")
             return
-        self.labelSyncBranch.setText(f"branch\n{b}")
+        self.labelSyncBranch.setText(b)
 
     @Slot()
     def _on_sync_folder_text_changed(self, _text: str = "") -> None:
@@ -1688,9 +1681,7 @@ class MainController(QObject):
             if not (p / ".git").is_dir():
                 if self.labelSyncBranch is not None:
                     self.labelSyncBranch.setText(
-                        "branch\n"
-                        "(.git 없음)\n"
-                        "「받기」또는 「만들고 올리기」를 먼저 하세요."
+                        "(.git 없음 — 「받기」/「만들고 올리기」먼저)"
                     )
                 self._clear_sync_chips()
                 self._add_sync_chip("○  Git 저장소 아님", "muted")
@@ -1739,7 +1730,7 @@ class MainController(QObject):
     @Slot(str)
     def _on_sync_status_failed(self, message: str, *, quiet: bool = False) -> None:
         if self.labelSyncBranch is not None:
-            self.labelSyncBranch.setText("branch\n(확인 실패)")
+            self.labelSyncBranch.setText("(확인 실패)")
         self._clear_sync_chips()
         self._add_sync_chip("●  확인 실패", "bad")
         if self.labelSyncStatus is not None:
