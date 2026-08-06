@@ -1616,7 +1616,8 @@ class MainController(QObject):
         elif dirty:
             self._add_sync_chip("●  올릴 변경 있음", "warn")
         else:
-            self._add_sync_chip("●  새 변경 없음", "info")
+            # Filled (ok) so it reads as a clear positive, not a muted outline chip
+            self._add_sync_chip("●  새 변경 없음", "ok")
 
         if has_origin and ahead is not None and behind is not None:
             try:
