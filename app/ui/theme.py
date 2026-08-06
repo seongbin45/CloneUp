@@ -555,6 +555,28 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         background: transparent;
         border: none;
     }}
+    /* Same family as btnAuthStatus — right edge of status row */
+    QPushButton#btnLogout {{
+        background: transparent;
+        border: none;
+        color: {TEXT_MUTED};
+        font-size: 12.5px;
+        font-weight: 500;
+        padding: 2px 2px 2px 8px;
+        text-align: right;
+        min-height: 0;
+        max-height: 22px;
+    }}
+    QPushButton#btnLogout:hover {{
+        color: {DANGER};
+        background: transparent;
+        border: none;
+    }}
+    QPushButton#btnLogout:disabled {{
+        color: {TEXT_DISABLED};
+        background: transparent;
+        border: none;
+    }}
 
     /* G1/G2 — collapsible tip card (folded = one line) */
     QFrame#tipCard {{

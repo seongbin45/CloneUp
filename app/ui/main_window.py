@@ -148,6 +148,7 @@ class MainController(QObject):
         if btn_auth is None:
             raise RuntimeError("btnAuthStatus 위젯 없음 — UI에 상태형 로그인 버튼이 필요합니다")
         self.auth_status = AuthStatusButton(btn_auth, parent=self)
+        self.btnLogout = window.findChild(QPushButton, "btnLogout")
 
         # D2 — recolor status-row widgets when OS light/dark flips
         # (inline setStyleSheet overrides global QSS and would stay light)
@@ -338,6 +339,8 @@ class MainController(QObject):
             if w is not None:
                 w.setEnabled(not busy)
         self.auth_status.set_enabled(not busy)
+        if self.btnLogout is not None and self.btnLogout.isVisible():
+            self.btnLogout.setEnabled(not busy)
         if self.btnPublish is not None:
             self.btnPublish.setText(
                 "올리는 중…" if busy else "GitHub에 만들고 올리기"
@@ -454,7 +457,7 @@ class MainController(QObject):
         delete_token()
         self.auth_status.set_login_name(None)
         self.auth_status.refresh()
-        self._log("로그아웃 완료 — 이 컴퓨터에 저장된 연결 정보를 지웠습니다.")
+        self._update_logout_button()
 
     def _notify_logout_done(self) -> None:
         """Friendly ack instead of '로그인이 취소되었습니다' failure dialog."""
@@ -512,6 +515,8 @@ class MainController(QObject):
         if self.btnCancel:
             self.btnCancel.clicked.connect(self.on_cancel)
         self.auth_status.login_requested.connect(self.on_login)
+        if self.btnLogout is not None:
+            self.btnLogout.clicked.connect(self.on_logout)
         if self.editFolder:
             self.editFolder.editingFinished.connect(self._maybe_fill_repo_name)
         if self.comboRecent:
@@ -596,6 +601,45 @@ class MainController(QObject):
                     f"color: {p.text_faint}; font-size: 12.5px;"
                 )
         self.auth_status.refresh()
+        self._update_logout_button()
+
+    def _update_logout_button(self) -> None:
+        """Show 로그아웃 only when a GitHub session is stored."""
+        if self.btnLogout is None:
+            return
+        logged_in = bool(load_token())
+        self.btnLogout.setVisible(logged_in)
+        if logged_in:
+            self.btnLogout.setEnabled(not self._busy())
+
+    @Slot()
+    def on_logout(self) -> None:
+        """Top-bar logout — clear keyring session (beginner-visible control)."""
+        if self._busy():
+            return
+        if not load_token():
+            self._update_logout_button()
+            return
+        reply = QMessageBox.question(
+            self.window,
+            "로그아웃",
+            "GitHub 연결을 끊을까요?\n"
+            "이 컴퓨터에 저장된 키 정보가 삭제됩니다.\n\n"
+            "다시 쓰려면 「GitHub: 연결」에서 키를 넣으면 됩니다.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._perform_logout()
+        self._update_logout_button()
+        self._log("로그아웃 완료 — 이 컴퓨터에 저장된 연결 정보를 지웠습니다.")
+        QMessageBox.information(
+            self.window,
+            "로그아웃 완료",
+            "로그아웃이 완료되었습니다.\n"
+            "저장된 GitHub 연결 정보가 삭제되었습니다.",
+        )
 
     # ----- publish -----
     @Slot()
@@ -735,6 +779,7 @@ class MainController(QObject):
         }.get(str(kind), "GitHub")
         self.auth_status.set_login_name(str(login) if login else None)
         self.auth_status.refresh()
+        self._update_logout_button()
         self._log(
             f"연결 완료 ({kind_label}): {login}"
         )

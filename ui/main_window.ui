@@ -35,7 +35,7 @@
       <property name="minimumSize">
        <size>
         <width>0</width>
-        <height>40</height>
+        <height>36</height>
        </size>
       </property>
       <layout class="QHBoxLayout" name="statusLayout">
@@ -43,16 +43,16 @@
         <number>16</number>
        </property>
        <property name="topMargin">
-        <number>8</number>
+        <number>6</number>
        </property>
        <property name="rightMargin">
         <number>16</number>
        </property>
        <property name="bottomMargin">
-        <number>8</number>
+        <number>6</number>
        </property>
        <property name="spacing">
-        <number>20</number>
+        <number>12</number>
        </property>
        <item>
         <widget class="QLabel" name="labelStatusGit">
@@ -73,7 +73,7 @@
           <cursorShape>PointingHandCursor</cursorShape>
          </property>
          <property name="toolTip">
-          <string>클릭하여 GitHub 로그인 / 재로그인</string>
+          <string>클릭하여 GitHub 연결 / 다시 연결</string>
          </property>
         </widget>
        </item>
@@ -89,6 +89,25 @@
           </size>
          </property>
         </spacer>
+       </item>
+       <item>
+        <widget class="QPushButton" name="btnLogout">
+         <property name="text">
+          <string>로그아웃</string>
+         </property>
+         <property name="flat">
+          <bool>true</bool>
+         </property>
+         <property name="visible">
+          <bool>false</bool>
+         </property>
+         <property name="cursor">
+          <cursorShape>PointingHandCursor</cursorShape>
+         </property>
+         <property name="toolTip">
+          <string>이 컴퓨터에 저장된 GitHub 연결을 지웁니다</string>
+         </property>
+        </widget>
        </item>
       </layout>
      </widget>
