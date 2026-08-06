@@ -46,6 +46,14 @@ def main() -> int:
         # Older Qt / platform without colorSchemeChanged — keep startup theme only
         pass
 
+    # M1 — wipe leftover push credential temp files from a previous crash
+    try:
+        from app.git.credentials import cleanup_orphan_credential_files
+
+        cleanup_orphan_credential_files(max_age_sec=0)
+    except Exception:
+        pass
+
     win = load_main_window()
     if not app_icon.isNull():
         win.setWindowIcon(app_icon)

@@ -103,16 +103,21 @@ def run_git(
 
     out = proc.stdout or ""
     err = proc.stderr or ""
+    # Never keep raw stderr that may embed credential-helper URLs
+    safe_err = mask_secrets_in_text(err)
+    safe_out = mask_secrets_in_text(out)
     if check and proc.returncode != 0:
-        msg = mask_secrets_in_text(
-            err.strip() or out.strip() or f"exit {proc.returncode}"
+        msg = (
+            safe_err.strip()
+            or safe_out.strip()
+            or f"exit {proc.returncode}"
         )
         raise GitError(
             f"git {' '.join(args)} 실패: {msg}",
             returncode=proc.returncode,
-            stderr=err,
+            stderr=safe_err,
         )
-    return GitResult(returncode=proc.returncode, stdout=out, stderr=err)
+    return GitResult(returncode=proc.returncode, stdout=out, stderr=safe_err)
 
 
 def git_config_get(key: str, *, cwd: str | None, global_scope: bool = False) -> str | None:

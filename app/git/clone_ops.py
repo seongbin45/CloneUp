@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,9 +14,33 @@ from app.git.credentials import (
 from app.git.runner import GitError, require_git, run_git
 from app.git.url_utils import NormalizedCloneUrl, UrlError, normalize_github_clone_url
 
+# Reject leading "-" (argv injection as extra git options) and odd path tricks.
+_SAFE_BRANCH_RE = re.compile(r"^(?!-)[A-Za-z0-9._][A-Za-z0-9._/-]*$")
+
 
 class CloneError(Exception):
     pass
+
+
+def validate_branch_name(branch: str | None) -> str | None:
+    """
+    Return stripped branch name or None if empty.
+
+    Raises CloneError if the name could be mis-parsed as a git option.
+    """
+    name = (branch or "").strip()
+    if not name:
+        return None
+    if name in (".", "..") or ".." in name:
+        raise CloneError("branch 이름이 올바르지 않습니다.")
+    if name.startswith("-") or not _SAFE_BRANCH_RE.match(name):
+        raise CloneError(
+            f"branch 이름 「{name[:40]}」을(를) 사용할 수 없습니다.\n"
+            "목록에서 고르거나, 영문·숫자·/ · _ · . 만 쓰세요."
+        )
+    if len(name) > 200:
+        raise CloneError("branch 이름이 너무 깁니다.")
+    return name
 
 
 @dataclass(frozen=True)
@@ -73,7 +98,7 @@ def clone_repository(
         parent_dir, repo_name=norm.repo, directory_name=directory_name
     )
 
-    branch_name = (branch or "").strip() or None
+    branch_name = validate_branch_name(branch)
     # git clone [-b branch --single-branch] <url> <target>
     cred_path: str | None = None
     config = None

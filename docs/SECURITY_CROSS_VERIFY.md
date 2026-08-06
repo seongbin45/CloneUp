@@ -1,6 +1,6 @@
 # CloneUp 보안 교차검증
 
-**검증일:** 2026-08-07  
+**검증일:** 2026-08-07 (하드닝 패치 반영)  
 **범위:** 인증·토큰·git 자격증명·subprocess·URL·로그 마스킹·업로드 안전(G3)·부트스트랩 다운로드  
 **대상 코드:** `app/auth/*`, `app/git/*`, `app/github/*`, `app/ui/*` (워커·로그인), `app/config.py`, `app/util/log_mask.py`  
 **위협 모델:** 로컬 데스크톱 헬퍼 — 동일 PC 사용자/멀웨어, 네트워크 도청, 실수 업로드, 공개 client_id 남용
@@ -12,13 +12,13 @@
 | 등급 | 개수 | 의미 |
 |------|------|------|
 | **Critical** | 0 | 원격 임의 코드 실행·기본 경로 Device Flow 토큰 가로채기 등 없음 |
-| **High** | 1 | (잔여) Git 설치 파일 서명 미검증 후 실행 |
-| **Medium** | 6 | 임시 cred 파일 창·마스킹 잔여·scope 추정·비밀 내용 미탐지 등 |
+| **High** | 0 | H1 lite 적용: HTTPS host allowlist + PE + Authenticode |
+| **Medium** | 3 | scope 추정·내용 시크릿 미탐지·allow_secrets soft 등 (잔여) |
 | **Low** | 5 | 클립보드 PAT·unsigned 배포·PII soft 등 |
 | **강점 (PASS)** | 12+ | 설계 문서와 코드 일치하는 핵심 통제 |
 
 **총평:** 제품이 의도한 보안 축(PAT 전용, 토큰을 `.git/config`에 안 넣음, Device Flow 기본 OFF)은 **코드와 문서가 일치**한다.  
-남은 이슈는 대부분 **로컬 동일 사용자 위협**, **공급망(설치 파일)**, **초보 실수 완화의 soft 경계**이다.
+2026-08-07 하드닝: **M2 마스킹 · M6 branch · M1 cred orphan · H1 lite 설치 검증**.
 
 ---
 
@@ -39,8 +39,11 @@
 | S11 | 내용 전화/이메일 G3 확인 | `scan_pii_in_contents` + UI | **PASS soft** (하드 차단 아님) |
 | S12 | client_id는 public, 비밀 아님 문서화 | `config.py` docstring · ORG_OAUTH | **PASS** |
 | S13 | 커밋 이메일 기본 가림 | `hide_real_email` default True | **PASS** |
-| S14 | Git 설치 exe 무결성 검증 | `bootstrap.download_*` | **FAIL / High 잔여** |
-| S15 | PII 자동 스크립트 26/26 | `scripts/verify_pii_crosscheck.py` | **DRIFT** (24/26, G3 문구 변경) |
+| S14 | Git 설치 exe 무결성 검증 | host allowlist + MZ + Authenticode (`verify_git_installer_file`) | **PASS lite** |
+| S15 | PII 자동 스크립트 26/26 | `scripts/verify_pii_crosscheck.py` | **PASS** (G3 문구 동기화) |
+| S16 | 로그 `x-access-token` / stderr 마스킹 | `log_mask` · `runner.GitError.stderr` | **PASS** (M2) |
+| S17 | branch leading-`-` 거부 | `clone_ops.validate_branch_name` | **PASS** (M6) |
+| S18 | cred 임시파일 orphan 청소 | `credentials.cleanup_orphan_*` · `main` 기동 | **PASS** (M1) |
 
 ---
 
@@ -78,31 +81,28 @@
 
 ## 3. 발견 사항 (취약·잔여 위험)
 
-### H1 — High: Git 설치 파일 다운로드 후 서명 미검증
+### H1 — ~~High~~ → **완화 (lite 적용)**
 
 | | |
 |--|--|
-| **위치** | `app/git/bootstrap.py` `download_and_run_git_installer` |
-| **내용** | GitHub Releases API로 `.exe` URL 받아 임시 폴더에 저장 후 **그대로 실행**. Authenticode/해시 고정 검증 없음. |
-| **공격** | (이론) Releases/CDN 공급망 또는 MITM(시스템 신뢰 저장소 손상 시) → 악성 설치 파일 실행. |
-| **완화 현황** | HTTPS + 공식 org `git-for-windows/git` 에셋 이름 필터. |
-| **권장** | (1) 게시된 SHA256과 대조 (2) Windows Authenticode 게시자 확인 후 실행 (3) 실패 시 브라우저 안내만. |
+| **위치** | `bootstrap.verify_git_installer_file` · `_assert_safe_download_url` |
+| **적용** | HTTPS + GitHub CDN host only · PE/MZ · min size · Authenticode `Valid` + subject 힌트. 실패 시 실행 거부 + 브라우저 안내. |
+| **잔여** | 고정 SHA256 핀은 릴리스마다 갱신 필요 → 미적용. 신뢰 루트 손상 시 Authenticode도 한계. |
 
-### M1 — Medium: 임시 credential 파일 수명·가시성
+### M1 — ~~Medium~~ → **부분 완화**
 
 | | |
 |--|--|
-| **위치** | `app/git/credentials.write_credential_file` (`tempfile.mkstemp` in `%TEMP%`) |
-| **내용** | push/clone 동안 평문 토큰이 디스크에 존재. 동일 Windows 사용자 프로세스·백업·포렌식에 노출 가능. 크래시 시 `finally` 미실행 시 잔존 가능. |
-| **권장** | 짧은 수명 유지(현재) + 가능하면 `os.O_TEMPORARY`/`DeleteOnClose` 패턴, 시작 시 `cloneup-git-cred-*` orphan 청소, Windows ACL 명시. |
+| **위치** | `credentials.py` · `main.py` 기동 |
+| **적용** | orphan `cloneup-git-cred-*` 청소(기동 시 age=0, 쓰기 전 15분+), 삭제 전 zero-wipe 시도, `fchmod` best-effort. |
+| **잔여** | push 중 동일 사용자 프로세스 읽기 가능(로컬 위협 모델). |
 
-### M2 — Medium: 로그 마스킹 불완전
+### M2 — ~~Medium~~ → **완화**
 
 | | |
 |--|--|
-| **위치** | `app/util/log_mask.py` |
-| **내용** | `ghp_/gho_/…`·`github_pat_` 형태는 마스킹. **앞 4·뒤 4자 남김**. `x-access-token:` 단독·임의 긴 비밀·classic이 아닌 형식은 약함. `GitError.stderr` 원문은 필드에 비마스킹 보관. |
-| **권장** | URL 내 `x-access-token:[^@]+` 전체 치환; 오류 객체 stderr도 mask; 가능하면 토큰 전체 `***` (길이만). |
+| **위치** | `log_mask.py` · `runner.run_git` |
+| **적용** | 토큰 전체 `*** (len=N)` · `x-access-token:` · Bearer · URL userinfo 마스킹 · `GitError.stderr` 마스킹 저장. |
 
 ### M3 — Medium: Fine-grained PAT scope 추정 저장
 
@@ -128,13 +128,12 @@
 | **내용** | 초보가 확인만 누르고 `.env` 업로드 가능. 설계상 soft. |
 | **권장** | 공개 저장소일 때 2차 확인 강화; 기본 체크 해제 유지. |
 
-### M6 — Medium: git branch 인자 검증 약함
+### M6 — ~~Medium~~ → **완화**
 
 | | |
 |--|--|
-| **위치** | `clone_ops.clone_repository` `-b {branch}` |
-| **내용** | argv 리스트라 셸 주입은 없음. 그러나 branch가 `-`로 시작하면 git 옵션으로 해석될 여지(일반적 argv injection). UI는 목록 선택이지만 URL suggested / API 이상값 가능. |
-| **권장** | `^[.\w\-/]+$` 및 leading `-` 거부, 또는 `git clone --branch --` 패턴 사용. |
+| **위치** | `clone_ops.validate_branch_name` |
+| **적용** | leading `-` · `..` · 비허용 문자 · 길이 상한 거부 후 `-b` 전달. |
 
 ### L1 — Low: PAT 클립보드
 
@@ -178,28 +177,19 @@ SmartScreen “신뢰할 수 없음”. 코드 서명(P2) 대기. 실행 파일 
 ## 5. 자동 검사 현황
 
 ```text
-scripts/verify_pii_crosscheck.py  →  24 PASS / 2 FAIL  (2026-08-07)
-FAIL: G3 shows content PII copy   (문구 "파일 내용에서 개인정보" 없음 — 초보 카피 단축)
-FAIL: G3 shows commit email       (문구 "커밋에 기록" 없음)
+scripts/verify_pii_crosscheck.py  →  기대 26/26 PASS (G3 문구 동기화 후)
 ```
-
-→ **보안 로직 회귀라기보다 교차검증 스크립트 ↔ UI 문구 불일치.**  
-조치: 스크립트 기대 문자열을 현재 G3 카피에 맞추거나, G3에 한 줄 핵심 문구 복구.
 
 ---
 
-## 6. 권장 조치 우선순위
+## 6. 권장 조치 우선순위 (잔여)
 
 | 순위 | 항목 | 노력 |
 |------|------|------|
-| 1 | **H1** Git 설치 exe 해시/Authenticode 검증 | 중 |
-| 2 | **M2** `x-access-token:` URL·stderr 마스킹 강화 | 소 |
-| 3 | **M6** branch 이름 검증 | 소 |
-| 4 | **M1** cred 임시파일 orphan 청소·ACL | 소~중 |
-| 5 | **M4** 내용 시크릿 휴리스틱 (soft) | 중 |
-| 6 | **M3** fine-grained scope unknown 처리 | 소 |
-| 7 | PII 스크립트 ↔ G3 문구 재동기화 | 소 |
-| 8 | P2 코드 서명 (배포 신뢰) | 비용 |
+| 1 | **M4** 내용 시크릿 휴리스틱 (soft) | 중 |
+| 2 | **M3** fine-grained scope unknown 처리 | 소 |
+| 3 | H1 고정 SHA256 핀 (릴리스 자동화와 함께) | 중 |
+| 4 | P2 코드 서명 (배포 신뢰) | 비용 |
 
 ---
 

@@ -136,8 +136,15 @@ def main() -> int:
     src = inspect.getsource(MainController._confirm_upload_g3)
     check("G3 calls scan_pii_in_contents", "scan_pii_in_contents" in src)
     check("G3 calls find_secret_candidates", "find_secret_candidates" in src)
-    check("G3 shows content PII copy", "파일 내용에서 개인정보" in src)
-    check("G3 shows commit email", "커밋에 기록" in src)
+    # Copy shortened for beginners — match current G3 wording, not old phrases
+    check(
+        "G3 shows content PII copy",
+        "개인정보 후보" in src or "개인정보" in src,
+    )
+    check(
+        "G3 shows commit email",
+        "커밋에 남을 주소" in src or "preview_commit_email" in src,
+    )
 
     # 5) Intentional non-goals vs reference
     check(

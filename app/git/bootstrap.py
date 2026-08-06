@@ -27,6 +27,21 @@ GITHUB_RELEASES_API = (
 )
 _USER_AGENT = "CloneUp/0.1 (Git bootstrap; +https://github.com/seongbin45/CloneUp)"
 
+# Only pull installers from GitHub release CDN hosts (H1).
+_ALLOWED_DOWNLOAD_HOST_SUFFIXES = (
+    "github.com",
+    "githubusercontent.com",
+)
+# Git for Windows installers are large PE files
+_MIN_INSTALLER_BYTES = 5 * 1024 * 1024
+# Authenticode subject must look like official Git for Windows (best-effort).
+_AUTHENTICODE_SUBJECT_HINTS = (
+    "git for windows",
+    "johannes schindelin",
+    "git development",
+    "the git development community",
+)
+
 
 @dataclass(frozen=True)
 class GitProbe:
@@ -194,7 +209,106 @@ def resolve_latest_git_installer_url() -> tuple[str, str]:
         )
     # pick first (latest release assets order is usually fine)
     a = preferred[0]
-    return str(a["browser_download_url"]), str(a["name"])
+    url = str(a["browser_download_url"])
+    name = str(a["name"])
+    _assert_safe_download_url(url)
+    return url, name
+
+
+def _assert_safe_download_url(url: str) -> None:
+    """Reject non-HTTPS or non-GitHub CDN hosts before downloading an .exe."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if (parsed.scheme or "").lower() != "https":
+        raise RuntimeError("설치 파일 주소가 HTTPS가 아닙니다.")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise RuntimeError("설치 파일 주소에 호스트가 없습니다.")
+    if not any(
+        host == s or host.endswith("." + s) for s in _ALLOWED_DOWNLOAD_HOST_SUFFIXES
+    ):
+        raise RuntimeError(
+            f"허용되지 않은 다운로드 호스트입니다: {host}\n"
+            f"브라우저에서 받아 주세요: {GIT_DOWNLOAD_URL}"
+        )
+
+
+def verify_git_installer_file(path: Path) -> tuple[bool, str]:
+    """
+    Pre-run checks for a downloaded Git installer (H1 lite).
+
+    - PE/MZ header + minimum size
+    - On Windows: Authenticode status Valid + subject hints (best-effort)
+    """
+    if not path.is_file():
+        return False, f"설치 파일이 없습니다: {path}"
+    try:
+        size = path.stat().st_size
+    except OSError as e:
+        return False, str(e)
+    if size < _MIN_INSTALLER_BYTES:
+        return False, f"설치 파일이 너무 작습니다 ({size} bytes). 다시 받아 주세요."
+    try:
+        with open(path, "rb") as f:
+            magic = f.read(2)
+    except OSError as e:
+        return False, str(e)
+    if magic != b"MZ":
+        return False, "설치 파일이 Windows 실행 파일 형식이 아닙니다."
+
+    if sys.platform != "win32":
+        return True, "형식 확인 OK (비 Windows — 서명 검사 생략)"
+
+    # Authenticode via PowerShell (no extra Python deps)
+    # Escape single quotes for -Command string
+    path_lit = str(path).replace("'", "''")
+    ps = (
+        f"$s = Get-AuthenticodeSignature -FilePath '{path_lit}'; "
+        "Write-Output $s.Status.ToString(); "
+        "if ($s.SignerCertificate) { Write-Output $s.SignerCertificate.Subject } "
+        "else { Write-Output '' }"
+    )
+    try:
+        r = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                ps,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+            **hidden_run_kwargs(),
+        )
+    except Exception as e:
+        # Soft: format OK but signature check failed to run
+        return True, f"형식 확인 OK (서명 검사 생략: {e})"
+
+    lines = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
+    status = (lines[0] if lines else "").strip()
+    subject = (lines[1] if len(lines) > 1 else "").strip()
+    if status.lower() != "valid":
+        return (
+            False,
+            "설치 파일 서명이 유효하지 않습니다 "
+            f"(Status={status or '?'}).\n"
+            f"브라우저에서 공식 페이지를 이용해 주세요: {GIT_DOWNLOAD_URL}",
+        )
+    subj_l = subject.lower()
+    if subject and not any(h in subj_l for h in _AUTHENTICODE_SUBJECT_HINTS):
+        # Valid cert but unexpected publisher — refuse rather than run
+        return (
+            False,
+            "설치 파일 게시자가 예상과 다릅니다.\n"
+            f"Subject: {subject[:200]}\n"
+            f"브라우저에서 공식 페이지를 이용해 주세요: {GIT_DOWNLOAD_URL}",
+        )
+    return True, f"서명 확인 OK ({subject[:80] if subject else 'Valid'})"
 
 
 def download_git_installer(
@@ -209,6 +323,11 @@ def download_git_installer(
     Returns path to .exe.
     """
     url, filename = resolve_latest_git_installer_url()
+    _assert_safe_download_url(url)
+    # Filename must look like official Git-*-64-bit.exe
+    if not filename.endswith(".exe") or ".." in filename or "/" in filename or "\\" in filename:
+        raise RuntimeError(f"예상치 못한 설치 파일 이름: {filename!r}")
+
     dest_dir = dest_dir or Path(tempfile.gettempdir()) / "CloneUp-git-setup"
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / filename
@@ -218,6 +337,10 @@ def download_git_installer(
         headers={"User-Agent": _USER_AGENT},
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
+        # Redirect final URL host check
+        final = getattr(resp, "geturl", lambda: url)()
+        if final:
+            _assert_safe_download_url(final)
         total = -1
         cl = resp.headers.get("Content-Length")
         if cl and cl.isdigit():
@@ -252,6 +375,10 @@ def run_git_installer(installer: Path, *, silent: bool = False) -> tuple[bool, s
     if sys.platform != "win32":
         return False, "Windows 전용 설치 파일입니다."
 
+    ok_v, vmsg = verify_git_installer_file(installer)
+    if not ok_v:
+        return False, vmsg
+
     args = [str(installer)]
     if silent:
         # Git for Windows Inno Setup flags
@@ -277,10 +404,10 @@ def run_git_installer(installer: Path, *, silent: bool = False) -> tuple[bool, s
             )
             ok = r.returncode == 0
             msg = (r.stdout or "") + (r.stderr or "") or f"exit {r.returncode}"
-            return ok, msg.strip()
+            return ok, (vmsg + "\n" + msg.strip()).strip()
         # GUI installer must show its own window — do not CREATE_NO_WINDOW
         subprocess.Popen(args, shell=False)
-        return True, f"설치 프로그램을 실행했습니다: {installer.name}"
+        return True, f"{vmsg}\n설치 프로그램을 실행했습니다: {installer.name}"
     except Exception as e:
         return False, str(e)
 
@@ -291,16 +418,18 @@ def download_and_run_git_installer(
     on_progress: Callable[[int, int], None] | None = None,
     log: Callable[[str], None] | None = None,
 ) -> tuple[bool, str]:
-    """DG2 pipeline: resolve → download → run installer."""
+    """DG2 pipeline: resolve → download → verify → run installer."""
     try:
         if log:
             log("최신 Git for Windows 설치 파일 주소를 확인합니다…")
         url, name = resolve_latest_git_installer_url()
+        _assert_safe_download_url(url)
         if log:
             log(f"다운로드: {name}")
         path = download_git_installer(on_progress=on_progress)
         if log:
             log(f"저장됨: {path} ({path.stat().st_size // (1024 * 1024)} MB)")
+            log("설치 파일 서명·형식을 확인합니다…")
         ok, msg = run_git_installer(path, silent=silent)
         return ok, msg
     except Exception as e:
