@@ -247,20 +247,25 @@ def commit_and_push(
             "이 폴더는 안전을 위해 올리기를 막았습니다. 다른 폴더로 다시 받아 보세요."
         )
 
-    secrets = find_secret_candidates(folder)
-    content_secrets = scan_secret_in_contents(folder)
-    if (secrets or content_secrets) and not allow_secrets:
-        bits: list[str] = []
-        if secrets:
-            bits.append(", ".join(secrets))
-        if content_secrets:
-            bits.append(
-                ", ".join(f"{h.path}({h.kind})" for h in content_secrets[:12])
-            )
+    # Prefer full safety report (publishable paths + hard content keys).
+    from app.git.safety import run_safety_checks
+
+    safety = run_safety_checks(
+        folder,
+        allow_secrets=allow_secrets,
+        write_gitignore=False,
+        scan_pii=False,
+    )
+    if not safety.ok:
         raise SyncError(
-            "비밀 파일·내용으로 보이는 항목이 있습니다:\n"
-            + "\n".join(bits)
-            + "\n파일을 빼거나, 「비밀 파일도 커밋 (고급)」을 켠 뒤 다시 시도하세요."
+            "비밀 파일·내용 검사에 걸렸습니다:\n"
+            + "\n".join(safety.errors[:5])
+            + "\n파일을 고친 뒤 다시 시도하세요."
+            + (
+                ""
+                if not allow_secrets
+                else "\n(고급 허용이 켜져 있어도 키·인증서 내용은 막을 수 없습니다.)"
+            )
         )
 
     run_git(["add", "-A"], cwd=str(folder), check=True)

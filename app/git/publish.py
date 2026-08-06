@@ -23,8 +23,9 @@ from app.git.runner import GitError, git_config_get, require_git, run_git
 from app.git.safety import SafetyReport, run_safety_checks
 from app.util.log_mask import mask_secrets_in_text
 
+# Keep in sync with app.util.log_mask (classic PAT ghp_ included — M2 review)
 _TOKEN_LEAK_RE = re.compile(
-    r"gho_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|x-access-token:",
+    r"gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|x-access-token:",
     re.I,
 )
 

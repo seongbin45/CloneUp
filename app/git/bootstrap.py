@@ -114,8 +114,35 @@ def open_git_download_page() -> bool:
         return False
 
 
+def _windows_powershell_exe() -> str | None:
+    """Absolute path to system PowerShell (avoid CWD hijack of bare 'powershell')."""
+    root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+    candidate = Path(root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    if candidate.is_file():
+        return str(candidate)
+    return None
+
+
+def _resolved_tool(name: str) -> str | None:
+    """Resolve tool to absolute path; ignore CWD-relative hits when possible."""
+    path = shutil.which(name)
+    if not path:
+        return None
+    p = Path(path)
+    try:
+        # Refuse if only found as ./name in cwd
+        if p.parent.resolve() == Path.cwd().resolve() and name.lower() in p.name.lower():
+            # still allow if it's the real system install under Program Files
+            low = str(p).lower()
+            if "windowsapps" not in low and "program files" not in low and "system32" not in low:
+                return None
+    except OSError:
+        pass
+    return str(p)
+
+
 def winget_available() -> bool:
-    return shutil.which("winget") is not None
+    return _resolved_tool("winget") is not None
 
 
 def try_install_git_via_winget(*, timeout: int = 600) -> tuple[bool, str]:
@@ -125,11 +152,12 @@ def try_install_git_via_winget(*, timeout: int = 600) -> tuple[bool, str]:
     """
     if sys.platform != "win32":
         return False, "winget 설치는 Windows 에서만 지원합니다."
-    if not winget_available():
+    winget = _resolved_tool("winget")
+    if not winget:
         return False, "winget 을 찾을 수 없습니다. 설치 페이지를 이용해 주세요."
 
     cmd = [
-        "winget",
+        winget,
         "install",
         "--id",
         "Git.Git",
@@ -260,8 +288,14 @@ def verify_git_installer_file(path: Path) -> tuple[bool, str]:
     if sys.platform != "win32":
         return True, "형식 확인 OK (비 Windows — 서명 검사 생략)"
 
-    # Authenticode via PowerShell (no extra Python deps)
-    # Escape single quotes for -Command string
+    # Authenticode via *absolute* PowerShell (H3: no bare "powershell" / no fail-open)
+    ps_exe = _windows_powershell_exe()
+    if not ps_exe:
+        return (
+            False,
+            "서명 검사를 위해 PowerShell을 찾지 못했습니다.\n"
+            f"브라우저에서 공식 페이지로 설치해 주세요: {GIT_DOWNLOAD_URL}",
+        )
     path_lit = str(path).replace("'", "''")
     ps = (
         f"$s = Get-AuthenticodeSignature -FilePath '{path_lit}'; "
@@ -272,7 +306,7 @@ def verify_git_installer_file(path: Path) -> tuple[bool, str]:
     try:
         r = subprocess.run(
             [
-                "powershell",
+                ps_exe,
                 "-NoProfile",
                 "-NonInteractive",
                 "-Command",
@@ -286,8 +320,21 @@ def verify_git_installer_file(path: Path) -> tuple[bool, str]:
             **hidden_run_kwargs(),
         )
     except Exception as e:
-        # Soft: format OK but signature check failed to run
-        return True, f"형식 확인 OK (서명 검사 생략: {e})"
+        # H3: verification failure must not run the .exe
+        return (
+            False,
+            "설치 파일 서명 검사를 실행하지 못했습니다.\n"
+            f"브라우저에서 공식 페이지로 설치해 주세요: {GIT_DOWNLOAD_URL}\n"
+            f"(상세: {e})",
+        )
+
+    if r.returncode != 0:
+        return (
+            False,
+            "설치 파일 서명 검사가 실패했습니다.\n"
+            f"브라우저에서 공식 페이지로 설치해 주세요: {GIT_DOWNLOAD_URL}\n"
+            f"(exit {r.returncode})",
+        )
 
     lines = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
     status = (lines[0] if lines else "").strip()
@@ -299,16 +346,21 @@ def verify_git_installer_file(path: Path) -> tuple[bool, str]:
             f"(Status={status or '?'}).\n"
             f"브라우저에서 공식 페이지를 이용해 주세요: {GIT_DOWNLOAD_URL}",
         )
+    if not subject:
+        return (
+            False,
+            "설치 파일 게시자(서명 주체)를 확인할 수 없습니다.\n"
+            f"브라우저에서 공식 페이지를 이용해 주세요: {GIT_DOWNLOAD_URL}",
+        )
     subj_l = subject.lower()
-    if subject and not any(h in subj_l for h in _AUTHENTICODE_SUBJECT_HINTS):
-        # Valid cert but unexpected publisher — refuse rather than run
+    if not any(h in subj_l for h in _AUTHENTICODE_SUBJECT_HINTS):
         return (
             False,
             "설치 파일 게시자가 예상과 다릅니다.\n"
             f"Subject: {subject[:200]}\n"
             f"브라우저에서 공식 페이지를 이용해 주세요: {GIT_DOWNLOAD_URL}",
         )
-    return True, f"서명 확인 OK ({subject[:80] if subject else 'Valid'})"
+    return True, f"서명 확인 OK ({subject[:80]})"
 
 
 def download_git_installer(

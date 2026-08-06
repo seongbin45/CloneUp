@@ -41,6 +41,7 @@ PowerShell / Python 보조 도구입니다. **앱 일상 실행에는 필수가 
 | `cross_verify.py` | `.py` | 기능 교차검증 | 커밋 전 권장 |
 | `verify_pii_crosscheck.py` | `.py` | 개인정보 스캔 규칙 검증 | safety 수정 후 |
 | `verify_security_crosscheck.py` | `.py` | **보안** 교차검증 (인증·마스킹·git·H1) | 보안/auth/git 수정 후 |
+| `../tests/test_p0_security.py` | pytest | P0 회귀 (H1 스캔 대상 · H2 공백 경로) | `pytest tests/` |
 
 ---
 

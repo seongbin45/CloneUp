@@ -897,31 +897,53 @@ class MainController(QObject):
 
         secrets = find_secret_candidates(folder)
         content_secrets = scan_secret_in_contents(folder)
-        if secrets or content_secrets:
+        # High-confidence content keys are never bypassable (H1 review).
+        hard_kinds = {
+            "github_token",
+            "aws_access_key",
+            "private_key",
+            "stripe_key",
+            "slack_token",
+        }
+        hard_content = [h for h in content_secrets if h.kind in hard_kinds]
+        soft_content = [h for h in content_secrets if h.kind not in hard_kinds]
+        if hard_content:
+            listing = format_content_secret_list(hard_content)
+            QMessageBox.warning(
+                self.window,
+                "올릴 수 없음",
+                "파일 내용에 비밀 키처럼 보이는 값이 있어 막을 수 없습니다.\n"
+                "(「비밀 파일도 진행」으로도 우회할 수 없습니다.)\n\n"
+                f"{listing}\n\n"
+                "키·인증서를 파일에서 지운 뒤 다시 시도하세요.",
+            )
+            self._log("다음: 파일 안의 키/인증서를 지운 뒤 다시 올리기")
+            return False
+        if secrets or soft_content:
             listing_parts: list[str] = []
             if secrets:
                 listing_parts.append(format_secret_list(secrets))
-            if content_secrets:
-                listing_parts.append(format_content_secret_list(content_secrets))
+            if soft_content:
+                listing_parts.append(format_content_secret_list(soft_content))
             listing = "\n".join(p for p in listing_parts if p)
             if not allow_secrets:
                 QMessageBox.warning(
                     self.window,
                     "올릴 수 없음",
-                    "비밀처럼 보이는 파일·내용이 있어 막았습니다.\n\n"
+                    "비밀처럼 보이는 파일이 있어 막았습니다.\n\n"
                     f"{listing}\n\n"
-                    "1) 파일을 빼거나 키/비밀번호를 지우기\n"
+                    "1) 파일을 빼거나 이름 바꾸기\n"
                     "2) 정말 필요하면 「비밀 파일도 진행 (고급)」을 켠 뒤 다시\n\n"
-                    "참고: .env.example · 예제 키 문자열도 걸릴 수 있습니다.",
+                    "참고: .env.example 같은 샘플 이름도 걸릴 수 있습니다.",
                 )
                 self._log(
-                    "다음: 비밀 파일/키를 빼거나, 「비밀 파일도 진행 (고급)」을 켠 뒤 다시"
+                    "다음: 비밀 파일을 빼거나, 「비밀 파일도 진행 (고급)」을 켠 뒤 다시"
                 )
                 return False
             parts.append(
-                "【비밀 — 고급 허용】\n"
+                "【비밀 파일 — 고급 허용】\n"
                 f"{listing}\n"
-                "내용에 실제 비밀번호·키가 없는지 확인하세요."
+                "내용에 실제 비밀번호가 없는지 확인하세요."
             )
 
         # Content PII (phone/email) — keep short for readability

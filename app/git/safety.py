@@ -176,6 +176,21 @@ class SafetyReport:
     pii_hits: list[PiiHit] = field(default_factory=list)
     content_secret_hits: list[ContentSecretHit] = field(default_factory=list)
     wrote_gitignore: bool = False
+    # How many publishable paths we considered / whether scan was truncated
+    paths_considered: int = 0
+    scan_truncated: bool = False
+
+
+# High-confidence content hits: never bypassable via allow_secrets (H1 review).
+_HARD_CONTENT_KINDS = frozenset(
+    {
+        "github_token",
+        "aws_access_key",
+        "private_key",
+        "stripe_key",
+        "slack_token",
+    }
+)
 
 
 def is_effectively_empty(folder: Path) -> bool:
@@ -190,15 +205,90 @@ def is_effectively_empty(folder: Path) -> bool:
     return True
 
 
-def find_secret_candidates(folder: Path) -> list[str]:
+def _should_skip_dir(name: str) -> bool:
+    """
+    Directories never walked on the *fallback* filesystem path.
+
+    Only skip known heavy/vendor dirs and ``.git``. Do **not** skip every
+    ``.*`` name — ``.github/``, ``.config/`` etc. are often committed (H1).
+    """
+    if name == ".git":
+        return True
+    return name in _SKIP_DIRS
+
+
+def list_publishable_relpaths(folder: Path) -> tuple[list[str], list[str]]:
+    """
+    Relative posix paths that would be included by ``git add -A`` (H1).
+
+    Prefer git's view (respects .gitignore). Fallback: filesystem walk that
+    still includes ``.github/`` and other dotdirs except ``.git``.
+    Returns (paths, warnings).
+    """
+    root = folder.resolve()
+    warnings: list[str] = []
+    git_dir = root / ".git"
+    if git_dir.exists():
+        try:
+            from app.git.runner import run_git
+
+            # cached + others, exclude-standard == add -A candidates
+            r = run_git(
+                [
+                    "ls-files",
+                    "-z",
+                    "--cached",
+                    "--others",
+                    "--exclude-standard",
+                ],
+                cwd=str(root),
+                check=False,
+            )
+            if r.returncode == 0:
+                raw = r.stdout or ""
+                paths = [p for p in raw.split("\0") if p]
+                # Drop anything under .git if present
+                paths = [p for p in paths if not p.startswith(".git/")]
+                return paths, warnings
+            warnings.append(
+                "git ls-files 실패 — 파일시스템 검사로 대체합니다 "
+                f"(code={r.returncode})."
+            )
+        except Exception as e:
+            warnings.append(f"git 목록 조회 실패 — 파일시스템 검사: {e}")
+
+    # Fallback walk
+    paths: list[str] = []
+    for dirpath, dirnames, filenames in os_walk_skip(root):
+        dirnames[:] = [d for d in dirnames if not _should_skip_dir(d)]
+        for name in filenames:
+            path = Path(dirpath) / name
+            if not path.is_file():
+                continue
+            try:
+                rel = path.relative_to(root).as_posix()
+            except ValueError:
+                continue
+            if rel.startswith(".git/"):
+                continue
+            paths.append(rel)
+    return paths, warnings
+
+
+def find_secret_candidates(
+    folder: Path,
+    *,
+    paths: list[str] | None = None,
+) -> list[str]:
+    """
+    Secret-looking *filenames* among publishable paths only (H1).
+    """
+    root = folder.resolve()
+    if paths is None:
+        paths, _ = list_publishable_relpaths(root)
     hits: list[str] = []
-    for p in folder.rglob("*"):
-        if not p.is_file():
-            continue
-        rel = p.relative_to(folder).as_posix()
-        if rel.startswith(".git/"):
-            continue
-        name = p.name
+    for rel in paths:
+        name = Path(rel).name
         if _SECRET_NAME_RE.search(name) or _SECRET_NAME_RE.search(rel):
             hits.append(rel)
     return sorted(hits)
@@ -215,74 +305,95 @@ def format_secret_list(secrets: list[str], *, limit: int = 20) -> str:
     return lines
 
 
-def _should_skip_dir(name: str) -> bool:
-    return name in _SKIP_DIRS or name.startswith(".")
-
-
 def _email_ignored(addr: str) -> bool:
     low = addr.lower()
     return any(s in low for s in _EMAIL_IGNORE_SUBSTR)
 
 
-def scan_pii_in_contents(folder: Path) -> list[PiiHit]:
+def _iter_text_files(
+    root: Path,
+    rel_paths: list[str],
+    *,
+    max_files: int,
+) -> tuple[list[tuple[str, str]], bool]:
     """
-    Scan text file bodies for phone/email (reference project grep patterns).
+    Load up to max_files text files from rel_paths.
+    Returns ([(rel, text), ...], truncated).
+    """
+    out: list[tuple[str, str]] = []
+    truncated = False
+    for i, rel in enumerate(rel_paths):
+        if len(out) >= max_files:
+            truncated = True
+            break
+        if i >= max_files * 4 and len(out) == 0:
+            # pathological: many binaries first
+            truncated = True
+            break
+        path = root / rel
+        if not path.is_file():
+            continue
+        ext = path.suffix.lower()
+        if ext in _BINARY_EXTENSIONS:
+            continue
+        try:
+            if path.stat().st_size > _MAX_FILE_BYTES:
+                continue
+        except OSError:
+            continue
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        out.append((rel, text))
+    if len(rel_paths) > max_files and not truncated:
+        # more paths exist than we scanned as text
+        if len(out) >= max_files:
+            truncated = True
+    return out, truncated
 
-    Does not replace strings (that is anonymize.py's job). Returns hits for UI.
+
+def scan_pii_in_contents(
+    folder: Path,
+    *,
+    paths: list[str] | None = None,
+) -> list[PiiHit]:
+    """
+    Scan text file bodies for phone/email among publishable paths (H1).
     """
     root = folder.resolve()
+    if paths is None:
+        paths, _ = list_publishable_relpaths(root)
     hits: list[PiiHit] = []
     seen: set[tuple[str, str, str]] = set()
-    files_seen = 0
-
-    for dirpath, dirnames, filenames in os_walk_skip(root):
-        # prune skip dirs in-place
-        dirnames[:] = [d for d in dirnames if not _should_skip_dir(d)]
-        for name in filenames:
-            if files_seen >= _MAX_FILES_SCANNED or len(hits) >= _MAX_PII_HITS:
-                return hits
-            ext = Path(name).suffix.lower()
-            if ext in _BINARY_EXTENSIONS:
+    files, _trunc = _iter_text_files(root, paths, max_files=_MAX_FILES_SCANNED)
+    for rel, text in files:
+        if len(hits) >= _MAX_PII_HITS:
+            break
+        for m in _PHONE_RE.finditer(text):
+            sample = m.group(0)
+            key = (rel, "phone", sample)
+            if key in seen:
                 continue
-            path = Path(dirpath) / name
-            if not path.is_file():
+            seen.add(key)
+            hits.append(PiiHit(path=rel, kind="phone", sample=sample))
+            if len(hits) >= _MAX_PII_HITS:
+                break
+        for m in _EMAIL_RE.finditer(text):
+            sample = m.group(0)
+            if _email_ignored(sample):
                 continue
-            try:
-                if path.stat().st_size > _MAX_FILE_BYTES:
-                    continue
-            except OSError:
+            key = (rel, "email", sample)
+            if key in seen:
                 continue
-            files_seen += 1
-            try:
-                raw = path.read_bytes()
-            except OSError:
-                continue
-            try:
-                text = raw.decode("utf-8")
-            except UnicodeDecodeError:
-                continue
-
-            rel = path.relative_to(root).as_posix()
-            for m in _PHONE_RE.finditer(text):
-                sample = m.group(0)
-                key = (rel, "phone", sample)
-                if key in seen:
-                    continue
-                seen.add(key)
-                hits.append(PiiHit(path=rel, kind="phone", sample=sample))
-                if len(hits) >= _MAX_PII_HITS:
-                    return hits
-            for m in _EMAIL_RE.finditer(text):
-                sample = m.group(0)
-                if _email_ignored(sample):
-                    continue
-                key = (rel, "email", sample)
-                if key in seen:
-                    continue
-                seen.add(key)
-                hits.append(PiiHit(path=rel, kind="email", sample=sample))
-                if len(hits) >= _MAX_PII_HITS:
-                    return hits
+            seen.add(key)
+            hits.append(PiiHit(path=rel, kind="email", sample=sample))
+            if len(hits) >= _MAX_PII_HITS:
+                break
     return hits
 
 
@@ -319,57 +430,36 @@ def _mask_secret_sample(raw: str) -> str:
     return f"{s[:3]}…{s[-2:]} (len={len(s)})"
 
 
-def scan_secret_in_contents(folder: Path) -> list[ContentSecretHit]:
+def scan_secret_in_contents(
+    folder: Path,
+    *,
+    paths: list[str] | None = None,
+) -> list[ContentSecretHit]:
     """
-    Scan text file bodies for known high-confidence secret shapes (M4).
-
-    Soft for G3 listing; hard-block when allow_secrets is False (same as .env names).
+    Scan publishable text files for known high-confidence secret shapes (M4/H1).
     """
     root = folder.resolve()
+    if paths is None:
+        paths, _ = list_publishable_relpaths(root)
     hits: list[ContentSecretHit] = []
     seen: set[tuple[str, str, str]] = set()
-    files_seen = 0
-
-    for dirpath, dirnames, filenames in os_walk_skip(root):
-        dirnames[:] = [d for d in dirnames if not _should_skip_dir(d)]
-        for name in filenames:
-            if files_seen >= _MAX_FILES_SCANNED or len(hits) >= _MAX_CONTENT_SECRET_HITS:
-                return hits
-            ext = Path(name).suffix.lower()
-            if ext in _BINARY_EXTENSIONS:
-                continue
-            path = Path(dirpath) / name
-            if not path.is_file():
-                continue
-            try:
-                if path.stat().st_size > _MAX_FILE_BYTES:
+    files, _trunc = _iter_text_files(root, paths, max_files=_MAX_FILES_SCANNED)
+    for rel, text in files:
+        if len(hits) >= _MAX_CONTENT_SECRET_HITS:
+            break
+        for kind, pattern in _CONTENT_SECRET_PATTERNS:
+            for m in pattern.finditer(text):
+                sample_raw = m.group(0)
+                sample = _mask_secret_sample(sample_raw)
+                key = (rel, kind, sample)
+                if key in seen:
                     continue
-            except OSError:
-                continue
-            files_seen += 1
-            try:
-                raw = path.read_bytes()
-            except OSError:
-                continue
-            try:
-                text = raw.decode("utf-8")
-            except UnicodeDecodeError:
-                continue
-
-            rel = path.relative_to(root).as_posix()
-            for kind, pattern in _CONTENT_SECRET_PATTERNS:
-                for m in pattern.finditer(text):
-                    sample_raw = m.group(0)
-                    sample = _mask_secret_sample(sample_raw)
-                    key = (rel, kind, sample)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    hits.append(
-                        ContentSecretHit(path=rel, kind=kind, sample=sample)
-                    )
-                    if len(hits) >= _MAX_CONTENT_SECRET_HITS:
-                        return hits
+                seen.add(key)
+                hits.append(ContentSecretHit(path=rel, kind=kind, sample=sample))
+                if len(hits) >= _MAX_CONTENT_SECRET_HITS:
+                    break
+            if len(hits) >= _MAX_CONTENT_SECRET_HITS:
+                break
     return hits
 
 
@@ -402,9 +492,19 @@ def run_safety_checks(
     folder: Path,
     *,
     allow_secrets: bool = False,
+    allow_secret_filenames: bool | None = None,
     write_gitignore: bool = True,
     scan_pii: bool = True,
 ) -> SafetyReport:
+    """
+    Pre-publish safety on *publishable* paths only (H1).
+
+    ``allow_secrets`` / ``allow_secret_filenames``: only bypasses **filename**
+    pattern hits. High-confidence **content** secrets (keys, PEM, …) always block.
+    """
+    if allow_secret_filenames is None:
+        allow_secret_filenames = allow_secrets
+
     report = SafetyReport(ok=True)
     if not folder.is_dir():
         report.ok = False
@@ -423,9 +523,19 @@ def run_safety_checks(
         if report.wrote_gitignore:
             report.warnings.append("기본 .gitignore 를 새로 만들었습니다. 내용을 확인하세요.")
 
-    secrets = find_secret_candidates(folder)
+    paths, path_warnings = list_publishable_relpaths(folder)
+    report.warnings.extend(path_warnings)
+    report.paths_considered = len(paths)
+    if len(paths) > _MAX_FILES_SCANNED:
+        report.scan_truncated = True
+        report.warnings.append(
+            f"검사 상한: 내용 스캔은 최대 {_MAX_FILES_SCANNED}개 파일만 합니다 "
+            f"(후보 {len(paths)}개). 큰 폴더는 일부만 검사됐을 수 있습니다."
+        )
+
+    secrets = find_secret_candidates(folder, paths=paths)
     report.secret_candidates = secrets
-    if secrets and not allow_secrets:
+    if secrets and not allow_secret_filenames:
         report.ok = False
         report.errors.append(
             "비밀 파일로 보이는 항목이 있습니다. 제거하거나 "
@@ -436,27 +546,37 @@ def run_safety_checks(
             f"--allow-secrets: 다음 파일이 포함될 수 있습니다: {', '.join(secrets)}"
         )
 
-    # M4 — secret-looking *content* (tokens, private keys, …)
-    content_secrets = scan_secret_in_contents(folder)
+    content_secrets = scan_secret_in_contents(folder, paths=paths)
     report.content_secret_hits = content_secrets
-    if content_secrets and not allow_secrets:
+    hard = [h for h in content_secrets if h.kind in _HARD_CONTENT_KINDS]
+    soft = [h for h in content_secrets if h.kind not in _HARD_CONTENT_KINDS]
+    if hard:
         report.ok = False
         listing = ", ".join(
             f"{h.path}({_CONTENT_SECRET_KIND_KO.get(h.kind, h.kind)})"
-            for h in content_secrets[:12]
+            for h in hard[:12]
+        )
+        report.errors.append(
+            "파일 내용에 비밀 키처럼 보이는 값이 있어 막을 수 없습니다 "
+            f"(고급 허용으로도 우회 불가): {listing}"
+        )
+    if soft and not allow_secret_filenames:
+        report.ok = False
+        listing = ", ".join(
+            f"{h.path}({_CONTENT_SECRET_KIND_KO.get(h.kind, h.kind)})"
+            for h in soft[:12]
         )
         report.errors.append(
             "파일 내용에 비밀처럼 보이는 값이 있습니다. 제거하거나 "
             f"--allow-secrets 로 명시 확인하세요: {listing}"
         )
-    elif content_secrets:
+    elif soft:
         report.warnings.append(
-            f"--allow-secrets: 내용 비밀 후보 {len(content_secrets)}건이 "
-            "포함될 수 있습니다."
+            f"--allow-secrets: 내용 비밀 후보(완화) {len(soft)}건이 포함될 수 있습니다."
         )
 
     if scan_pii:
-        pii = scan_pii_in_contents(folder)
+        pii = scan_pii_in_contents(folder, paths=paths)
         report.pii_hits = pii
         if pii:
             report.warnings.append(

@@ -117,10 +117,18 @@ def main() -> int:
         "010-1111-2222" not in samples,
         str(samples),
     )
+    # H1 fix: do not skip all ".*" dirs — .github etc. must be scanned.
+    # Without git, .cache is still publishable → phone may appear (expected).
+    paths_pub, _ = s.list_publishable_relpaths(td)
     check(
-        "skips .* dirs (broader than ref .git-only)",
-        "010-3333-4444" not in samples,
-        "dot-dir content intentionally skipped",
+        "publishable includes non-git files",
+        any("note.txt" in p for p in paths_pub),
+        str(paths_pub[:10]),
+    )
+    check(
+        "does not skip .github-style paths by default",
+        not s._should_skip_dir(".github"),
+        "only .git + vendor skip dirs",
     )
 
     secrets = s.find_secret_candidates(td)
@@ -158,9 +166,21 @@ def main() -> int:
         str(len(rep_block.content_secret_hits)),
     )
 
+    # Filename-only allow: content hard secrets (ghp_/AKIA) still block
     rep_allow = s.run_safety_checks(td, allow_secrets=True, write_gitignore=False)
-    check("allows with allow_secrets", rep_allow.ok)
-    check("still warns on pii", any("개인정보" in w for w in rep_allow.warnings))
+    check(
+        "allow_secrets still blocks hard content secrets",
+        not rep_allow.ok and len(rep_allow.content_secret_hits) >= 1,
+        str(rep_allow.errors)[:120],
+    )
+    # Filename-only tree: allow_secrets opens .env-style names
+    td2 = Path(tempfile.mkdtemp(prefix="cloneup_pii_fn_"))
+    (td2 / ".env").write_text("K=1\n", encoding="utf-8")
+    (td2 / "note.txt").write_text("hello only\n", encoding="utf-8")
+    rep_fn = s.run_safety_checks(td2, allow_secrets=True, write_gitignore=False)
+    check("allows filename secrets with allow_secrets", rep_fn.ok)
+    rep_pii = s.run_safety_checks(td, allow_secrets=True, write_gitignore=False)
+    check("still warns on pii", any("개인정보" in w for w in rep_pii.warnings))
 
     # 4) UI G3 wiring
     from app.ui.main_window import MainController
@@ -202,7 +222,7 @@ def main() -> int:
     )
     check(
         "sync_ops does not re-scan PII (UI G3 does)",
-        "scan_pii" not in sync_src,
+        "scan_pii=False" in sync_src or "scan_pii_in_contents" not in sync_src,
         "OK if main_window G3 runs before push",
     )
 

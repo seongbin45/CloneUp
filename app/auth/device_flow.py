@@ -209,8 +209,14 @@ def copy_text_to_clipboard(text: str) -> bool:
         # Windows: clip.exe reads stdin (hide console under windowed .exe)
         from app.util.winproc import hidden_run_kwargs
 
+        import os
+        from pathlib import Path
+
+        root = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+        clip = Path(root) / "System32" / "clip.exe"
+        clip_cmd = str(clip) if clip.is_file() else "clip"
         r = subprocess.run(
-            ["clip"],
+            [clip_cmd],
             input=text,
             text=True,
             check=False,

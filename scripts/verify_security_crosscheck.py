@@ -200,8 +200,19 @@ def main() -> int:
     check("F4 filename .env", ".env" in find_secret_candidates(td))
     blocked = run_safety_checks(td, allow_secrets=False, write_gitignore=False)
     check("F5 hard-block without allow_secrets", not blocked.ok)
+    # H1: high-confidence content secrets cannot be bypassed with allow_secrets
     allowed = run_safety_checks(td, allow_secrets=True, write_gitignore=False)
-    check("F6 allow_secrets soft path", allowed.ok)
+    check(
+        "F6 allow_secrets cannot bypass hard content secrets",
+        not allowed.ok and len(allowed.content_secret_hits) >= 1,
+        str(allowed.errors)[:100],
+    )
+    # Filename-only tree can be allowed
+    td_fn = Path(tempfile.mkdtemp(prefix="cloneup_sec_fn_"))
+    (td_fn / ".env").write_text("K=1\n", encoding="utf-8")
+    (td_fn / "ok.txt").write_text("hello\n", encoding="utf-8")
+    fn_allowed = run_safety_checks(td_fn, allow_secrets=True, write_gitignore=False)
+    check("F6b allow_secrets opens filename-only secrets", fn_allowed.ok)
 
     # ========== G. Subprocess / env ==========
     src = inspect.getsource(run_git)

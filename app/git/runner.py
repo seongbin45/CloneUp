@@ -117,7 +117,7 @@ def run_git(
             returncode=proc.returncode,
             stderr=safe_err,
         )
-    return GitResult(returncode=proc.returncode, stdout=out, stderr=safe_err)
+    return GitResult(returncode=proc.returncode, stdout=safe_out, stderr=safe_err)
 
 
 def git_config_get(key: str, *, cwd: str | None, global_scope: bool = False) -> str | None:
