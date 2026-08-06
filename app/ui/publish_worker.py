@@ -166,6 +166,7 @@ class PublishWorker(QThread):
         private: bool,
         allow_secrets: bool,
         hide_real_email: bool = True,
+        default_branch: str = "main",
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -175,6 +176,7 @@ class PublishWorker(QThread):
         self.private = private
         self.allow_secrets = allow_secrets
         self.hide_real_email = hide_real_email
+        self.default_branch = default_branch or "main"
 
     def _log(self, msg: str) -> None:
         self.log_line.emit(mask_secrets_in_text(msg))
@@ -250,6 +252,7 @@ class PublishWorker(QThread):
                 allow_secrets=self.allow_secrets,
                 private=self.private,
                 hide_real_email=self.hide_real_email,
+                default_branch=self.default_branch,
             )
         except PublishError as e:
             if self.isInterruptionRequested():

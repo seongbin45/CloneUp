@@ -51,11 +51,13 @@ from app.ui.settings_store import (
     load_hide_real_email,
     load_last_commit_message,
     load_last_private,
+    load_last_publish_branch,
     load_recent_folders,
     remember_folder,
     save_hide_real_email,
     save_last_commit_message,
     save_last_private,
+    save_last_publish_branch,
 )
 from app.ui.tab_workers import CloneWorker, SyncActionWorker, SyncStatusWorker
 from app.ui.theme import active_palette
@@ -172,10 +174,15 @@ class MainController(QObject):
         self.editRepoName = window.findChild(QLineEdit, "editRepoName")
         self.radioPublic = window.findChild(QRadioButton, "radioPublic")
         self.radioPrivate = window.findChild(QRadioButton, "radioPrivate")
+        self.comboPublishBranch = window.findChild(QComboBox, "comboPublishBranch")
         self.editCommitMessage = window.findChild(QLineEdit, "editCommitMessage")
         self.checkHideEmail = window.findChild(QCheckBox, "checkHideEmail")
         self.checkAllowSecrets = window.findChild(QCheckBox, "checkAllowSecrets")
         self.btnPublish = window.findChild(QPushButton, "btnPublish")
+        if self.comboPublishBranch is not None:
+            # Allow picking common names or typing a custom branch
+            self.comboPublishBranch.setEditable(True)
+            self.comboPublishBranch.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
 
         # --- clone ---
         self.editCloneUrl = window.findChild(QLineEdit, "editCloneUrl")
@@ -260,6 +267,7 @@ class MainController(QObject):
                 "labelTabIntroPublish",
                 "내 컴퓨터 폴더를 GitHub에 처음 올립니다.",
                 "• 먼저 위쪽 「GitHub: 연결」에서 키를 연결하세요.\n"
+                "• branch 는 보통 main 입니다. 필요하면 목록에서 고르거나 직접 입력하세요.\n"
                 "• 「커밋에 내 이메일 숨기기」를 켜 두면 학교·회사 메일이 안 남습니다.\n"
                 "• 공개 저장소는 누구나 볼 수 있고, 되돌리기 어렵습니다.\n"
                 "• .env 같은 비밀 파일 후보는 기본적으로 올리지 않습니다.",
@@ -344,6 +352,7 @@ class MainController(QObject):
             self.comboRecent,
             self.editFolder,
             self.editRepoName,
+            self.comboPublishBranch,
             self.editCommitMessage,
             self.radioPublic,
             self.radioPrivate,
@@ -567,6 +576,13 @@ class MainController(QObject):
             self.radioPrivate.setChecked(True)
         elif self.radioPublic is not None:
             self.radioPublic.setChecked(True)
+        if self.comboPublishBranch is not None:
+            br = load_last_publish_branch()
+            idx = self.comboPublishBranch.findText(br)
+            if idx >= 0:
+                self.comboPublishBranch.setCurrentIndex(idx)
+            else:
+                self.comboPublishBranch.setEditText(br)
         hide = load_hide_real_email()
         if self.checkHideEmail is not None:
             self.checkHideEmail.setChecked(hide)
@@ -582,6 +598,12 @@ class MainController(QObject):
                     break
         if self.editCloneParent is not None and not self.editCloneParent.text():
             self.editCloneParent.setText(str(Path.home() / "Desktop"))
+
+    def _publish_branch_name(self) -> str:
+        """Current branch field value for first publish (default main)."""
+        if self.comboPublishBranch is None:
+            return "main"
+        return (self.comboPublishBranch.currentText() or "").strip() or "main"
 
     def _reload_recent_combo(self) -> None:
         if self.comboRecent is None:
@@ -1042,9 +1064,19 @@ class MainController(QObject):
             self.editRepoName.setText(name)
 
         # H1: create .git (+ default .gitignore) before safety so gitignore applies
-        from app.git.publish import PublishError, ensure_repo_for_safety
+        from app.git.publish import (
+            PublishError,
+            ensure_repo_for_safety,
+            resolve_publish_branch,
+        )
 
         root = path.resolve()
+        try:
+            branch = resolve_publish_branch(self._publish_branch_name())
+        except PublishError as e:
+            QMessageBox.warning(self.window, "branch", str(e))
+            return
+
         need_git_prep = not (root / ".git").exists()
         if need_git_prep:
             # Surprise prevention (P3): prep happens before G3 confirm
@@ -1053,7 +1085,8 @@ class MainController(QObject):
                 "폴더 준비",
                 "올리기 전에 이 폴더를 Git 저장소로 준비합니다.\n\n"
                 "· .git 폴더가 생깁니다\n"
-                "· .gitignore 가 없으면 기본 목록을 만듭니다\n\n"
+                "· .gitignore 가 없으면 기본 목록을 만듭니다\n"
+                f"· 첫 branch: {branch}\n\n"
                 "확인 창에서 취소해도 위 준비는 이미 남습니다.\n"
                 "계속할까요?",
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
@@ -1064,7 +1097,7 @@ class MainController(QObject):
                 return
 
         try:
-            ensure_repo_for_safety(root, write_gitignore=True)
+            ensure_repo_for_safety(root, write_gitignore=True, branch=branch)
         except PublishError as e:
             QMessageBox.warning(self.window, "CloneUp", str(e))
             return
@@ -1074,7 +1107,7 @@ class MainController(QObject):
             )
             return
         if need_git_prep:
-            self._log("안내: 이 폴더에 .git 준비를 마쳤습니다.")
+            self._log(f"안내: 이 폴더에 .git 준비를 마쳤습니다 (branch {branch}).")
 
         report = run_safety_checks(
             root, allow_secrets=allow, write_gitignore=False
@@ -1105,9 +1138,13 @@ class MainController(QObject):
         self._reload_recent_combo()
         save_last_private(private)
         save_last_commit_message(msg)
+        save_last_publish_branch(branch)
         save_hide_real_email(hide_email)
 
-        self._log(f"--- Publish: {name} ({'private' if private else 'public'}) ---")
+        self._log(
+            f"--- Publish: {name} ({'private' if private else 'public'}, "
+            f"branch {branch}) ---"
+        )
         w = PublishWorker(
             folder=str(root),
             repo_name=name,
@@ -1115,6 +1152,7 @@ class MainController(QObject):
             private=private,
             allow_secrets=allow,
             hide_real_email=hide_email,
+            default_branch=branch,
             parent=self,
         )
         w.succeeded.connect(self._on_publish_ok)

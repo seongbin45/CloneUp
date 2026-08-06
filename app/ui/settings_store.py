@@ -81,3 +81,16 @@ def load_hide_real_email() -> bool:
 
 def save_hide_real_email(hide: bool) -> None:
     _settings().setValue("hide_real_email", bool(hide))
+
+
+def load_last_publish_branch() -> str:
+    """Default branch for first publish (usually main)."""
+    val = _settings().value("last_publish_branch", "main")
+    s = str(val).strip() if val else "main"
+    return s or "main"
+
+
+def save_last_publish_branch(branch: str) -> None:
+    b = (branch or "").strip()
+    if b:
+        _settings().setValue("last_publish_branch", b)

@@ -150,21 +150,69 @@ _write_credential_file = write_credential_file
 _credential_helper_configs = credential_helper_configs
 
 
-def _init_repo_main(folder: Path) -> None:
-    """git init with default branch main (2.28+ or symbolic-ref fallback)."""
+def resolve_publish_branch(raw: str | None) -> str:
+    """Validate publish branch; empty → main."""
+    from app.git.clone_ops import CloneError, validate_branch_name
+
+    name = (raw or "").strip() or "main"
+    try:
+        validated = validate_branch_name(name)
+    except CloneError as e:
+        raise PublishError(str(e)) from e
+    return validated or "main"
+
+
+def _init_repo(folder: Path, *, branch: str = "main") -> None:
+    """git init with default branch (2.28+ ``-b`` or symbolic-ref fallback)."""
+    branch = resolve_publish_branch(branch)
     _, ver = require_git()
     major, minor, _ = ver
     if (major, minor) >= (2, 28):
-        run_git(["init", "-b", "main"], cwd=str(folder), check=True)
+        run_git(["init", "-b", branch], cwd=str(folder), check=True)
         return
     run_git(["init"], cwd=str(folder), check=True)
-    run_git(["symbolic-ref", "HEAD", "refs/heads/main"], cwd=str(folder), check=True)
+    run_git(
+        ["symbolic-ref", "HEAD", f"refs/heads/{branch}"],
+        cwd=str(folder),
+        check=True,
+    )
+
+
+# Back-compat alias
+_init_repo_main = _init_repo
+
+
+def ensure_publish_branch(folder: Path, branch: str) -> str:
+    """
+    Make HEAD the chosen branch name before first commit/push.
+
+    - No commits yet: point symbolic-ref at refs/heads/<branch>
+    - Has commits: ``git branch -M <branch>`` (rename current)
+    """
+    branch = resolve_publish_branch(branch)
+    folder = folder.expanduser().resolve()
+    head = run_git(["rev-parse", "--verify", "HEAD"], cwd=str(folder), check=False)
+    if head.returncode != 0:
+        run_git(
+            ["symbolic-ref", "HEAD", f"refs/heads/{branch}"],
+            cwd=str(folder),
+            check=True,
+        )
+        return branch
+    cur = run_git(["branch", "--show-current"], cwd=str(folder), check=False)
+    current = (cur.stdout or "").strip()
+    if current == branch:
+        return branch
+    # Rename current branch (covers ensure_repo that defaulted to main)
+    run_git(["branch", "-M", branch], cwd=str(folder), check=True)
+    return branch
 
 
 def ensure_repo_for_safety(
     folder: Path,
     *,
     write_gitignore: bool = True,
+    branch: str = "main",
 ) -> bool:
     """
     Ensure ``.git`` exists *before* safety scans (H1 / re-review).
@@ -182,14 +230,20 @@ def ensure_repo_for_safety(
     if not folder.is_dir():
         raise PublishError(f"폴더가 없습니다: {folder}")
     require_git()
+    branch = resolve_publish_branch(branch)
     created = False
     if not (folder / ".git").exists():
-        _init_repo_main(folder)
+        _init_repo(folder, branch=branch)
         created = True
+    else:
+        # Align branch name early when still unborn / first push prep
+        try:
+            ensure_publish_branch(folder, branch)
+        except (GitError, PublishError):
+            pass
     if write_gitignore:
         ensure_gitignore(folder, write_if_missing=True)
     return created
-
 
 def _has_staged_changes(folder: Path) -> bool:
     # diff --cached --quiet: exit 1 if differences, 0 if empty
@@ -216,6 +270,7 @@ def publish_local_to_existing_remote(
     commit_message: str = "첫 업로드",
     allow_secrets: bool = False,
     hide_real_email: bool = False,
+    default_branch: str = "main",
 ) -> PublishResult:
     """
     Init (if needed) → safety (git-aware) → add → commit → origin → push.
@@ -227,6 +282,7 @@ def publish_local_to_existing_remote(
         raise PublishError(f"지원하지 않는 clone_url: {clone_url}")
 
     require_git()
+    branch = resolve_publish_branch(default_branch)
 
     git_dir = folder / ".git"
     if git_dir.exists():
@@ -238,7 +294,8 @@ def publish_local_to_existing_remote(
                 "새로 만들려면 다른 폴더를 쓰거나, 「동기화」탭에서 올리고 보내기를 사용하세요."
             )
     # Init + default .gitignore *before* safety (publish primary path)
-    ensure_repo_for_safety(folder, write_gitignore=True)
+    ensure_repo_for_safety(folder, write_gitignore=True, branch=branch)
+    ensure_publish_branch(folder, branch)
 
     safety = run_safety_checks(
         folder,
@@ -256,6 +313,7 @@ def publish_local_to_existing_remote(
         print("작성자 정보: 이번 저장에만 적용 (PC Git 설정은 그대로)")
     else:
         print("작성자 정보: 이 PC Git 설정 사용")
+    print(f"branch: {branch}")
 
     run_git(["add", "-A"], cwd=str(folder), check=True)
     if not _has_staged_changes(folder):
@@ -331,6 +389,7 @@ def publish_folder_to_new_repo(
     allow_secrets: bool = False,
     private: bool = True,
     hide_real_email: bool = False,
+    default_branch: str = "main",
 ) -> PublishResult:
     """Create empty GitHub repo (public or private) then push local history."""
     from app.github.api_client import GitHubAPIError
@@ -366,4 +425,5 @@ def publish_folder_to_new_repo(
         commit_message=commit_message,
         allow_secrets=allow_secrets,
         hide_real_email=hide_real_email,
+        default_branch=default_branch,
     )

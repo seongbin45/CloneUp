@@ -250,6 +250,70 @@
          </layout>
         </item>
         <item>
+         <layout class="QHBoxLayout" name="branchLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="labelPublishBranch">
+            <property name="text">
+             <string>branch</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>90</width>
+              <height>0</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="comboPublishBranch">
+            <property name="editable">
+             <bool>true</bool>
+            </property>
+            <property name="currentText">
+             <string>main</string>
+            </property>
+            <property name="toolTip">
+             <string>GitHub에 올릴 첫 branch 이름입니다. 보통 main 을 씁니다.</string>
+            </property>
+            <item>
+             <property name="text">
+              <string>main</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>master</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>develop</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item>
+           <spacer name="publishBranchSpacer">
+            <property name="orientation">
+             <enum>Qt::Orientation::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+        <item>
          <layout class="QHBoxLayout" name="messageLayout">
           <property name="spacing">
            <number>10</number>
