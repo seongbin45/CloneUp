@@ -25,10 +25,12 @@ from app.git.publish import preview_commit_email
 from app.git.runner import GitError, require_git
 from app.git.safety import (
     find_secret_candidates,
+    format_content_secret_list,
     format_pii_list,
     format_secret_list,
     run_safety_checks,
     scan_pii_in_contents,
+    scan_secret_in_contents,
 )
 from app.git.url_utils import UrlError, normalize_github_clone_url
 from app.auth.token_store import delete_token, load_token
@@ -894,26 +896,32 @@ class MainController(QObject):
             vis_risk = "원격에 올라가면 권한 있는 사람(또는 공개 시 누구나)이 볼 수 있습니다."
 
         secrets = find_secret_candidates(folder)
-        if secrets:
-            listing = format_secret_list(secrets)
+        content_secrets = scan_secret_in_contents(folder)
+        if secrets or content_secrets:
+            listing_parts: list[str] = []
+            if secrets:
+                listing_parts.append(format_secret_list(secrets))
+            if content_secrets:
+                listing_parts.append(format_content_secret_list(content_secrets))
+            listing = "\n".join(p for p in listing_parts if p)
             if not allow_secrets:
                 QMessageBox.warning(
                     self.window,
                     "올릴 수 없음",
-                    "비밀처럼 보이는 파일이 있어 막았습니다.\n\n"
+                    "비밀처럼 보이는 파일·내용이 있어 막았습니다.\n\n"
                     f"{listing}\n\n"
-                    "1) 파일을 빼거나 이름 바꾸기\n"
+                    "1) 파일을 빼거나 키/비밀번호를 지우기\n"
                     "2) 정말 필요하면 「비밀 파일도 진행 (고급)」을 켠 뒤 다시\n\n"
-                    "참고: .env.example 같은 샘플 이름도 걸릴 수 있습니다.",
+                    "참고: .env.example · 예제 키 문자열도 걸릴 수 있습니다.",
                 )
                 self._log(
-                    "다음: 비밀 파일을 빼거나, 「비밀 파일도 진행 (고급)」을 켠 뒤 다시"
+                    "다음: 비밀 파일/키를 빼거나, 「비밀 파일도 진행 (고급)」을 켠 뒤 다시"
                 )
                 return False
             parts.append(
-                "【비밀 파일 — 고급 허용】\n"
+                "【비밀 — 고급 허용】\n"
                 f"{listing}\n"
-                "내용에 실제 비밀번호가 없는지 확인하세요."
+                "내용에 실제 비밀번호·키가 없는지 확인하세요."
             )
 
         # Content PII (phone/email) — keep short for readability
@@ -935,7 +943,7 @@ class MainController(QObject):
             )
         )
 
-        if not secrets and not pii_hits:
+        if not secrets and not content_secrets and not pii_hits:
             # Clean path: short confirm
             body = (
                 f"{vis_short}로 올립니다.\n"

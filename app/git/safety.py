@@ -1,7 +1,7 @@
 """Pre-publish safety checks for beginner-friendly defaults.
 
-Secret *filenames* + file-*content* PII patterns (cross-check:
-Command-to-commit-changes-from-Git README / anonymize.py).
+Secret *filenames* + file-*content* PII / known secret patterns
+(cross-check: Command-to-commit-changes-from-Git README / anonymize.py + M4).
 """
 
 from __future__ import annotations
@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from app.util.log_mask import mask_secrets_in_text
 
 # Minimal template written when the folder has no .gitignore
 DEFAULT_GITIGNORE = """\
@@ -105,6 +107,7 @@ _SKIP_DIRS = {
 _MAX_FILE_BYTES = 512 * 1024
 _MAX_FILES_SCANNED = 2000
 _MAX_PII_HITS = 40
+_MAX_CONTENT_SECRET_HITS = 40
 
 # Soft-ignore obvious non-personal emails (examples / tooling)
 _EMAIL_IGNORE_SUBSTR = (
@@ -122,12 +125,46 @@ _EMAIL_IGNORE_SUBSTR = (
     "githubusercontent.com",
 )
 
+# M4 — high-confidence secret *content* (not just filename)
+_CONTENT_SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "github_token",
+        re.compile(r"\b(gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"),
+    ),
+    ("aws_access_key", re.compile(r"\b(AKIA[0-9A-Z]{16})\b")),
+    (
+        "private_key",
+        re.compile(
+            r"-----BEGIN (?:RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY-----"
+        ),
+    ),
+    ("slack_token", re.compile(r"\b(xox[baprs]-[A-Za-z0-9-]{10,})\b")),
+    ("stripe_key", re.compile(r"\b(sk_live_[A-Za-z0-9]{20,}|sk_test_[A-Za-z0-9]{20,})\b")),
+    ("google_api_key", re.compile(r"\b(AIza[0-9A-Za-z_-]{30,})\b")),
+]
+
+_CONTENT_SECRET_KIND_KO = {
+    "github_token": "GitHub 키",
+    "aws_access_key": "AWS 키",
+    "private_key": "개인 키 파일 내용",
+    "slack_token": "Slack 토큰",
+    "stripe_key": "Stripe 키",
+    "google_api_key": "Google API 키",
+}
+
 
 @dataclass(frozen=True)
 class PiiHit:
     path: str  # relative posix
     kind: str  # "phone" | "email"
     sample: str  # matched text (masked for display if needed)
+
+
+@dataclass(frozen=True)
+class ContentSecretHit:
+    path: str
+    kind: str  # see _CONTENT_SECRET_PATTERNS
+    sample: str  # already masked for UI/logs
 
 
 @dataclass
@@ -137,6 +174,7 @@ class SafetyReport:
     warnings: list[str] = field(default_factory=list)
     secret_candidates: list[str] = field(default_factory=list)
     pii_hits: list[PiiHit] = field(default_factory=list)
+    content_secret_hits: list[ContentSecretHit] = field(default_factory=list)
     wrote_gitignore: bool = False
 
 
@@ -268,6 +306,87 @@ def format_pii_list(hits: list[PiiHit], *, limit: int = 15) -> str:
     return "\n".join(lines)
 
 
+def _mask_secret_sample(raw: str) -> str:
+    """Never put full secrets into UI lists."""
+    s = (raw or "").strip()
+    if not s:
+        return "***"
+    masked = mask_secrets_in_text(s)
+    if masked != s:
+        return masked
+    if len(s) <= 8:
+        return "***"
+    return f"{s[:3]}…{s[-2:]} (len={len(s)})"
+
+
+def scan_secret_in_contents(folder: Path) -> list[ContentSecretHit]:
+    """
+    Scan text file bodies for known high-confidence secret shapes (M4).
+
+    Soft for G3 listing; hard-block when allow_secrets is False (same as .env names).
+    """
+    root = folder.resolve()
+    hits: list[ContentSecretHit] = []
+    seen: set[tuple[str, str, str]] = set()
+    files_seen = 0
+
+    for dirpath, dirnames, filenames in os_walk_skip(root):
+        dirnames[:] = [d for d in dirnames if not _should_skip_dir(d)]
+        for name in filenames:
+            if files_seen >= _MAX_FILES_SCANNED or len(hits) >= _MAX_CONTENT_SECRET_HITS:
+                return hits
+            ext = Path(name).suffix.lower()
+            if ext in _BINARY_EXTENSIONS:
+                continue
+            path = Path(dirpath) / name
+            if not path.is_file():
+                continue
+            try:
+                if path.stat().st_size > _MAX_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
+            files_seen += 1
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                continue
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+
+            rel = path.relative_to(root).as_posix()
+            for kind, pattern in _CONTENT_SECRET_PATTERNS:
+                for m in pattern.finditer(text):
+                    sample_raw = m.group(0)
+                    sample = _mask_secret_sample(sample_raw)
+                    key = (rel, kind, sample)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    hits.append(
+                        ContentSecretHit(path=rel, kind=kind, sample=sample)
+                    )
+                    if len(hits) >= _MAX_CONTENT_SECRET_HITS:
+                        return hits
+    return hits
+
+
+def format_content_secret_list(
+    hits: list[ContentSecretHit], *, limit: int = 15
+) -> str:
+    if not hits:
+        return ""
+    lines: list[str] = []
+    for h in hits[:limit]:
+        label = _CONTENT_SECRET_KIND_KO.get(h.kind, h.kind)
+        lines.append(f"  · [{label}] {h.sample}  ← {h.path}")
+    if len(hits) > limit:
+        lines.append(f"  · … 외 {len(hits) - limit}건")
+    return "\n".join(lines)
+
+
 def ensure_gitignore(folder: Path, *, write_if_missing: bool = True) -> bool:
     """Return True if a new .gitignore was written."""
     gi = folder / ".gitignore"
@@ -315,6 +434,25 @@ def run_safety_checks(
     elif secrets:
         report.warnings.append(
             f"--allow-secrets: 다음 파일이 포함될 수 있습니다: {', '.join(secrets)}"
+        )
+
+    # M4 — secret-looking *content* (tokens, private keys, …)
+    content_secrets = scan_secret_in_contents(folder)
+    report.content_secret_hits = content_secrets
+    if content_secrets and not allow_secrets:
+        report.ok = False
+        listing = ", ".join(
+            f"{h.path}({_CONTENT_SECRET_KIND_KO.get(h.kind, h.kind)})"
+            for h in content_secrets[:12]
+        )
+        report.errors.append(
+            "파일 내용에 비밀처럼 보이는 값이 있습니다. 제거하거나 "
+            f"--allow-secrets 로 명시 확인하세요: {listing}"
+        )
+    elif content_secrets:
+        report.warnings.append(
+            f"--allow-secrets: 내용 비밀 후보 {len(content_secrets)}건이 "
+            "포함될 수 있습니다."
         )
 
     if scan_pii:

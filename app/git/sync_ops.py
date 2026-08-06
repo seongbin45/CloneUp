@@ -12,7 +12,7 @@ from app.git.credentials import (
 )
 from app.git.publish import resolve_commit_identity
 from app.git.runner import require_git, run_git
-from app.git.safety import find_secret_candidates
+from app.git.safety import find_secret_candidates, scan_secret_in_contents
 
 
 class SyncError(Exception):
@@ -248,10 +248,18 @@ def commit_and_push(
         )
 
     secrets = find_secret_candidates(folder)
-    if secrets and not allow_secrets:
+    content_secrets = scan_secret_in_contents(folder)
+    if (secrets or content_secrets) and not allow_secrets:
+        bits: list[str] = []
+        if secrets:
+            bits.append(", ".join(secrets))
+        if content_secrets:
+            bits.append(
+                ", ".join(f"{h.path}({h.kind})" for h in content_secrets[:12])
+            )
         raise SyncError(
-            "비밀 파일로 보이는 항목이 있습니다:\n"
-            + ", ".join(secrets)
+            "비밀 파일·내용으로 보이는 항목이 있습니다:\n"
+            + "\n".join(bits)
             + "\n파일을 빼거나, 「비밀 파일도 커밋 (고급)」을 켠 뒤 다시 시도하세요."
         )
 

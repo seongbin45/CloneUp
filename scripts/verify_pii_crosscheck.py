@@ -93,6 +93,11 @@ def main() -> int:
         "call 010-9999-8888 or real@univ.ac.kr and ignore@example.com\n",
         encoding="utf-8",
     )
+    (td / "leaked.txt").write_text(
+        "token = ghp_abcdefghijklmnopqrstuvwxyz012345\n"
+        "aws = AKIAIOSFODNN7EXAMPLE\n",
+        encoding="utf-8",
+    )
     (td / "img.png").write_bytes(b"\x89PNG fake 010-1111-2222")
     hidden = td / ".cache"
     hidden.mkdir()
@@ -121,9 +126,37 @@ def main() -> int:
     secrets = s.find_secret_candidates(td)
     check("filename secret .env", ".env" in secrets, str(secrets))
 
+    csec = s.scan_secret_in_contents(td)
+    csec_kinds = {h.kind for h in csec}
+    check(
+        "content secret github_token",
+        "github_token" in csec_kinds,
+        str(csec_kinds),
+    )
+    check(
+        "content secret aws_access_key",
+        "aws_access_key" in csec_kinds,
+        str(csec_kinds),
+    )
+    check(
+        "content secret samples masked",
+        all("ghp_abcdefgh" not in h.sample for h in csec),
+        str([h.sample for h in csec]),
+    )
+
     rep_block = s.run_safety_checks(td, allow_secrets=False, write_gitignore=False)
     check("blocks without allow_secrets on .env", not rep_block.ok)
+    check(
+        "blocks content secrets without allow",
+        any("내용" in e or "비밀" in e for e in rep_block.errors),
+        str(rep_block.errors),
+    )
     check("pii_hits on report", len(rep_block.pii_hits) >= 1, str(len(rep_block.pii_hits)))
+    check(
+        "content_secret_hits on report",
+        len(rep_block.content_secret_hits) >= 1,
+        str(len(rep_block.content_secret_hits)),
+    )
 
     rep_allow = s.run_safety_checks(td, allow_secrets=True, write_gitignore=False)
     check("allows with allow_secrets", rep_allow.ok)
@@ -136,6 +169,10 @@ def main() -> int:
     src = inspect.getsource(MainController._confirm_upload_g3)
     check("G3 calls scan_pii_in_contents", "scan_pii_in_contents" in src)
     check("G3 calls find_secret_candidates", "find_secret_candidates" in src)
+    check(
+        "G3 calls scan_secret_in_contents",
+        "scan_secret_in_contents" in src,
+    )
     # Copy shortened for beginners — match current G3 wording, not old phrases
     check(
         "G3 shows content PII copy",

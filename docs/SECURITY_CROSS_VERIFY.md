@@ -13,7 +13,7 @@
 |------|------|------|
 | **Critical** | 0 | 원격 임의 코드 실행·기본 경로 Device Flow 토큰 가로채기 등 없음 |
 | **High** | 0 | H1 lite 적용: HTTPS host allowlist + PE + Authenticode |
-| **Medium** | 3 | scope 추정·내용 시크릿 미탐지·allow_secrets soft 등 (잔여) |
+| **Medium** | 1 | allow_secrets soft (의도) |
 | **Low** | 5 | 클립보드 PAT·unsigned 배포·PII soft 등 |
 | **강점 (PASS)** | 12+ | 설계 문서와 코드 일치하는 핵심 통제 |
 
@@ -104,21 +104,19 @@
 | **위치** | `log_mask.py` · `runner.run_git` |
 | **적용** | 토큰 전체 `*** (len=N)` · `x-access-token:` · Bearer · URL userinfo 마스킹 · `GitError.stderr` 마스킹 저장. |
 
-### M3 — Medium: Fine-grained PAT scope 추정 저장
+### M3 — ~~Medium~~ → **완화**
 
 | | |
 |--|--|
-| **위치** | `session.login_with_pat` — `X-OAuth-Scopes` 비어 있으면 `store_scope = want` |
-| **내용** | 실제 권한이 더 좁아도 keyring에 `repo` 등이 있다고 기록될 수 있음 → 이후 `has_scope` 가 낙관적. 실제 API/git 단계에서 실패. |
-| **권장** | 헤더 없으면 scope를 비우거나 `unknown` 처리; 작업 직전 API로 재확인. |
+| **위치** | `token_store.SCOPE_UNKNOWN` · `login_with_pat` · `ensure_valid_token` · `auth_status` |
+| **적용** | 헤더 비면 `unknown` 저장 (repo 추정 안 함). `scopes_known()`일 때만 pre-check. UI는 연결됨 + 권한 미확인 툴팁. |
 
-### M4 — Medium: 파일 **내용** 시크릿 미탐지
+### M4 — ~~Medium~~ → **완화**
 
 | | |
 |--|--|
-| **위치** | `safety.py` |
-| **내용** | 파일명 패턴 + 전화/이메일. AWS 키·`ghp_` in source·Slack token 등 **내용 시크릿 스캐너 없음**. |
-| **권장** | 공통 high-entropy / known-prefix 시크릿 휴리스틱 (G3 soft 또는 hard). |
+| **위치** | `safety.scan_secret_in_contents` · G3 · sync |
+| **적용** | GitHub/AWS/Slack/Stripe/Google 키 · PEM private key 내용 탐지. 샘플 마스킹. `allow_secrets` 없으면 차단. |
 
 ### M5 — Medium: `allow_secrets` 우회는 사용자 선택
 
@@ -186,10 +184,9 @@ scripts/verify_pii_crosscheck.py  →  기대 26/26 PASS (G3 문구 동기화 �
 
 | 순위 | 항목 | 노력 |
 |------|------|------|
-| 1 | **M4** 내용 시크릿 휴리스틱 (soft) | 중 |
-| 2 | **M3** fine-grained scope unknown 처리 | 소 |
-| 3 | H1 고정 SHA256 핀 (릴리스 자동화와 함께) | 중 |
-| 4 | P2 코드 서명 (배포 신뢰) | 비용 |
+| 1 | H1 고정 SHA256 핀 (릴리스 자동화와 함께) | 중 |
+| 2 | P2 코드 서명 (배포 신뢰) | 비용 |
+| 3 | 내용 시크릿 패턴 확장 (오탐 모니터링) | 소 |
 
 ---
 

@@ -19,6 +19,10 @@ CONNECTED_AT_USERNAME = "github_token_connected_at"
 AUTH_KIND_DEVICE = "device"
 AUTH_KIND_PAT = "pat"
 
+# Stored when GitHub omits X-OAuth-Scopes (common for fine-grained PATs).
+# Must NOT be replaced with a guessed "repo" — that was a false confidence bug (M3).
+SCOPE_UNKNOWN = "unknown"
+
 # Soft reminders (days since connect). Not exact GitHub expiry.
 WARN_DAYS_SOFT = 30
 WARN_DAYS_STRONG = 60
@@ -208,15 +212,35 @@ def _delete_key(username: str) -> None:
         pass
 
 
+def is_scope_unknown(scope: str | None = None) -> bool:
+    """
+    True when we do not know classic OAuth scopes for this token.
+
+    Fine-grained PATs often send an empty X-OAuth-Scopes header. We store
+    ``SCOPE_UNKNOWN`` instead of inventing ``repo``.
+    """
+    raw = load_scope() if scope is None else scope
+    if raw is None:
+        return True
+    s = raw.strip().lower()
+    return s in ("", SCOPE_UNKNOWN, "__unknown__")
+
+
+def scopes_known() -> bool:
+    """False when scope is missing/unknown — skip optimistic pre-checks."""
+    return not is_scope_unknown()
+
+
 def has_scope(required: str) -> bool:
     """
     Return True if the stored grant appears to include `required`.
 
-    GitHub returns space-separated scopes. Unknown/missing stored scope → False
-    so callers re-auth rather than guessing.
+    GitHub returns space-separated scopes.
+    Unknown/missing stored scope → False (do not claim a permission we cannot prove).
+    Callers that only need "token exists" should use ``scopes_known()`` / skip this gate.
     """
     granted = load_scope()
-    if granted is None:
+    if granted is None or is_scope_unknown(granted):
         return False
     parts = set(granted.split())
     if required in parts:

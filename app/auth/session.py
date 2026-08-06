@@ -6,12 +6,14 @@ from app.auth.device_flow import DeviceFlowError, run_device_flow
 from app.auth.token_store import (
     AUTH_KIND_DEVICE,
     AUTH_KIND_PAT,
+    SCOPE_UNKNOWN,
     delete_token,
     has_scope,
     load_auth_kind,
     load_scope,
     load_token,
     save_token,
+    scopes_known,
 )
 from app.config import (
     get_github_client_id,
@@ -158,12 +160,12 @@ def login_with_pat(token: str) -> tuple[str, dict]:
                 raise AuthError(format_missing_repo_scope_error(header_scopes))
         store_scope = header_scopes
     else:
-        # Fine-grained PAT often omits X-OAuth-Scopes.
+        # Fine-grained PAT often omits X-OAuth-Scopes — never invent "repo" (M3).
         print(
             "X-OAuth-Scopes 비어 있음 → "
-            f"scope를 {want!r} 로 저장 (권한 부족 시 이후 작업에서 실패할 수 있음)"
+            f"scope={SCOPE_UNKNOWN!r} 저장 (세분 키 가능 · 권한은 작업 시 확인)"
         )
-        store_scope = want or "repo"
+        store_scope = SCOPE_UNKNOWN
 
     save_token(cleaned, store_scope, auth_kind=AUTH_KIND_PAT)
     print(f"키 저장됨 (masked): {mask_token(cleaned)}")
@@ -213,7 +215,9 @@ def ensure_valid_token(
         print("저장된 토큰 없음 → 자동 Device Flow 하지 않음")
         raise AuthError(LOGIN_REQUIRED_MSG)
 
-    if needed and not all(has_scope(s) for s in needed):
+    # Only enforce scope gate when classic scopes are known. Fine-grained /
+    # unknown → allow through; API/git will fail with a clear error if rights lack.
+    if needed and scopes_known() and not all(has_scope(s) for s in needed):
         # Do not silently re-auth via public client_id.
         print(
             f"저장된 scope {load_scope()!r} 가 필요 권한 {want!r} 보다 좁음"
@@ -232,14 +236,22 @@ def ensure_valid_token(
         delete_token()
         raise AuthError(TOKEN_EXPIRED_MSG) from e
 
-    # Backfill scope from API header if keyring only had a token (pre-scope store).
+    # Backfill / refresh classic scopes from API when present.
     header_scopes = user.get("_oauth_scopes")
-    if header_scopes is not None and load_scope() is None:
-        save_token(token, header_scopes)
-        print(f"  scope backfill from X-OAuth-Scopes: {header_scopes!r}")
-        if needed and not all(has_scope(s) for s in needed):
-            raise AuthError(
-                format_missing_repo_scope_error(header_scopes or load_scope() or "")
-            )
+    if header_scopes is not None:
+        header_stripped = (header_scopes or "").strip()
+        current = load_scope()
+        if header_stripped:
+            if current != header_stripped:
+                save_token(token, header_stripped)
+                print(f"  scope from X-OAuth-Scopes: {header_stripped!r}")
+            if needed and not all(has_scope(s) for s in needed):
+                raise AuthError(
+                    format_missing_repo_scope_error(header_stripped)
+                )
+        elif current is None or (current or "").strip() == "":
+            # Empty header + no stored scope → mark unknown (not invent repo)
+            save_token(token, SCOPE_UNKNOWN)
+            print(f"  scope backfill → {SCOPE_UNKNOWN!r} (header empty)")
 
     return token, user

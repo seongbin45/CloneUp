@@ -11,6 +11,7 @@ from app.auth.token_store import (
     AUTH_KIND_DEVICE,
     AUTH_KIND_PAT,
     has_scope,
+    is_scope_unknown,
     load_auth_kind,
     load_scope,
     load_token,
@@ -125,8 +126,37 @@ class AuthStatusButton(QObject):
         store_note = "저장: 이 컴퓨터 안에만 (다른 사람에게 공유되지 않음)"
         age = token_age_info()
 
+        who = self._login or "계정"
+        # Fine-grained / unknown scopes: connected, but do not claim "repo" (M3).
+        if is_scope_unknown(scope):
+            if age.level in ("stale", "strong"):
+                self._state = AuthState.TOKEN_AGING
+                label = age.status_line or "키 확인 권장"
+                self.button.setText(f"●  GitHub: {label} ({who})")
+            else:
+                self._state = AuthState.LOGGED_IN
+                self.button.setText(f"●  GitHub: 연결됨 ({who})")
+            self.button.setStyleSheet(
+                _status_button_style(
+                    p,
+                    emphasis=p.warn_dot
+                    if age.level in ("stale", "strong")
+                    else p.success_dot,
+                )
+            )
+            self.button.setToolTip(
+                f"계정={who}\n"
+                f"방식={kind_txt}\n"
+                "권한=GitHub이 목록을 안 알려 줌 (세분 키 가능)\n"
+                "올리기/받기가 실패하면 키 권한(repo 또는 저장소 접근)을 확인하세요.\n"
+                f"키={mask_token(token)}\n"
+                f"{store_note}\n"
+                f"{age.tooltip_extra}\n"
+                "클릭하면 새 키로 다시 연결합니다."
+            )
+            return
+
         if has_scope("repo"):
-            who = self._login or "계정"
             if age.level in ("stale", "strong"):
                 self._state = AuthState.TOKEN_AGING
                 label = age.status_line or "키 확인 권장"
@@ -152,7 +182,6 @@ class AuthStatusButton(QObject):
             return
 
         self._state = AuthState.SCOPE_INSUFFICIENT
-        who = self._login or "계정"
         self.button.setText(f"●  GitHub: 권한 부족 ({who})")
         self.button.setStyleSheet(
             _status_button_style(p, emphasis=p.warn_dot)
