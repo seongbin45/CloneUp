@@ -1605,18 +1605,18 @@ class MainController(QObject):
         behind = st.get("behind")
 
         if conflict:
-            self._add_sync_chip("●  변경 겹침", "bad")
+            self._add_sync_chip("●  변경이 겹침", "bad")
         if has_origin:
-            self._add_sync_chip("●  GitHub 연결", "ok")
+            self._add_sync_chip("●  GitHub에 연결됨", "ok")
         else:
-            self._add_sync_chip("○  GitHub 없음", "muted")
+            self._add_sync_chip("○  GitHub에 연결 안 됨", "muted")
 
         if conflict:
             pass  # local dirty is secondary
         elif dirty:
-            self._add_sync_chip("●  로컬 변경", "warn")
+            self._add_sync_chip("●  올릴 변경 있음", "warn")
         else:
-            self._add_sync_chip("●  로컬 깨끗", "info")
+            self._add_sync_chip("●  새 변경 없음", "info")
 
         if has_origin and ahead is not None and behind is not None:
             try:
@@ -1627,11 +1627,11 @@ class MainController(QObject):
                 self._add_sync_chip("●  GitHub와 같음", "ok")
             else:
                 if a > 0:
-                    self._add_sync_chip(f"↑  보낼 커밋 {a}", "info")
+                    self._add_sync_chip(f"↑  보낼 내용 {a}개", "info")
                 if b > 0:
-                    self._add_sync_chip(f"↓  받을 커밋 {b}", "info")
+                    self._add_sync_chip(f"↓  받을 내용 {b}개", "info")
         elif has_origin:
-            self._add_sync_chip("·  비교 정보 없음", "muted")
+            self._add_sync_chip("·  비교할 수 없음", "muted")
 
     def _clear_sync_status_labels(self) -> None:
         if self.labelSyncBranch is not None:
@@ -1684,7 +1684,7 @@ class MainController(QObject):
                         "(.git 없음 — 「받기」/「만들고 올리기」먼저)"
                     )
                 self._clear_sync_chips()
-                self._add_sync_chip("○  Git 저장소 아님", "muted")
+                self._add_sync_chip("○  Git 폴더 아님", "muted")
                 if self.labelSyncStatus is not None:
                     self.labelSyncStatus.hide()
                 return
@@ -1732,7 +1732,7 @@ class MainController(QObject):
         if self.labelSyncBranch is not None:
             self.labelSyncBranch.setText("(확인 실패)")
         self._clear_sync_chips()
-        self._add_sync_chip("●  확인 실패", "bad")
+        self._add_sync_chip("●  상태를 읽지 못함", "bad")
         if self.labelSyncStatus is not None:
             self.labelSyncStatus.hide()
         if quiet:
