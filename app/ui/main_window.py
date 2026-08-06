@@ -216,6 +216,14 @@ class MainController(QObject):
         self.btnSyncRefresh = window.findChild(QPushButton, "btnSyncRefresh")
         self.labelSyncBranchTitle = window.findChild(QLabel, "labelSyncBranchTitle")
         self.labelSyncBranch = window.findChild(QLabel, "labelSyncBranch")
+        if self.labelSyncBranch is not None:
+            # Badge width follows text — do not stretch across the row
+            self.labelSyncBranch.setSizePolicy(
+                QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
+            )
+            self.labelSyncBranch.setAlignment(
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+            )
         self.labelSyncStatus = window.findChild(QLabel, "labelSyncStatus")
         self.labelSyncStatusTitle = window.findChild(QLabel, "labelSyncStatusTitle")
         self.frameSyncStatus = window.findChild(QFrame, "frameSyncStatus")
@@ -1611,21 +1619,25 @@ class MainController(QObject):
         else:
             self._add_sync_chip("○  GitHub에 연결 안 됨", "muted")
 
+        # Local working tree (uncommitted)
         if conflict:
-            pass  # local dirty is secondary
+            pass
         elif dirty:
             self._add_sync_chip("●  올릴 변경 있음", "warn")
         else:
-            # Filled (ok) so it reads as a clear positive, not a muted outline chip
             self._add_sync_chip("●  새 변경 없음", "ok")
 
+        # Commit vs origin — skip "같음" when local dirty so chips don't contradict
+        # (dirty + ahead/behind 0 = uncommitted files, remote tip still matches)
         if has_origin and ahead is not None and behind is not None:
             try:
                 a, b = int(ahead), int(behind)
             except (TypeError, ValueError):
                 a, b = 0, 0
             if a == 0 and b == 0:
-                self._add_sync_chip("●  GitHub와 같음", "ok")
+                if not dirty and not conflict:
+                    self._add_sync_chip("●  GitHub와 같음", "ok")
+                # if dirty: "올릴 변경 있음" already explains the situation
             else:
                 if a > 0:
                     self._add_sync_chip(f"↑  보낼 내용 {a}개", "info")

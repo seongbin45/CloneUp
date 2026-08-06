@@ -662,17 +662,18 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         font-size: 12.5px;
         margin-left: 102px;
     }}
-    /* Value next to form label (title is on the left) */
+    /* Branch value badge — content-sized, not full row width */
     QLabel#labelSyncBranch {{
         background: {BG_HINT};
         color: {TEXT};
         border: 1px solid {BORDER_SOFT};
         border-left: 4px solid {PRIMARY};
-        border-radius: 6px;
-        padding: 8px 14px;
+        border-radius: 8px;
+        padding: 8px 16px;
         font-size: 15px;
         font-weight: 600;
         min-height: 20px;
+        max-width: 280px;
     }}
     QFrame#frameSyncStatus {{
         background: transparent;
