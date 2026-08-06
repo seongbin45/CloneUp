@@ -149,7 +149,7 @@ def get_repo_status(folder: Path) -> RepoStatus:
             if len(parts) == 2:
                 ahead, behind = int(parts[0]), int(parts[1])
 
-    # Beginner-facing summary (branch is shown separately in UI as 「지금 branch」)
+    # Beginner-facing summary (branch is shown separately in UI as 「현재 branch」)
     bits: list[str] = []
 
     if has_origin:

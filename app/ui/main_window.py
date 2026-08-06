@@ -289,7 +289,7 @@ class MainController(QObject):
                 "labelTabIntroSync",
                 "이미 연결된 폴더의 변경사항을 주고받습니다.",
                 "• 이 폴더에 .git 이 있어야 합니다. 없으면 「받기」나 「만들고 올리기」를 먼저 하세요.\n"
-                "• 「지금 branch」에 이 폴더에서 작업 중인 branch가 보입니다.\n"
+                "• 「현재 branch」에 이 폴더에서 작업 중인 branch가 보입니다.\n"
                 "• 폴더를 고르거나 경로를 붙이면 상태가 자동으로 다시 읽힙니다.\n"
                 "• 올리기 전에 비밀 파일 후보가 있는지 확인하세요.",
             ),
@@ -1175,7 +1175,7 @@ class MainController(QObject):
         """Fill Sync folder field and switch to the Sync tab (V5 next step)."""
         if folder and self.editSyncFolder is not None:
             self.editSyncFolder.setText(str(folder))
-            # Auto-refresh so 「지금 branch」 is visible immediately
+            # Auto-refresh so 「현재 branch」 is visible immediately
             QTimer.singleShot(0, self.on_sync_refresh)
         if self.tabWidget is not None:
             # tab order in main_window.ui: 0 publish, 1 clone, 2 sync
@@ -1536,7 +1536,7 @@ class MainController(QObject):
     # ----- sync -----
     def _clear_sync_status_labels(self) -> None:
         if self.labelSyncBranch is not None:
-            self.labelSyncBranch.setText("지금 branch: (폴더를 선택하세요)")
+            self.labelSyncBranch.setText("현재 branch: (폴더를 선택하세요)")
         if self.labelSyncStatus is not None:
             self.labelSyncStatus.setText("상태: (폴더를 선택하세요)")
 
@@ -1546,14 +1546,14 @@ class MainController(QObject):
             return
         b = (branch or "").strip()
         if not b:
-            self.labelSyncBranch.setText("지금 branch: (알 수 없음)")
+            self.labelSyncBranch.setText("현재 branch: (알 수 없음)")
             return
         if b.startswith("("):
             self.labelSyncBranch.setText(
-                f"지금 branch: {b}  ·  특정 커밋만 가리키는 상태"
+                f"현재 branch: {b}  ·  특정 커밋만 가리키는 상태"
             )
         else:
-            self.labelSyncBranch.setText(f"지금 branch: {b}")
+            self.labelSyncBranch.setText(f"현재 branch: {b}")
 
     @Slot()
     def _on_sync_folder_text_changed(self, _text: str = "") -> None:
@@ -1582,7 +1582,7 @@ class MainController(QObject):
             if not (p / ".git").is_dir():
                 if self.labelSyncBranch is not None:
                     self.labelSyncBranch.setText(
-                        "지금 branch: (.git 없음 — 「받기」또는 「만들고 올리기」먼저)"
+                        "현재 branch: (.git 없음 — 「받기」또는 「만들고 올리기」먼저)"
                     )
                 if self.labelSyncStatus is not None:
                     self.labelSyncStatus.setText("상태: Git 저장소가 아닙니다")
@@ -1629,7 +1629,7 @@ class MainController(QObject):
     @Slot(str)
     def _on_sync_status_failed(self, message: str, *, quiet: bool = False) -> None:
         if self.labelSyncBranch is not None:
-            self.labelSyncBranch.setText("지금 branch: (확인 실패)")
+            self.labelSyncBranch.setText("현재 branch: (확인 실패)")
         if self.labelSyncStatus is not None:
             short = (message or "").strip().splitlines()[0][:120]
             self.labelSyncStatus.setText(f"상태: {short}" if short else "상태: 확인 실패")
@@ -1649,10 +1649,7 @@ class MainController(QObject):
             )
         # Log both so the log pane mirrors the UI
         if branch:
-            if branch.startswith("("):
-                self._log(f"지금 branch: {branch}")
-            else:
-                self._log(f"지금 branch: {branch}")
+            self._log(f"현재 branch: {branch}")
         if summary:
             self._log(summary)
         if st.get("conflict"):
