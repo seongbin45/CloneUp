@@ -196,6 +196,8 @@ class MainController(QObject):
         self._clone_url_timer.timeout.connect(self._normalize_clone_url_field)
         # Track last owner/repo so folder name resets when URL changes to another repo
         self._last_clone_repo_key: str | None = None
+        # Publish: folder path that last auto-filled editRepoName (so re-pick updates name)
+        self._publish_folder_for_repo_name: str | None = None
 
         # --- sync ---
         self.editSyncFolder = window.findChild(QLineEdit, "editSyncFolder")
@@ -658,13 +660,33 @@ class MainController(QObject):
     # ----- publish -----
     @Slot()
     def _maybe_fill_repo_name(self) -> None:
+        """
+        Sync repo name with the local folder basename.
+
+        - Empty repo name → fill from folder.
+        - Repo name still equals the *previous* auto folder basename → update
+          (user picked another folder; do not leave the old name stuck).
+        - User typed a custom repo name → leave it alone.
+        """
         if not self.editFolder or not self.editRepoName:
             return
-        if (self.editRepoName.text() or "").strip():
-            return
         folder = (self.editFolder.text() or "").strip()
-        if folder:
-            self.editRepoName.setText(Path(folder).name)
+        if not folder:
+            return
+        try:
+            new_base = Path(folder).expanduser().resolve().name
+        except OSError:
+            new_base = Path(folder).name
+        if not new_base:
+            return
+
+        cur = (self.editRepoName.text() or "").strip()
+        prev = self._publish_folder_for_repo_name
+        prev_base = Path(prev).name if prev else None
+
+        if not cur or (prev_base is not None and cur == prev_base):
+            self.editRepoName.setText(new_base)
+            self._publish_folder_for_repo_name = folder
 
     @Slot(int)
     def _on_recent_activated(self, index: int) -> None:
