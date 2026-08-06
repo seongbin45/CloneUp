@@ -10,10 +10,11 @@
 > - **H3** 수정: 서명 검사 fail-open 제거, 빈 subject 거부, PowerShell/clip 절대경로  
 > - **M1** stdout 마스킹 적용 · **M2** `_TOKEN_LEAK_RE`에 `ghp_` 포함  
 > - **M4** `run_git` 안전 `-c` (hooksPath 빈 디렉터리, pager=cat, fsmonitor off) + `commit --no-verify`  
-> - **M5** 기본 비공개 (`last_private` / UI radio / API default)  
-> - **P2 origin** sync pull/push 전 `assert_github_https_remote`  
-> - 회귀: `tests/` + `verify_*` + GitHub Actions CI  
-> - 잔여: 코드 서명(P2/M6), requirements hash pin, Device Flow 릴리스 빌드 제외
+> - **M5** 기본 비공개 UI/API. **scope=`repo` 유지** (비공개 생성이 기본이라 `public_repo` 불가 — 표기 수정)  
+> - **P2 origin** `get-url` + `get-url --push` + local `url.*` 거부 (`pushInsteadOf` 포함)  
+> - **H1 재수정** publish/UI: `ensure_repo_for_safety` 를 안전검사 **앞**에 호출 (gitignore 존중)  
+> - 회귀: `tests/test_h1_publish_path.py`, `tests/test_p2_pushinsteadof.py` 등  
+> - 잔여: 코드 서명, requirements hash pin, Device Flow 릴리스 빌드 제외
 
 ---
 

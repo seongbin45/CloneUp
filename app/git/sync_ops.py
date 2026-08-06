@@ -20,8 +20,50 @@ class SyncError(Exception):
 
 
 def _assert_safe_origin(origin_url: str) -> None:
+    """URL-string check only (no local url.* rewrite detection)."""
     try:
         assert_github_https_remote(origin_url, what="origin")
+    except UrlError as e:
+        raise SyncError(str(e)) from e
+
+
+def assert_safe_github_origin(folder: Path) -> None:
+    """
+    Block push/pull when origin is not clean GitHub HTTPS (P2 re-review).
+
+    - Inspect both fetch and push URLs (``get-url`` / ``get-url --push``).
+      ``pushInsteadOf`` rewrites only the push URL and bypasses fetch-only checks.
+    - Reject any local ``url.*`` config (insteadOf / pushInsteadOf).
+    """
+    folder = folder.expanduser().resolve()
+    # Local rewrite rules — any url.<base>.insteadOf / pushInsteadOf
+    reg = run_git(
+        ["config", "--local", "--get-regexp", r"^url\."],
+        cwd=str(folder),
+        check=False,
+    )
+    if reg.returncode == 0 and (reg.stdout or "").strip():
+        raise SyncError(
+            "이 폴더의 Git 설정에 url.* 주소 바꾸기(insteadOf/pushInsteadOf)가 있습니다.\n"
+            "CloneUp은 안전을 위해 동기화를 막습니다.\n"
+            "의심되면 다른 폴더에서 다시 받거나, 해당 url.* 설정을 제거하세요."
+        )
+
+    fetch = run_git(
+        ["remote", "get-url", "origin"], cwd=str(folder), check=False
+    )
+    push = run_git(
+        ["remote", "get-url", "--push", "origin"], cwd=str(folder), check=False
+    )
+    fetch_url = (fetch.stdout or "").strip()
+    push_url = (push.stdout or "").strip() or fetch_url
+    if not fetch_url and not push_url:
+        raise SyncError("origin 주소를 읽을 수 없습니다.")
+    try:
+        if fetch_url:
+            assert_github_https_remote(fetch_url, what="origin(fetch)")
+        if push_url:
+            assert_github_https_remote(push_url, what="origin(push)")
     except UrlError as e:
         raise SyncError(str(e)) from e
 
@@ -173,7 +215,7 @@ def pull_repo(folder: Path, *, token: str | None = None) -> str:
             "이 폴더는 아직 GitHub와 연결되어 있지 않습니다.\n"
             "「만들고 올리기」로 먼저 올리거나, 「받기」로 받은 폴더를 선택하세요."
         )
-    _assert_safe_origin(st.origin_url)
+    assert_safe_github_origin(folder)
 
     cred_path = None
     config = None
@@ -249,7 +291,7 @@ def commit_and_push(
             "이 폴더는 아직 GitHub와 연결되어 있지 않습니다.\n"
             "「만들고 올리기」로 먼저 올리거나, 「받기」로 받은 폴더를 선택하세요."
         )
-    _assert_safe_origin(st.origin_url)
+    assert_safe_github_origin(folder)
 
     # Prefer full safety report (publishable paths + hard content keys).
     from app.git.safety import run_safety_checks

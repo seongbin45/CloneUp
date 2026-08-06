@@ -161,6 +161,47 @@ def _init_repo_main(folder: Path) -> None:
     run_git(["symbolic-ref", "HEAD", "refs/heads/main"], cwd=str(folder), check=True)
 
 
+def ensure_repo_for_safety(
+    folder: Path,
+    *,
+    write_gitignore: bool = True,
+) -> bool:
+    """
+    Ensure ``.git`` exists *before* safety scans (H1 / re-review).
+
+    ``run_safety_checks`` uses ``git ls-files --exclude-standard`` only when
+    ``.git`` is present. First-time publish used to scan with a filesystem
+    walk that ignored ``.gitignore`` — blocking ignored secrets permanently
+    (hard content) while missing committed ones under wrong ordering.
+
+    Returns True if this call created ``.git``.
+    """
+    from app.git.safety import ensure_gitignore
+
+    folder = folder.expanduser().resolve()
+    if not folder.is_dir():
+        raise PublishError(f"폴더가 없습니다: {folder}")
+    require_git()
+    created = False
+    if not (folder / ".git").exists():
+        _init_repo_main(folder)
+        created = True
+    if write_gitignore:
+        ensure_gitignore(folder, write_if_missing=True)
+    return created
+
+
+def abandon_created_repo(folder: Path, created: bool) -> None:
+    """Remove ``.git`` only if *we* just created it (failed preflight)."""
+    if not created:
+        return
+    import shutil
+
+    git_dir = folder.expanduser().resolve() / ".git"
+    if git_dir.is_dir():
+        shutil.rmtree(git_dir, ignore_errors=True)
+
+
 def _has_staged_changes(folder: Path) -> bool:
     # diff --cached --quiet: exit 1 if differences, 0 if empty
     r = run_git(["diff", "--cached", "--quiet"], cwd=str(folder), check=False)
@@ -188,26 +229,18 @@ def publish_local_to_existing_remote(
     hide_real_email: bool = False,
 ) -> PublishResult:
     """
-    Init (if needed) → add → commit → remote add origin (clean) → push with temp creds.
+    Init (if needed) → safety (git-aware) → add → commit → origin → push.
+
+    Safety must run *after* ``.git`` exists so ``.gitignore`` is honored (H1).
     """
     folder = folder.resolve()
     if not clone_url.startswith("https://github.com/"):
         raise PublishError(f"지원하지 않는 clone_url: {clone_url}")
 
-    # Git available
     require_git()
-
-    safety = run_safety_checks(
-        folder,
-        allow_secrets=allow_secrets,
-        write_gitignore=True,
-    )
-    if not safety.ok:
-        raise PublishError("; ".join(safety.errors))
 
     git_dir = folder / ".git"
     if git_dir.exists():
-        # Already a repo: only allow if no origin yet (spike path for fresh publish)
         remotes = run_git(["remote"], cwd=str(folder), check=False)
         names = {n.strip() for n in (remotes.stdout or "").splitlines() if n.strip()}
         if "origin" in names:
@@ -215,9 +248,17 @@ def publish_local_to_existing_remote(
                 "이 폴더는 이미 GitHub와 연결되어 있습니다.\n"
                 "새로 만들려면 다른 폴더를 쓰거나, 「동기화」탭에서 올리고 보내기를 사용하세요."
             )
-        # ensure on a branch that can push; leave existing history alone
-    else:
-        _init_repo_main(folder)
+    # Init + default .gitignore *before* safety (publish primary path)
+    ensure_repo_for_safety(folder, write_gitignore=True)
+
+    safety = run_safety_checks(
+        folder,
+        allow_secrets=allow_secrets,
+        write_gitignore=False,  # already ensured above
+    )
+    if not safety.ok:
+        # Keep .git so the next attempt stays gitignore-aware.
+        raise PublishError("; ".join(safety.errors))
 
     identity = resolve_commit_identity(
         folder, user, hide_real_email=hide_real_email
@@ -299,7 +340,7 @@ def publish_folder_to_new_repo(
     description: str = "",
     commit_message: str = "첫 업로드",
     allow_secrets: bool = False,
-    private: bool = False,
+    private: bool = True,
     hide_real_email: bool = False,
 ) -> PublishResult:
     """Create empty GitHub repo (public or private) then push local history."""

@@ -1019,6 +1019,20 @@ class MainController(QObject):
             name = path.name
             self.editRepoName.setText(name)
 
+        # H1: create .git (+ default .gitignore) before safety so gitignore applies
+        from app.git.publish import PublishError, ensure_repo_for_safety
+
+        try:
+            ensure_repo_for_safety(path.resolve(), write_gitignore=True)
+        except PublishError as e:
+            QMessageBox.warning(self.window, "CloneUp", str(e))
+            return
+        except Exception as e:
+            QMessageBox.warning(
+                self.window, "CloneUp", f"폴더 Git 준비에 실패했습니다.\n{e}"
+            )
+            return
+
         report = run_safety_checks(
             path.resolve(), allow_secrets=allow, write_gitignore=False
         )
