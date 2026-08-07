@@ -71,6 +71,26 @@ from app.ui.tab_workers import CloneWorker, SyncActionWorker, SyncStatusWorker
 from app.ui.theme import active_palette
 
 
+class _CloneRepoListWorker(QThread):
+    """Load GitHub /user/repos off the UI thread (module-level for reliable Signals)."""
+
+    succeeded = Signal(list)
+    failed = Signal(str)
+
+    def __init__(self, token: str, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._token = token
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            from app.github.api_client import list_user_repos
+
+            rows = list_user_repos(self._token)
+            self.succeeded.emit(list(rows or []))
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 def _ui_path() -> Path:
     return app_root() / "ui" / "main_window.ui"
 
@@ -1410,31 +1430,56 @@ class MainController(QObject):
         """
         Logged in  → dropdown list of my repos (+ still editable URL).
         Logged out → plain URL field (no list / no chevron), same as before.
+
+        Uses ``is_logged_in()``. Always re-ensures the repo list when logged in
+        and the combo is still empty (so a failed first fetch can recover).
         """
         if self.comboCloneUrl is None:
             return
         logged_in = is_logged_in()
+        mode_changed = self._clone_url_logged_in_mode != logged_in
         if (
             not force
+            and not mode_changed
             and self._clone_url_logged_in_mode is not None
-            and self._clone_url_logged_in_mode == logged_in
+            and logged_in
+            and self.comboCloneUrl.count() > 0
+        ):
+            # Already in list mode with items
+            return
+        if (
+            not force
+            and not mode_changed
+            and self._clone_url_logged_in_mode is not None
+            and not logged_in
         ):
             return
+
         self._clone_url_logged_in_mode = logged_in
         le = self.comboCloneUrl.lineEdit()
         if logged_in:
-            # Restore default combo chrome (drop-down visible)
-            self.comboCloneUrl.setStyleSheet("")
+            # Visible drop-down (object-specific style so global padding does not hide it)
+            self.comboCloneUrl.setStyleSheet(
+                "QComboBox#comboCloneUrl::drop-down {"
+                "  subcontrol-origin: padding; subcontrol-position: center right;"
+                "  width: 28px; border: none;"
+                "}"
+                "QComboBox#comboCloneUrl::down-arrow {"
+                "  width: 10px; height: 10px;"
+                "}"
+            )
             if le is not None:
                 le.setPlaceholderText(
                     "목록에서 선택하거나 https://github.com/owner/repo"
                 )
             if self.labelCloneHint is not None:
                 self.labelCloneHint.setText(
-                    "연결됨: 목록에서 고르거나 주소를 붙여 넣으세요. "
+                    "연결됨: 오른쪽 ▼ 로 내 저장소를 고르거나 주소를 붙여 넣으세요. "
                     "루트 주소만 남고 branch는 아래에서 고릅니다."
                 )
-            self._maybe_load_clone_repo_list(force=force)
+            self._maybe_load_clone_repo_list(
+                force=force or mode_changed or self.comboCloneUrl.count() == 0
+            )
         else:
             # Line-edit look: hide drop-down arrow; no popup items
             cur = self._clone_url_text()
@@ -1445,8 +1490,10 @@ class MainController(QObject):
             self.comboCloneUrl.blockSignals(False)
             self._clone_repos_loaded_for = "none"
             self.comboCloneUrl.setStyleSheet(
-                "QComboBox::drop-down { width: 0px; border: none; }"
-                "QComboBox::down-arrow { width: 0px; height: 0px; image: none; }"
+                "QComboBox#comboCloneUrl::drop-down { width: 0px; border: none; }"
+                "QComboBox#comboCloneUrl::down-arrow {"
+                "  width: 0px; height: 0px; image: none;"
+                "}"
             )
             if le is not None:
                 le.setPlaceholderText("https://github.com/owner/repo")
@@ -1495,28 +1542,22 @@ class MainController(QObject):
         if self._clone_repos_worker is not None and self._clone_repos_worker.isRunning():
             return
 
-        class _RepoListWorker(QThread):
-            succeeded = Signal(list)
-            failed = Signal(str)
+        # Placeholder so the drop-down is obviously “alive” while loading
+        if self.comboCloneUrl.count() == 0:
+            self.comboCloneUrl.blockSignals(True)
+            self.comboCloneUrl.addItem("저장소 목록 불러오는 중…", "")
+            self.comboCloneUrl.blockSignals(False)
 
-            def __init__(self, tok: str, parent=None) -> None:
-                super().__init__(parent)
-                self._tok = tok
-
-            def run(self) -> None:  # noqa: N802
-                try:
-                    from app.github.api_client import list_user_repos
-
-                    rows = list_user_repos(self._tok)
-                    self.succeeded.emit(rows)
-                except Exception as e:
-                    self.failed.emit(str(e))
-
-        w = _RepoListWorker(token, parent=self)
+        w = _CloneRepoListWorker(token, parent=self)
         self._clone_repos_worker = w
-        w.succeeded.connect(self._on_clone_repo_list_ok)
-        w.failed.connect(self._on_clone_repo_list_fail)
+        w.succeeded.connect(
+            self._on_clone_repo_list_ok, Qt.ConnectionType.QueuedConnection
+        )
+        w.failed.connect(
+            self._on_clone_repo_list_fail, Qt.ConnectionType.QueuedConnection
+        )
         w.start()
+        self._log("받기: GitHub에서 내 저장소 목록 불러오는 중…")
 
     @Slot(list)
     def _on_clone_repo_list_ok(self, rows: list) -> None:
@@ -1525,6 +1566,9 @@ class MainController(QObject):
         token = load_token()
         self._clone_repos_loaded_for = (token or "")[:12] if token else "none"
         cur = self._clone_url_text()
+        # Drop loading placeholder / stale rows
+        if cur.startswith("저장소 목록"):
+            cur = ""
         self.comboCloneUrl.blockSignals(True)
         self.comboCloneUrl.clear()
         n = 0
@@ -1539,16 +1583,29 @@ class MainController(QObject):
             label = f"{full}  ·  비공개" if private else full
             self.comboCloneUrl.addItem(label, html)
             n += 1
-        if cur:
+        if cur and not cur.startswith("저장소 목록"):
             self.comboCloneUrl.setEditText(cur)
+        else:
+            self.comboCloneUrl.setEditText("")
         self.comboCloneUrl.blockSignals(False)
         if n:
-            self._log(f"받기: 내 저장소 {n}개 목록 준비됨 (목록에서 고르거나 주소 입력)")
+            self._log(
+                f"받기: 내 저장소 {n}개 준비됨 — 주소 칸 오른쪽 ▼ 를 눌러 고르세요"
+            )
+        else:
+            self._log("받기: 목록이 비어 있습니다. 주소를 직접 붙여 넣으세요.")
 
     @Slot(str)
     def _on_clone_repo_list_fail(self, msg: str) -> None:
-        self._log(f"받기: 저장소 목록을 못 읽음 ({msg[:120]})")
-        # Logged-in but list failed — field stays editable for URL paste
+        self._clone_repos_loaded_for = None  # allow retry
+        if self.comboCloneUrl is not None:
+            cur = self._clone_url_text()
+            self.comboCloneUrl.blockSignals(True)
+            self.comboCloneUrl.clear()
+            if cur and not cur.startswith("저장소 목록"):
+                self.comboCloneUrl.setEditText(cur)
+            self.comboCloneUrl.blockSignals(False)
+        self._log(f"받기: 저장소 목록을 못 읽음 ({msg[:160]})")
 
     @Slot()
     def _normalize_clone_url_field(self) -> None:
