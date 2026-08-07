@@ -48,6 +48,7 @@ from app.ui.login_dialog import (
     show_missing_repo_help,
 )
 from app.ui.publish_worker import LoginWorker, PatLoginWorker, PublishWorker
+from app.ui.commit_history_dialog import show_commit_history
 from app.ui.success_dialog import show_clone_success, show_publish_success
 from app.ui.tip_card import install_tip_card
 from app.util.next_action import format_next_step_line
@@ -234,6 +235,7 @@ class MainController(QObject):
         self.comboSyncRecent = window.findChild(QComboBox, "comboSyncRecent")
         self.btnSyncBrowse = window.findChild(QPushButton, "btnSyncBrowse")
         self.btnSyncRefresh = window.findChild(QPushButton, "btnSyncRefresh")
+        self.btnSyncHistory = window.findChild(QPushButton, "btnSyncHistory")
         self.labelSyncBranchTitle = window.findChild(QLabel, "labelSyncBranchTitle")
         self.labelSyncBranch = window.findChild(QLabel, "labelSyncBranch")
         if self.labelSyncBranch is not None:
@@ -332,6 +334,7 @@ class MainController(QObject):
                 "labelTabIntroSync",
                 "이미 연결된 폴더의 변경사항을 주고받습니다.",
                 "• 이 폴더에 .git 이 있어야 합니다. 없으면 「받기」나 「만들고 올리기」를 먼저 하세요.\n"
+                "• 「커밋 내역」으로 지난 시점을 읽기 전용으로 볼 수 있습니다.\n"
                 "• 왼쪽 branch / 상태에 이 폴더 정보가 나란히 보입니다.\n"
                 "• 폴더를 고르거나 경로를 붙이면 상태가 자동으로 다시 읽힙니다.\n"
                 "• 올리기 전에 비밀 파일 후보가 있는지 확인하세요.",
@@ -447,6 +450,7 @@ class MainController(QObject):
         for w in (
             self.btnSyncBrowse,
             self.btnSyncRefresh,
+            self.btnSyncHistory,
             self.btnSyncPull,
             self.btnSyncPush,
             self.btnSyncAbort,
@@ -611,6 +615,8 @@ class MainController(QObject):
             self.btnSyncBrowse.clicked.connect(self.on_sync_browse)
         if self.btnSyncRefresh:
             self.btnSyncRefresh.clicked.connect(self.on_sync_refresh)
+        if self.btnSyncHistory is not None:
+            self.btnSyncHistory.clicked.connect(self.on_sync_history)
         if self.editSyncFolder is not None:
             self.editSyncFolder.editingFinished.connect(
                 self._on_sync_folder_editing_finished
@@ -1770,6 +1776,40 @@ class MainController(QObject):
             remember_folder(path)
             self._reload_recent_combo()
             self.on_sync_refresh(quiet=True)
+
+    @Slot()
+    def on_sync_history(self) -> None:
+        """Open read-only commit history popup (desin: 커밋 내역)."""
+        if self._busy():
+            return
+        folder = _folder_path(self.editSyncFolder)
+        if not folder:
+            QMessageBox.warning(
+                self.window,
+                "커밋 내역",
+                "먼저 로컬 폴더를 선택하세요.",
+            )
+            return
+        try:
+            p = Path(folder).expanduser()
+            if not p.is_dir():
+                QMessageBox.warning(
+                    self.window, "커밋 내역", "폴더를 찾을 수 없습니다."
+                )
+                return
+            if not (p / ".git").exists():
+                QMessageBox.warning(
+                    self.window,
+                    "커밋 내역",
+                    "이 폴더는 Git 저장소가 아닙니다.\n"
+                    "「받기」나 「만들고 올리기」를 먼저 하세요.",
+                )
+                return
+        except OSError as e:
+            QMessageBox.warning(self.window, "커밋 내역", str(e))
+            return
+        self._log(f"커밋 내역 열기: {folder}")
+        show_commit_history(self.window, folder)
 
     @Slot()
     def on_sync_refresh(self, quiet: bool = False) -> None:

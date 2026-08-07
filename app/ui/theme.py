@@ -431,12 +431,14 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         min-width: 96px;
     }}
     /* Refresh is secondary to browse — shorter label + slightly tighter pad */
-    QPushButton#btnSyncRefresh {{
+    QPushButton#btnSyncRefresh,
+    QPushButton#btnSyncHistory {{
         min-width: 96px;
         padding: 6px 12px;
         color: {TEXT_FAINT};
     }}
-    QPushButton#btnSyncRefresh:hover {{
+    QPushButton#btnSyncRefresh:hover,
+    QPushButton#btnSyncHistory:hover {{
         color: {TEXT_SECONDARY};
     }}
 
