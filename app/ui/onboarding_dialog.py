@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QKeyEvent, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -101,19 +101,44 @@ _SAFETY_ROWS: tuple[tuple[str, str], ...] = (
 
 
 class OnboardingDialog(QDialog):
-    """Modal multi-step first-run guide."""
+    """Modal multi-step first-run guide (opens F11-style true fullscreen)."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
+        # Own top-level window so showFullScreen covers the whole monitor
+        # (including taskbar), not just the parent client area.
         super().__init__(parent)
         self._i = 0
+        self._fullscreen_applied = False
         p = active_palette()
         self.setWindowTitle("클론업 시작하기")
         self.setModal(True)
-        self.setMinimumSize(720, 520)
-        self.resize(880, 600)
+        self.setWindowFlag(Qt.WindowType.Window, True)
+        # Borderless + full screen feels like browser F11
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setStyleSheet(self._qss(p))
 
-        root = QVBoxLayout(self)
+        # Outer shell fills the screen (design bg around the card)
+        shell = QVBoxLayout(self)
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.setSpacing(0)
+
+        outer = QWidget()
+        outer.setObjectName("obShell")
+        outer_l = QVBoxLayout(outer)
+        outer_l.setContentsMargins(40, 32, 40, 32)
+        outer_l.setSpacing(0)
+
+        # Centered content card (readable width on ultrawide)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        card = QFrame()
+        card.setObjectName("obCardShell")
+        card.setMaximumWidth(1040)
+        card.setMinimumWidth(720)
+        card.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        root = QVBoxLayout(card)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
@@ -127,8 +152,11 @@ class OnboardingDialog(QDialog):
         title.setObjectName("obTitle")
         self._step_lbl = QLabel("1 / 5")
         self._step_lbl.setObjectName("obStepMeta")
+        fs_hint = QLabel("전체 화면 · Esc 로 닫기 · F11 창/전체 전환")
+        fs_hint.setObjectName("obStepMeta")
         bar_l.addWidget(title)
         bar_l.addStretch(1)
+        bar_l.addWidget(fs_hint)
         bar_l.addWidget(self._step_lbl)
         root.addWidget(bar)
 
@@ -198,7 +226,47 @@ class OnboardingDialog(QDialog):
         foot_l.addWidget(self._btn_next)
         root.addWidget(foot)
 
+        row.addWidget(card, 1)
+        row.addStretch(1)
+        outer_l.addLayout(row, 1)
+        shell.addWidget(outer, 1)
+
         self._sync_ui()
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        # F11-style: cover entire screen, taskbar hidden (Windows)
+        if not self._fullscreen_applied:
+            self._fullscreen_applied = True
+            self.showFullScreen()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        key = event.key()
+        if key == Qt.Key.Key_F11:
+            if self.isFullScreen():
+                self.showNormal()
+                self.resize(960, 700)
+                self._center_on_screen()
+            else:
+                self.showFullScreen()
+            event.accept()
+            return
+        if key == Qt.Key.Key_Escape:
+            # Close guide (same as reject); leaves fullscreen
+            self.reject()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _center_on_screen(self) -> None:
+        screen = self.screen()
+        if screen is None:
+            return
+        geo = screen.availableGeometry()
+        self.move(
+            geo.x() + (geo.width() - self.width()) // 2,
+            geo.y() + (geo.height() - self.height()) // 2,
+        )
 
     # --- pages ---
     def _page_folders(self, p: Palette) -> QWidget:
@@ -585,8 +653,16 @@ class OnboardingDialog(QDialog):
         warn_bg = "#fbf6ee" if p.name == "light" else p.bg_hint
         return f"""
         QDialog {{
-            background: {p.bg_window};
+            background: {p.bg_app};
             color: {p.text};
+        }}
+        QWidget#obShell {{
+            background: {p.bg_app};
+        }}
+        QFrame#obCardShell {{
+            background: {p.bg_window};
+            border: 1px solid {p.border};
+            border-radius: 10px;
         }}
         QFrame#obTitleBar, QFrame#obFooter {{
             background: {p.bg_bar};
@@ -594,9 +670,13 @@ class OnboardingDialog(QDialog):
         }}
         QFrame#obTitleBar {{
             border-bottom: 1px solid {p.border_soft};
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
         }}
         QFrame#obFooter {{
             border-top: 1px solid {p.border_divider};
+            border-bottom-left-radius: 10px;
+            border-bottom-right-radius: 10px;
         }}
         QLabel#obTitle {{
             font-size: 13px;
@@ -685,10 +765,12 @@ class OnboardingDialog(QDialog):
 
 def show_onboarding(parent: QWidget | None = None) -> bool:
     """
-    Show onboarding modally.
+    Show onboarding modally in F11-style true fullscreen (taskbar hidden).
 
     Returns True if the user finished (시작하기 / accept), False if dismissed
-    without finishing (rare — Escape closes as reject).
+    without finishing (Escape closes as reject). F11 toggles windowed mode.
     """
     dlg = OnboardingDialog(parent)
+    # Ensure we enter the event loop already requesting fullscreen
+    dlg.setWindowState(dlg.windowState() | Qt.WindowState.WindowFullScreen)
     return dlg.exec() == QDialog.DialogCode.Accepted
