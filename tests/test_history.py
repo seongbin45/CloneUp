@@ -49,3 +49,24 @@ def test_format_abs_time() -> None:
 
 def test_repo_display_name() -> None:
     assert repo_display_name(r"C:\Users\me\proj\CloneUp") == "CloneUp"
+
+
+def test_root_commit_lists_files() -> None:
+    """Initial commit must not return an empty file list (needs git --root)."""
+    from pathlib import Path
+
+    from app.git.history import count_changed_files, list_changed_files
+    from app.git.runner import run_git
+
+    root = Path(__file__).resolve().parents[1]
+    r = run_git(
+        ["rev-list", "--max-parents=0", "HEAD"],
+        cwd=str(root),
+        check=True,
+    )
+    rev = (r.stdout or "").strip().splitlines()[0]
+    n = count_changed_files(root, rev)
+    files = list_changed_files(root, rev)
+    assert n > 0
+    assert len(files) == n
+    assert all(f.kind == "A" for f in files)

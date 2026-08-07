@@ -140,8 +140,9 @@ def list_commits(
 
 
 def count_changed_files(folder: str | Path, rev: str) -> int:
+    # --root: first commit has no parent; without it, name-only is empty
     r = run_git(
-        ["diff-tree", "--no-commit-id", "--name-only", "-r", rev],
+        ["diff-tree", "--no-commit-id", "--name-only", "-r", "--root", rev],
         cwd=str(folder),
         check=True,
     )
@@ -150,8 +151,9 @@ def count_changed_files(folder: str | Path, rev: str) -> int:
 
 def list_changed_files(folder: str | Path, rev: str) -> list[ChangedFile]:
     """Name-status for one commit (A/M/D/…)."""
+    # --root required so the initial commit lists added files
     r = run_git(
-        ["diff-tree", "--no-commit-id", "--name-status", "-r", "-z", rev],
+        ["diff-tree", "--no-commit-id", "--name-status", "-r", "-z", "--root", rev],
         cwd=str(folder),
         check=True,
     )
