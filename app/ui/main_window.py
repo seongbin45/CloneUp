@@ -1395,9 +1395,24 @@ class MainController(QObject):
         return text
 
     def _clone_url_text(self) -> str:
+        """Prefer itemData URL when the field still shows a list label."""
         if self.comboCloneUrl is None:
             return ""
-        return (self.comboCloneUrl.currentText() or "").strip()
+        text = (self.comboCloneUrl.currentText() or "").strip()
+        # If the visible text is a dropdown label, use stored https URL
+        idx = self.comboCloneUrl.currentIndex()
+        if idx >= 0:
+            data = self.comboCloneUrl.itemData(idx)
+            if isinstance(data, str) and data.startswith("https://github.com/"):
+                label = (self.comboCloneUrl.itemText(idx) or "").strip()
+                # Same selection: label or already-normalized URL
+                if text == label or text == data or text.rstrip("/") == data.rstrip("/"):
+                    return data.strip()
+                # Text still looks like "owner/repo" / list label for this item
+                base = label.split("  ·  ")[0].split(" · ")[0].strip()
+                if text == base or text.startswith(base + " "):
+                    return data.strip()
+        return text
 
     def _set_clone_url_text(self, text: str, *, block: bool = True) -> None:
         if self.comboCloneUrl is None:

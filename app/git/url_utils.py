@@ -129,8 +129,27 @@ def normalize_github_clone_url(raw: str) -> NormalizedCloneUrl:
     if not s:
         raise UrlError("저장소 주소를 입력하세요.")
 
+    # UI list labels: "owner/repo  ·  비공개" → owner/repo
+    if "  ·  " in s:
+        s = s.split("  ·  ", 1)[0].strip()
+    elif " · " in s:
+        s = s.split(" · ", 1)[0].strip()
+
     warnings: list[str] = []
     suggested: str | None = None
+
+    # Shorthand owner/repo (from list selection / autocomplete)
+    if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", s):
+        owner, repo = s.split("/", 1)
+        display = f"https://github.com/{owner}/{repo}"
+        return NormalizedCloneUrl(
+            f"{display}.git",
+            display,
+            owner,
+            repo.removesuffix(".git"),
+            None,
+            (),
+        )
 
     # SSH form: nina.v@example.com:owner/repo.git
     m = re.match(r"^git@([^:]+):(.+)$", s)
