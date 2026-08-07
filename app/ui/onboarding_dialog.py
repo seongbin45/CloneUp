@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont, QKeyEvent, QShowEvent
+from PySide6.QtGui import QFont, QGuiApplication, QKeyEvent, QKeySequence, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -112,10 +112,11 @@ class OnboardingDialog(QDialog):
         p = active_palette()
         self.setWindowTitle("클론업 시작하기")
         self.setModal(True)
+        # Top-level window (not a child tool dialog) so fullscreen covers the monitor
         self.setWindowFlag(Qt.WindowType.Window, True)
-        # Borderless + full screen feels like browser F11
-        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self.setStyleSheet(self._qss(p))
+        # F11 works even if focus is on a child control
+        QShortcut(QKeySequence(Qt.Key.Key_F11), self, activated=self._toggle_fullscreen)
 
         # Outer shell fills the screen (design bg around the card)
         shell = QVBoxLayout(self)
@@ -152,11 +153,11 @@ class OnboardingDialog(QDialog):
         title.setObjectName("obTitle")
         self._step_lbl = QLabel("1 / 5")
         self._step_lbl.setObjectName("obStepMeta")
-        fs_hint = QLabel("전체 화면 · Esc 로 닫기 · F11 창/전체 전환")
-        fs_hint.setObjectName("obStepMeta")
+        self._fs_hint = QLabel("전체 화면 · Esc 닫기 · F11 창 모드")
+        self._fs_hint.setObjectName("obStepMeta")
         bar_l.addWidget(title)
         bar_l.addStretch(1)
-        bar_l.addWidget(fs_hint)
+        bar_l.addWidget(self._fs_hint)
         bar_l.addWidget(self._step_lbl)
         root.addWidget(bar)
 
@@ -238,35 +239,63 @@ class OnboardingDialog(QDialog):
         # F11-style: cover entire screen, taskbar hidden (Windows)
         if not self._fullscreen_applied:
             self._fullscreen_applied = True
-            self.showFullScreen()
+            self._enter_fullscreen()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
-        key = event.key()
-        if key == Qt.Key.Key_F11:
-            if self.isFullScreen():
-                self.showNormal()
-                self.resize(960, 700)
-                self._center_on_screen()
-            else:
-                self.showFullScreen()
-            event.accept()
-            return
-        if key == Qt.Key.Key_Escape:
-            # Close guide (same as reject); leaves fullscreen
+        if event.key() == Qt.Key.Key_Escape:
             self.reject()
             event.accept()
             return
+        # F11 handled by QShortcut (_toggle_fullscreen)
         super().keyPressEvent(event)
 
-    def _center_on_screen(self) -> None:
-        screen = self.screen()
-        if screen is None:
-            return
-        geo = screen.availableGeometry()
-        self.move(
-            geo.x() + (geo.width() - self.width()) // 2,
-            geo.y() + (geo.height() - self.height()) // 2,
-        )
+    @Slot()
+    def _toggle_fullscreen(self) -> None:
+        """F11: leave true-fullscreen (taskbar back) ↔ windowed card."""
+        if self.isFullScreen():
+            self._leave_fullscreen()
+        else:
+            self._enter_fullscreen()
+
+    def _enter_fullscreen(self) -> None:
+        """True fullscreen like browser F11 (covers taskbar)."""
+        # Frameless only while fullscreen — avoid broken chrome on showNormal
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.show()  # required after changing window flags
+        self.showFullScreen()
+        self.raise_()
+        self.activateWindow()
+        if hasattr(self, "_fs_hint") and self._fs_hint is not None:
+            self._fs_hint.setText("전체 화면 · Esc 닫기 · F11 창 모드")
+
+    def _leave_fullscreen(self) -> None:
+        """
+        Exit fullscreen into a normal, movable window on the usable desktop
+        (taskbar visible again). showNormal() alone with Frameless often
+        leaves a zero-size or off-screen window on Windows.
+        """
+        # 1) Clear fullscreen state first
+        self.setWindowState(Qt.WindowState.WindowNoState)
+        # 2) Restore title bar so the window can be moved/closed normally
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, False)
+        self.setWindowFlag(Qt.WindowType.Window, True)
+        self.show()  # re-apply flags
+        # 3) Explicit geometry on availableGeometry (excludes taskbar)
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            ag = screen.availableGeometry()
+            w = min(960, max(720, ag.width() - 80))
+            h = min(720, max(520, ag.height() - 80))
+            x = ag.x() + max(0, (ag.width() - w) // 2)
+            y = ag.y() + max(0, (ag.height() - h) // 2)
+            self.setGeometry(x, y, w, h)
+        else:
+            self.resize(960, 700)
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        if hasattr(self, "_fs_hint") and self._fs_hint is not None:
+            self._fs_hint.setText("창 모드 · Esc 닫기 · F11 전체 화면")
 
     # --- pages ---
     def _page_folders(self, p: Palette) -> QWidget:
@@ -768,9 +797,10 @@ def show_onboarding(parent: QWidget | None = None) -> bool:
     Show onboarding modally in F11-style true fullscreen (taskbar hidden).
 
     Returns True if the user finished (시작하기 / accept), False if dismissed
-    without finishing (Escape closes as reject). F11 toggles windowed mode.
+    without finishing (Escape closes as reject). F11 toggles windowed mode
+    with a proper centered geometry (does not leave a broken empty frame).
     """
     dlg = OnboardingDialog(parent)
-    # Ensure we enter the event loop already requesting fullscreen
-    dlg.setWindowState(dlg.windowState() | Qt.WindowState.WindowFullScreen)
+    # showEvent → _enter_fullscreen(); do not pre-set WindowFullScreen alone
+    # (that path + Frameless was leaving a broken window on F11 exit).
     return dlg.exec() == QDialog.DialogCode.Accepted
