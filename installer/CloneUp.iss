@@ -8,7 +8,7 @@
 ; Output: installer\Output\CloneUp-Setup.exe
 
 #define MyAppName "CloneUp"
-#define MyAppVersion "0.1.4"
+#define MyAppVersion "0.1.5"
 #define MyAppPublisher "CloneUp"
 #define MyAppURL "https://github.com/seongbin45/CloneUp"
 #define MyAppExeName "CloneUp.exe"
