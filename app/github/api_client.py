@@ -94,6 +94,61 @@ def get_repo_default_branch(
     return name or None
 
 
+def list_user_repos(
+    access_token: str,
+    *,
+    max_pages: int = 3,
+    per_page: int = 100,
+) -> list[dict[str, Any]]:
+    """
+    GET /user/repos — repos the token can see (owner / collab / org).
+
+    Returns lightweight dicts: full_name, html_url, private, default_branch.
+    Newest-updated first. Caps at max_pages * per_page (default 300).
+    """
+    if not (access_token or "").strip():
+        return []
+    out: list[dict[str, Any]] = []
+    per = max(1, min(int(per_page), 100))
+    pages = max(1, min(int(max_pages), 10))
+    for page in range(1, pages + 1):
+        resp = requests.get(
+            f"{API_BASE}/user/repos",
+            headers=_auth_headers(access_token),
+            params={
+                "per_page": per,
+                "page": page,
+                "sort": "updated",
+                "direction": "desc",
+                "affiliation": "owner,collaborator,organization_member",
+            },
+            timeout=45,
+        )
+        _raise_for_status(resp)
+        data = resp.json()
+        if not isinstance(data, list) or not data:
+            break
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            full = (item.get("full_name") or "").strip()
+            html = (item.get("html_url") or "").strip()
+            if not full or not html:
+                continue
+            out.append(
+                {
+                    "full_name": full,
+                    "html_url": html.rstrip("/"),
+                    "private": bool(item.get("private")),
+                    "default_branch": (item.get("default_branch") or "").strip()
+                    or None,
+                }
+            )
+        if len(data) < per:
+            break
+    return out
+
+
 def list_repo_branches(
     owner: str,
     repo: str,

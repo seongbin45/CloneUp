@@ -373,7 +373,7 @@ def main() -> int:
     # ----- UI load -----
     section("UI 로드")
     try:
-        from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
+        from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton  # noqa: F401
 
         app = QApplication.instance() or QApplication([])
         from app.ui.main_window import load_main_window
@@ -385,7 +385,7 @@ def main() -> int:
             ("btnSyncPull", QPushButton),
             ("btnSyncPush", QPushButton),
             ("btnSyncAbort", QPushButton),
-            ("editCloneUrl", QLineEdit),
+            ("comboCloneUrl", QComboBox),
             ("editSyncFolder", QLineEdit),
             ("comboSyncRecent", QComboBox),
             ("btnSyncRefresh", QPushButton),

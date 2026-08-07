@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QObject, Qt, QTimer, Slot
+from PySide6.QtCore import QEvent, QFile, QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -213,7 +213,10 @@ class MainController(QObject):
             self.comboPublishBranch.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
 
         # --- clone ---
-        self.editCloneUrl = window.findChild(QLineEdit, "editCloneUrl")
+        # Editable combo: type/paste URL, or pick from GitHub list when logged in
+        self.comboCloneUrl = window.findChild(QComboBox, "comboCloneUrl")
+        # Back-compat alias used in older call sites / docs
+        self.editCloneUrl = self.comboCloneUrl
         self.comboCloneBranch = window.findChild(QComboBox, "comboCloneBranch")
         self.editCloneParent = window.findChild(QLineEdit, "editCloneParent")
         self.btnCloneBrowseParent = window.findChild(QPushButton, "btnCloneBrowseParent")
@@ -225,12 +228,25 @@ class MainController(QObject):
         if self.comboCloneBranch is not None:
             self.comboCloneBranch.setEditable(False)
             self.comboCloneBranch.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        if self.comboCloneUrl is not None:
+            self.comboCloneUrl.setEditable(True)
+            self.comboCloneUrl.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+            self.comboCloneUrl.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
+            le = self.comboCloneUrl.lineEdit()
+            if le is not None:
+                le.setPlaceholderText(
+                    "https://github.com/owner/repo  또는 목록에서 선택"
+                )
         self._clone_url_timer = QTimer(self)
         self._clone_url_timer.setSingleShot(True)
         self._clone_url_timer.setInterval(350)
         self._clone_url_timer.timeout.connect(self._normalize_clone_url_field)
         # Track last owner/repo so folder name resets when URL changes to another repo
         self._last_clone_repo_key: str | None = None
+        self._clone_repos_worker: QThread | None = None
+        self._clone_repos_loaded_for: str | None = None  # token fingerprint / "none"
         # Publish: folder path that last auto-filled editRepoName (so re-pick updates name)
         self._publish_folder_for_repo_name: str | None = None
 
@@ -282,6 +298,9 @@ class MainController(QObject):
         self._load_prefs()
         self._refresh_status_bar()
         self._log("CloneUp — 만들고 올리기 / 받기 / 동기화 탭 사용 가능")
+        # Prefetch clone repo list if already logged in
+        if load_token():
+            QTimer.singleShot(200, lambda: self._maybe_load_clone_repo_list())
         # First-run onboarding → then DG1 Git check / token age (after paint)
         QTimer.singleShot(0, self._startup_after_show)
 
@@ -351,7 +370,7 @@ class MainController(QObject):
             (
                 "labelTabIntroClone",
                 "GitHub에 있는 폴더를 내 컴퓨터로 복사합니다.",
-                "• 주소를 붙여넣으면 저장소 루트만 남습니다. branch는 아래에서 고르세요.\n"
+                "• 주소를 붙여 넣거나, GitHub 연결 후 목록에서 내 저장소를 고를 수 있습니다.\n"
                 "• 같은 이름의 폴더가 이미 있으면 실패합니다. 이름을 바꾸세요.\n"
                 "• 비공개 저장소는 「비공개 저장소 받을 때 GitHub 연결 사용」을 켠 뒤 연결하세요.",
             ),
@@ -458,7 +477,7 @@ class MainController(QObject):
         for w in (
             self.btnClone,
             self.btnCloneBrowseParent,
-            self.editCloneUrl,
+            self.comboCloneUrl,
             self.comboCloneBranch,
             self.editCloneParent,
             self.editCloneDirName,
@@ -562,6 +581,9 @@ class MainController(QObject):
         self.auth_status.set_login_name(None)
         self.auth_status.refresh()
         self._update_logout_button()
+        # Clear clone repo dropdown (keep typed URL)
+        self._clone_repos_loaded_for = None
+        self._maybe_load_clone_repo_list(force=True)
 
     def _notify_logout_done(self) -> None:
         """Friendly ack instead of '로그인이 취소되었습니다' failure dialog."""
@@ -634,9 +656,14 @@ class MainController(QObject):
             self.btnClone.clicked.connect(self.on_clone)
         if self.btnCloneCancel:
             self.btnCloneCancel.clicked.connect(self.on_cancel)
-        if self.editCloneUrl:
-            self.editCloneUrl.editingFinished.connect(self._normalize_clone_url_field)
-            self.editCloneUrl.textChanged.connect(self._on_clone_url_text_changed)
+        if self.comboCloneUrl is not None:
+            le = self.comboCloneUrl.lineEdit()
+            if le is not None:
+                le.editingFinished.connect(self._normalize_clone_url_field)
+                le.textChanged.connect(self._on_clone_url_text_changed)
+            self.comboCloneUrl.activated.connect(self._on_clone_url_activated)
+        if self.tabWidget is not None:
+            self.tabWidget.currentChanged.connect(self._on_tab_changed)
 
         if self.btnSyncBrowse:
             self.btnSyncBrowse.clicked.connect(self.on_sync_browse)
@@ -947,11 +974,15 @@ class MainController(QObject):
         self._log(
             f"연결 완료 ({kind_label}): {login}"
         )
+        # Refresh clone-tab repo picker for the new session
+        self._clone_repos_loaded_for = None
+        self._maybe_load_clone_repo_list(force=True)
         QMessageBox.information(
             self.window,
             "연결 완료",
             f"{login} 님, 연결되었습니다.\n"
-            "만료일이 지나면 「GitHub: 연결」으로 새 키를 넣으세요.",
+            "만료일이 지나면 「GitHub: 연결」으로 새 키를 넣으세요.\n"
+            "「받기」탭에서 내 저장소 목록을 고를 수 있습니다.",
         )
 
     @Slot(str)
@@ -1341,10 +1372,126 @@ class MainController(QObject):
                 return base or None
         return text
 
+    def _clone_url_text(self) -> str:
+        if self.comboCloneUrl is None:
+            return ""
+        return (self.comboCloneUrl.currentText() or "").strip()
+
+    def _set_clone_url_text(self, text: str, *, block: bool = True) -> None:
+        if self.comboCloneUrl is None:
+            return
+        if block:
+            self.comboCloneUrl.blockSignals(True)
+            le = self.comboCloneUrl.lineEdit()
+            if le is not None:
+                le.blockSignals(True)
+        try:
+            self.comboCloneUrl.setEditText(text)
+        finally:
+            if block:
+                le = self.comboCloneUrl.lineEdit()
+                if le is not None:
+                    le.blockSignals(False)
+                self.comboCloneUrl.blockSignals(False)
+
     @Slot()
     def _on_clone_url_text_changed(self, _text: str = "") -> None:
         """Debounce paste so long /tree/… URLs collapse to owner/repo."""
         self._clone_url_timer.start()
+
+    @Slot(int)
+    def _on_clone_url_activated(self, index: int) -> None:
+        """User picked a listed repo — put the real GitHub URL in the field."""
+        if self.comboCloneUrl is None or index < 0:
+            return
+        url = self.comboCloneUrl.itemData(index)
+        if isinstance(url, str) and url.strip():
+            self._set_clone_url_text(url.strip())
+            self._normalize_clone_url_field()
+
+    @Slot(int)
+    def _on_tab_changed(self, index: int) -> None:
+        if self.tabWidget is None:
+            return
+        w = self.tabWidget.widget(index)
+        if w is not None and w.objectName() == "tabClone":
+            self._maybe_load_clone_repo_list()
+
+    def _maybe_load_clone_repo_list(self, *, force: bool = False) -> None:
+        """When logged in, fill combo dropdown with the user's repos (async)."""
+        if self.comboCloneUrl is None:
+            return
+        token = load_token()
+        if not token:
+            self._clone_repos_loaded_for = "none"
+            # Keep free typing; drop previous menu items only
+            cur = self._clone_url_text()
+            self.comboCloneUrl.blockSignals(True)
+            self.comboCloneUrl.clear()
+            if cur:
+                self.comboCloneUrl.setEditText(cur)
+            self.comboCloneUrl.blockSignals(False)
+            return
+        key = token[:12]
+        if not force and self._clone_repos_loaded_for == key:
+            return
+        if self._clone_repos_worker is not None and self._clone_repos_worker.isRunning():
+            return
+
+        class _RepoListWorker(QThread):
+            succeeded = Signal(list)
+            failed = Signal(str)
+
+            def __init__(self, tok: str, parent=None) -> None:
+                super().__init__(parent)
+                self._tok = tok
+
+            def run(self) -> None:  # noqa: N802
+                try:
+                    from app.github.api_client import list_user_repos
+
+                    rows = list_user_repos(self._tok)
+                    self.succeeded.emit(rows)
+                except Exception as e:
+                    self.failed.emit(str(e))
+
+        w = _RepoListWorker(token, parent=self)
+        self._clone_repos_worker = w
+        w.succeeded.connect(self._on_clone_repo_list_ok)
+        w.failed.connect(self._on_clone_repo_list_fail)
+        w.start()
+
+    @Slot(list)
+    def _on_clone_repo_list_ok(self, rows: list) -> None:
+        if self.comboCloneUrl is None:
+            return
+        token = load_token()
+        self._clone_repos_loaded_for = (token or "")[:12] if token else "none"
+        cur = self._clone_url_text()
+        self.comboCloneUrl.blockSignals(True)
+        self.comboCloneUrl.clear()
+        n = 0
+        for item in rows or []:
+            if not isinstance(item, dict):
+                continue
+            full = str(item.get("full_name") or "").strip()
+            html = str(item.get("html_url") or "").strip()
+            if not full or not html:
+                continue
+            private = bool(item.get("private"))
+            label = f"{full}  ·  비공개" if private else full
+            self.comboCloneUrl.addItem(label, html)
+            n += 1
+        if cur:
+            self.comboCloneUrl.setEditText(cur)
+        self.comboCloneUrl.blockSignals(False)
+        if n:
+            self._log(f"받기: 내 저장소 {n}개 목록 준비됨 (목록에서 고르거나 주소 입력)")
+
+    @Slot(str)
+    def _on_clone_repo_list_fail(self, msg: str) -> None:
+        self._log(f"받기: 저장소 목록을 못 읽음 ({msg[:120]})")
+        # Still usable as free-text field
 
     @Slot()
     def _normalize_clone_url_field(self) -> None:
@@ -1354,9 +1501,9 @@ class MainController(QObject):
         When owner/repo changes (different repository), reset folder name and
         branch to match the new repo — old name would collide or look wrong.
         """
-        if not self.editCloneUrl:
+        if self.comboCloneUrl is None:
             return
-        raw = (self.editCloneUrl.text() or "").strip()
+        raw = self._clone_url_text()
         if not raw:
             # Cleared field → clear dependent fields
             self._last_clone_repo_key = None
@@ -1373,10 +1520,8 @@ class MainController(QObject):
             return
 
         # Rewrite field to clean root (no .git, no subpaths)
-        if (self.editCloneUrl.text() or "").strip() != n.display_url:
-            self.editCloneUrl.blockSignals(True)
-            self.editCloneUrl.setText(n.display_url)
-            self.editCloneUrl.blockSignals(False)
+        if self._clone_url_text() != n.display_url:
+            self._set_clone_url_text(n.display_url)
             for w in n.warnings:
                 self._log(f"URL 안내: {w}")
 
@@ -1524,7 +1669,7 @@ class MainController(QObject):
     def on_clone(self) -> None:
         if self._busy():
             return
-        url = (self.editCloneUrl.text() if self.editCloneUrl else "") or ""
+        url = self._clone_url_text()
         parent = (self.editCloneParent.text() if self.editCloneParent else "") or ""
         name = (self.editCloneDirName.text() if self.editCloneDirName else "") or ""
         use_token = bool(
@@ -1574,10 +1719,7 @@ class MainController(QObject):
         try:
             norm = normalize_github_clone_url(url)
             # Ensure field shows cleaned root before work starts
-            if self.editCloneUrl is not None:
-                self.editCloneUrl.blockSignals(True)
-                self.editCloneUrl.setText(norm.display_url)
-                self.editCloneUrl.blockSignals(False)
+            self._set_clone_url_text(norm.display_url)
             for w in norm.warnings:
                 self._log(f"URL 안내: {w}")
         except UrlError as e:

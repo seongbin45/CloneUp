@@ -493,9 +493,21 @@
            </widget>
           </item>
           <item>
-           <widget class="QLineEdit" name="editCloneUrl">
-            <property name="placeholderText">
-             <string>https://github.com/owner/repo</string>
+           <widget class="QComboBox" name="comboCloneUrl">
+            <property name="editable">
+             <bool>true</bool>
+            </property>
+            <property name="insertPolicy">
+             <enum>QComboBox::InsertPolicy::NoInsert</enum>
+            </property>
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+              <horstretch>1</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="toolTip">
+             <string>주소를 붙여 넣거나, GitHub 연결 후 목록에서 내 저장소를 고를 수 있습니다.</string>
             </property>
            </widget>
           </item>
@@ -504,7 +516,7 @@
         <item>
          <widget class="QLabel" name="labelCloneHint">
           <property name="text">
-           <string>붙여넣으면 저장소 루트만 남습니다. branch는 아래에서 고르세요.</string>
+           <string>주소를 붙여 넣거나, 연결돼 있으면 목록에서 고르세요. 루트 주소만 남고 branch는 아래에서 고릅니다.</string>
           </property>
           <property name="wordWrap">
            <bool>true</bool>
