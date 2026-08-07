@@ -37,7 +37,7 @@ from app.git.safety import (
     scan_secret_in_contents,
 )
 from app.git.url_utils import UrlError, normalize_github_clone_url
-from app.auth.token_store import delete_token, load_token
+from app.auth.token_store import delete_token, is_logged_in, load_token
 from app.paths import app_root
 from app.ui.auth_status import AuthState, AuthStatusButton
 from app.ui.device_code_dialog import DeviceCodeOverlay
@@ -217,6 +217,7 @@ class MainController(QObject):
         self.comboCloneUrl = window.findChild(QComboBox, "comboCloneUrl")
         # Back-compat alias used in older call sites / docs
         self.editCloneUrl = self.comboCloneUrl
+        self.labelCloneHint = window.findChild(QLabel, "labelCloneHint")
         self.comboCloneBranch = window.findChild(QComboBox, "comboCloneBranch")
         self.editCloneParent = window.findChild(QLineEdit, "editCloneParent")
         self.btnCloneBrowseParent = window.findChild(QPushButton, "btnCloneBrowseParent")
@@ -234,11 +235,8 @@ class MainController(QObject):
             self.comboCloneUrl.setSizeAdjustPolicy(
                 QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
             )
-            le = self.comboCloneUrl.lineEdit()
-            if le is not None:
-                le.setPlaceholderText(
-                    "https://github.com/owner/repo  또는 목록에서 선택"
-                )
+            # Block empty/list popup when not logged in (URL-only mode)
+            self.comboCloneUrl.installEventFilter(self)
         self._clone_url_timer = QTimer(self)
         self._clone_url_timer.setSingleShot(True)
         self._clone_url_timer.setInterval(350)
@@ -247,6 +245,7 @@ class MainController(QObject):
         self._last_clone_repo_key: str | None = None
         self._clone_repos_worker: QThread | None = None
         self._clone_repos_loaded_for: str | None = None  # token fingerprint / "none"
+        self._clone_url_logged_in_mode: bool | None = None
         # Publish: folder path that last auto-filled editRepoName (so re-pick updates name)
         self._publish_folder_for_repo_name: str | None = None
 
@@ -298,9 +297,8 @@ class MainController(QObject):
         self._load_prefs()
         self._refresh_status_bar()
         self._log("CloneUp — 만들고 올리기 / 받기 / 동기화 탭 사용 가능")
-        # Prefetch clone repo list if already logged in
-        if load_token():
-            QTimer.singleShot(200, lambda: self._maybe_load_clone_repo_list())
+        # Apply 받기 URL mode (list vs plain input) after paint
+        QTimer.singleShot(0, self._sync_clone_url_login_mode)
         # First-run onboarding → then DG1 Git check / token age (after paint)
         QTimer.singleShot(0, self._startup_after_show)
 
@@ -526,6 +524,19 @@ class MainController(QObject):
 
     def eventFilter(self, obj, event):  # noqa: N802
         et = event.type()
+        # 받기 URL: 미로그인 시 드롭다운(팝업) 열지 않음 — 입력만
+        if (
+            self.comboCloneUrl is not None
+            and obj is self.comboCloneUrl
+            and et == QEvent.Type.MouseButtonPress
+            and not is_logged_in()
+        ):
+            # Clicks on the (hidden) drop-down zone still reach the combo;
+            # focus the line edit so typing/paste works like a plain field.
+            le = self.comboCloneUrl.lineEdit()
+            if le is not None:
+                le.setFocus(Qt.FocusReason.MouseFocusReason)
+            # Still allow selecting text in the edit area — do not swallow.
         if obj is self.window and et == QEvent.Type.Close:
             if not getattr(self, "_closing", False):
                 self._closing = True
@@ -581,9 +592,9 @@ class MainController(QObject):
         self.auth_status.set_login_name(None)
         self.auth_status.refresh()
         self._update_logout_button()
-        # Clear clone repo dropdown (keep typed URL)
+        # 받기 탭: 로그아웃 → URL 입력 전용 모드
         self._clone_repos_loaded_for = None
-        self._maybe_load_clone_repo_list(force=True)
+        self._sync_clone_url_login_mode(force=True)
 
     def _notify_logout_done(self) -> None:
         """Friendly ack instead of '로그인이 취소되었습니다' failure dialog."""
@@ -760,12 +771,13 @@ class MainController(QObject):
                 )
         self.auth_status.refresh()
         self._update_logout_button()
+        self._sync_clone_url_login_mode()
 
     def _update_logout_button(self) -> None:
         """Show 로그아웃 only when a GitHub session is stored."""
         if self.btnLogout is None:
             return
-        logged_in = bool(load_token())
+        logged_in = is_logged_in()
         self.btnLogout.setVisible(logged_in)
         if logged_in:
             self.btnLogout.setEnabled(not self._busy())
@@ -974,9 +986,9 @@ class MainController(QObject):
         self._log(
             f"연결 완료 ({kind_label}): {login}"
         )
-        # Refresh clone-tab repo picker for the new session
+        # 받기 탭: 로그인 → 내 저장소 목록 모드
         self._clone_repos_loaded_for = None
-        self._maybe_load_clone_repo_list(force=True)
+        self._sync_clone_url_login_mode(force=True)
         QMessageBox.information(
             self.window,
             "연결 완료",
@@ -1394,6 +1406,56 @@ class MainController(QObject):
                     le.blockSignals(False)
                 self.comboCloneUrl.blockSignals(False)
 
+    def _sync_clone_url_login_mode(self, *, force: bool = False) -> None:
+        """
+        Logged in  → dropdown list of my repos (+ still editable URL).
+        Logged out → plain URL field (no list / no chevron), same as before.
+        """
+        if self.comboCloneUrl is None:
+            return
+        logged_in = is_logged_in()
+        if (
+            not force
+            and self._clone_url_logged_in_mode is not None
+            and self._clone_url_logged_in_mode == logged_in
+        ):
+            return
+        self._clone_url_logged_in_mode = logged_in
+        le = self.comboCloneUrl.lineEdit()
+        if logged_in:
+            # Restore default combo chrome (drop-down visible)
+            self.comboCloneUrl.setStyleSheet("")
+            if le is not None:
+                le.setPlaceholderText(
+                    "목록에서 선택하거나 https://github.com/owner/repo"
+                )
+            if self.labelCloneHint is not None:
+                self.labelCloneHint.setText(
+                    "연결됨: 목록에서 고르거나 주소를 붙여 넣으세요. "
+                    "루트 주소만 남고 branch는 아래에서 고릅니다."
+                )
+            self._maybe_load_clone_repo_list(force=force)
+        else:
+            # Line-edit look: hide drop-down arrow; no popup items
+            cur = self._clone_url_text()
+            self.comboCloneUrl.blockSignals(True)
+            self.comboCloneUrl.clear()
+            if cur:
+                self.comboCloneUrl.setEditText(cur)
+            self.comboCloneUrl.blockSignals(False)
+            self._clone_repos_loaded_for = "none"
+            self.comboCloneUrl.setStyleSheet(
+                "QComboBox::drop-down { width: 0px; border: none; }"
+                "QComboBox::down-arrow { width: 0px; height: 0px; image: none; }"
+            )
+            if le is not None:
+                le.setPlaceholderText("https://github.com/owner/repo")
+            if self.labelCloneHint is not None:
+                self.labelCloneHint.setText(
+                    "붙여넣으면 저장소 루트만 남습니다. branch는 아래에서 고르세요. "
+                    "내 저장소 목록은 GitHub 연결 후 사용할 수 있습니다."
+                )
+
     @Slot()
     def _on_clone_url_text_changed(self, _text: str = "") -> None:
         """Debounce paste so long /tree/… URLs collapse to owner/repo."""
@@ -1402,7 +1464,7 @@ class MainController(QObject):
     @Slot(int)
     def _on_clone_url_activated(self, index: int) -> None:
         """User picked a listed repo — put the real GitHub URL in the field."""
-        if self.comboCloneUrl is None or index < 0:
+        if not is_logged_in() or self.comboCloneUrl is None or index < 0:
             return
         url = self.comboCloneUrl.itemData(index)
         if isinstance(url, str) and url.strip():
@@ -1415,22 +1477,17 @@ class MainController(QObject):
             return
         w = self.tabWidget.widget(index)
         if w is not None and w.objectName() == "tabClone":
-            self._maybe_load_clone_repo_list()
+            self._sync_clone_url_login_mode()
 
     def _maybe_load_clone_repo_list(self, *, force: bool = False) -> None:
-        """When logged in, fill combo dropdown with the user's repos (async)."""
+        """Fill combo dropdown only when is_logged_in()."""
         if self.comboCloneUrl is None:
+            return
+        if not is_logged_in():
+            self._clone_repos_loaded_for = "none"
             return
         token = load_token()
         if not token:
-            self._clone_repos_loaded_for = "none"
-            # Keep free typing; drop previous menu items only
-            cur = self._clone_url_text()
-            self.comboCloneUrl.blockSignals(True)
-            self.comboCloneUrl.clear()
-            if cur:
-                self.comboCloneUrl.setEditText(cur)
-            self.comboCloneUrl.blockSignals(False)
             return
         key = token[:12]
         if not force and self._clone_repos_loaded_for == key:
@@ -1463,7 +1520,7 @@ class MainController(QObject):
 
     @Slot(list)
     def _on_clone_repo_list_ok(self, rows: list) -> None:
-        if self.comboCloneUrl is None:
+        if self.comboCloneUrl is None or not is_logged_in():
             return
         token = load_token()
         self._clone_repos_loaded_for = (token or "")[:12] if token else "none"
@@ -1491,7 +1548,7 @@ class MainController(QObject):
     @Slot(str)
     def _on_clone_repo_list_fail(self, msg: str) -> None:
         self._log(f"받기: 저장소 목록을 못 읽음 ({msg[:120]})")
-        # Still usable as free-text field
+        # Logged-in but list failed — field stays editable for URL paste
 
     @Slot()
     def _normalize_clone_url_field(self) -> None:

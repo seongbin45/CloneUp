@@ -64,6 +64,11 @@ def load_token() -> str | None:
     return keyring.get_password(SERVICE_NAME, TOKEN_USERNAME)
 
 
+def is_logged_in() -> bool:
+    """True when a GitHub access token is stored on this PC."""
+    return bool(load_token())
+
+
 def load_scope() -> str | None:
     """Granted scope string from last successful login (may be None)."""
     return keyring.get_password(SERVICE_NAME, SCOPE_USERNAME)
