@@ -11,6 +11,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# Windows CI (cp1252) cannot print Korean without reconfigure.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    except Exception:
+        pass
+
 from app.git import safety as s  # noqa: E402
 
 # Reference README §1-4
@@ -45,7 +52,7 @@ def main() -> int:
     def check(name: str, ok: bool, detail: str = "") -> None:
         results.append((name, ok, detail))
         mark = "PASS" if ok else "FAIL"
-        print(f"{mark}  {name}" + (f" — {detail}" if detail else ""))
+        print(f"{mark}  {name}" + (f" - {detail}" if detail else ""))
 
     # 1) Regex identity
     check(

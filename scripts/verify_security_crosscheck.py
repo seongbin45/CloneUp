@@ -19,6 +19,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+# GitHub Actions windows-latest defaults to cp1252 — Korean PASS lines crash without UTF-8.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    except Exception:
+        pass
+
 
 def main() -> int:
     results: list[tuple[str, bool, str]] = []
@@ -26,7 +33,8 @@ def main() -> int:
     def check(name: str, ok: bool, detail: str = "") -> None:
         results.append((name, ok, detail))
         mark = "PASS" if ok else "FAIL"
-        print(f"{mark}  {name}" + (f" — {detail}" if detail else ""))
+        # ASCII hyphen avoids some console edge cases; detail may still be Korean (UTF-8).
+        print(f"{mark}  {name}" + (f" - {detail}" if detail else ""))
 
     # --- imports (fail loud) ---
     import app.config as cfg

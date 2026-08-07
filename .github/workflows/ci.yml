@@ -1,5 +1,8 @@
 name: CI
 
+# Automatic checks on every push/PR to main.
+# Added in 0da6f94 (security suite + pytest). Not an app runtime file.
+
 on:
   push:
     branches: [main]
@@ -9,6 +12,10 @@ on:
 jobs:
   test:
     runs-on: windows-latest
+    env:
+      # Avoid UnicodeEncodeError when scripts print Korean on cp1252 consoles
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
 
