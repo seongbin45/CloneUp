@@ -584,6 +584,22 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         border: none;
     }}
     /* Same family as btnAuthStatus — right edge of status row */
+    QPushButton#btnHelpOnboarding {{
+        background: transparent;
+        border: none;
+        color: {TEXT_MUTED};
+        font-size: 12.5px;
+        font-weight: 500;
+        padding: 2px 8px;
+        text-align: right;
+        min-height: 0;
+        max-height: 22px;
+    }}
+    QPushButton#btnHelpOnboarding:hover {{
+        color: {PRIMARY};
+        background: transparent;
+        border: none;
+    }}
     QPushButton#btnLogout {{
         background: transparent;
         border: none;

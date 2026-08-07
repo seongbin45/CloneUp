@@ -94,3 +94,12 @@ def save_last_publish_branch(branch: str) -> None:
     b = (branch or "").strip()
     if b:
         _settings().setValue("last_publish_branch", b)
+
+
+def load_onboarding_done() -> bool:
+    """True after first-run wizard completed (or skipped to finish)."""
+    return bool(_settings().value("onboarding_done", False, type=bool))
+
+
+def save_onboarding_done(done: bool = True) -> None:
+    _settings().setValue("onboarding_done", bool(done))

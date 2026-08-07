@@ -52,17 +52,20 @@ from app.ui.commit_history_dialog import show_commit_history
 from app.ui.success_dialog import show_clone_success, show_publish_success
 from app.ui.tip_card import install_tip_card
 from app.util.next_action import format_next_step_line
+from app.ui.onboarding_dialog import show_onboarding
 from app.ui.settings_store import (
     load_hide_real_email,
     load_last_commit_message,
     load_last_private,
     load_last_publish_branch,
+    load_onboarding_done,
     load_recent_folders,
     remember_folder,
     save_hide_real_email,
     save_last_commit_message,
     save_last_private,
     save_last_publish_branch,
+    save_onboarding_done,
 )
 from app.ui.tab_workers import CloneWorker, SyncActionWorker, SyncStatusWorker
 from app.ui.theme import active_palette
@@ -177,6 +180,7 @@ class MainController(QObject):
             raise RuntimeError("btnAuthStatus 위젯 없음 — UI에 상태형 로그인 버튼이 필요합니다")
         self.auth_status = AuthStatusButton(btn_auth, parent=self)
         self.btnLogout = window.findChild(QPushButton, "btnLogout")
+        self.btnHelpOnboarding = window.findChild(QPushButton, "btnHelpOnboarding")
 
         # D2 — recolor status-row widgets when OS light/dark flips
         # (inline setStyleSheet overrides global QSS and would stay light)
@@ -278,9 +282,22 @@ class MainController(QObject):
         self._load_prefs()
         self._refresh_status_bar()
         self._log("CloneUp — 만들고 올리기 / 받기 / 동기화 탭 사용 가능")
-        # DG1 — first-run Git check (plan D): after UI is up
-        QTimer.singleShot(0, self._ensure_git_bootstrap)
-        QTimer.singleShot(0, self._log_token_age_hint)
+        # First-run onboarding → then DG1 Git check / token age (after paint)
+        QTimer.singleShot(0, self._startup_after_show)
+
+    def _startup_after_show(self) -> None:
+        """Onboarding (once) then Git bootstrap and soft token age hint."""
+        if not load_onboarding_done():
+            self._log("첫 실행 안내 표시")
+            if show_onboarding(self.window):
+                save_onboarding_done(True)
+                self._log("첫 실행 안내 완료")
+            else:
+                # Esc / close without 시작하기 — still mark done so we don't trap
+                save_onboarding_done(True)
+                self._log("첫 실행 안내 닫음")
+        self._ensure_git_bootstrap()
+        self._log_token_age_hint()
 
     def _ensure_git_bootstrap(self) -> None:
         """Plan D / DG1: if Git missing, full-window simple install chooser."""
@@ -292,6 +309,14 @@ class MainController(QObject):
             return
         ensure_git_or_offer_setup(self.window, log=self._log)
         self._refresh_status_bar()
+
+    @Slot()
+    def on_help_onboarding(self) -> None:
+        """Re-open first-run guide (시안: 도움말)."""
+        if self._busy():
+            return
+        self._log("도움말 — 시작 안내")
+        show_onboarding(self.window)
 
     def _log_token_age_hint(self) -> None:
         """Soft reminder: PAT may expire; we only know connect age on this PC."""
@@ -596,6 +621,8 @@ class MainController(QObject):
         self.auth_status.login_requested.connect(self.on_login)
         if self.btnLogout is not None:
             self.btnLogout.clicked.connect(self.on_logout)
+        if self.btnHelpOnboarding is not None:
+            self.btnHelpOnboarding.clicked.connect(self.on_help_onboarding)
         if self.editFolder:
             self.editFolder.editingFinished.connect(self._maybe_fill_repo_name)
         if self.comboRecent:

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #e8e6e1; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 44px; display: flex; justify-content: center; align-items: flex-start; overflow-x: auto;">
+  <div style="width: 880px; flex-shrink: 0; background: #fbfaf8; border: 1px solid #c9c5bd; border-radius: 10px; box-shadow: 0 18px 48px rgba(40,36,30,.18); overflow: hidden; display: flex; flex-direction: column;">
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+      <div style="display: flex; gap: 7px;">
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+      </div>
+      <div style="font-size: 13px; font-weight: 600; color: #3d382f;">클론업 시작하기</div>
+      <div style="margin-left: auto; font-size: 12px; color: #6d675c;">{{ stepLabel }}</div>
+    </div>
+
+    <div style="padding: 40px 48px 34px; min-height: 400px; display: flex; flex-direction: column; gap: 26px;">
+
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div style="font-size: 22px; font-weight: 600; color: #232019; letter-spacing: -0.01em; line-height: 1.4;">{{ step.title }}</div>
+        <div style="font-size: 14px; color: #4a453b; line-height: 1.75; text-wrap: pretty;">{{ step.lead }}</div>
+      </div>
+
+      <sc-if value="{{ isFolders }}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+          <div style="display: flex; align-items: stretch; gap: 20px;">
+            <div style="flex: 1; padding: 22px 20px; background: #f2efe9; border: 1px solid #ddd8d0; border-radius: 8px; display: flex; flex-direction: column; gap: 7px;">
+              <div style="font-size: 12px; color: #6d675c;">내 컴퓨터</div>
+              <div style="font-size: 14px; font-weight: 500; color: #232019; font-family: 'IBM Plex Mono', monospace;">my-project</div>
+              <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">직접 파일을 고치는 곳</div>
+            </div>
+            <div style="width: 118px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: center; gap: 14px;">
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                <div style="font-size: 11.5px; color: #1f6f5c; font-weight: 500;">올리기</div>
+                <div style="display: flex; align-items: center; width: 100%;">
+                  <div style="flex: 1; height: 2px; background: #1f6f5c;"></div>
+                  <div style="width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 8px solid #1f6f5c;"></div>
+                </div>
+              </div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                <div style="display: flex; align-items: center; width: 100%;">
+                  <div style="width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 8px solid #8b8477;"></div>
+                  <div style="flex: 1; height: 2px; background: #8b8477;"></div>
+                </div>
+                <div style="font-size: 11.5px; color: #6d675c;">받아오기</div>
+              </div>
+            </div>
+            <div style="flex: 1; padding: 22px 20px; background: #f2efe9; border: 1px solid #ddd8d0; border-radius: 8px; display: flex; flex-direction: column; gap: 7px;">
+              <div style="font-size: 12px; color: #6d675c;">GitHub</div>
+              <div style="font-size: 14px; font-weight: 500; color: #232019; font-family: 'IBM Plex Mono', monospace;">seong/my-project</div>
+              <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">보관되고, 다른 곳에서 받을 수 있는 사본</div>
+            </div>
+          </div>
+          <div style="font-size: 13px; color: #4a453b; line-height: 1.7;">둘은 자동으로 맞춰지지 않습니다. 이 앱의 모든 버튼은 결국 이 화살표 둘 중 하나입니다.</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isCommits }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 22px;">
+          <div style="padding: 26px 24px; background: #f2efe9; border: 1px solid #ddd8d0; border-radius: 8px;">
+            <div style="display: flex; align-items: center; gap: 0;">
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 9px; width: 96px; flex-shrink: 0;">
+                <div style="width: 13px; height: 13px; border-radius: 50%; background: #b7b1a5;"></div>
+                <div style="font-size: 11.5px; color: #6d675c; text-align: center;">첫 커밋</div>
+              </div>
+              <div style="flex: 1; height: 2px; background: #cdc8bf; align-self: flex-start; margin-top: 5px;"></div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 9px; width: 96px; flex-shrink: 0;">
+                <div style="width: 13px; height: 13px; border-radius: 50%; background: #b7b1a5;"></div>
+                <div style="font-size: 11.5px; color: #6d675c; text-align: center;">로그인 추가</div>
+              </div>
+              <div style="flex: 1; height: 2px; background: #cdc8bf; align-self: flex-start; margin-top: 5px;"></div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 9px; width: 96px; flex-shrink: 0;">
+                <div style="width: 13px; height: 13px; border-radius: 50%; background: #b7b1a5;"></div>
+                <div style="font-size: 11.5px; color: #6d675c; text-align: center;">색 수정</div>
+              </div>
+              <div style="flex: 1; height: 2px; background: #1f6f5c; align-self: flex-start; margin-top: 5px;"></div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 9px; width: 96px; flex-shrink: 0;">
+                <div style="width: 17px; height: 17px; border-radius: 50%; background: #1f6f5c; margin-top: -2px;"></div>
+                <div style="font-size: 11.5px; color: #1f6f5c; font-weight: 500; text-align: center;">지금</div>
+              </div>
+            </div>
+          </div>
+          <div style="font-size: 13px; color: #4a453b; line-height: 1.7;">점 하나가 커밋 하나입니다. 커밋할 때마다 그 순간의 폴더 전체가 통째로 저장되고, 언제든 그 점으로 돌아갈 수 있습니다. 자주 할수록 돌아갈 곳이 많아집니다.</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isCost }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; flex-direction: column;">
+            <div style="display: grid; grid-template-columns: 190px 1fr 1fr; gap: 14px; padding: 0 14px 9px; font-size: 11.5px; font-weight: 600; color: #6d675c; border-bottom: 2px solid #232019;">
+              <div>하는 일</div>
+              <div>얻는 것</div>
+              <div>잃는 것</div>
+            </div>
+            <sc-for list="{{ costRows }}" as="r" hint-placeholder-count="5">
+              <div style="display: grid; grid-template-columns: 190px 1fr 1fr; gap: 14px; padding: 11px 14px; border-bottom: 1px solid #e6e1d8; background: {{ r.bg }};">
+                <div style="font-size: 13px; font-weight: 500; color: #232019; line-height: 1.5;">{{ r.action }}</div>
+                <div style="font-size: 12.5px; color: #4a453b; line-height: 1.55;">{{ r.gain }}</div>
+                <div style="font-size: 12.5px; color: {{ r.lossColor }}; font-weight: {{ r.lossWeight }}; line-height: 1.55;">{{ r.loss }}</div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size: 13px; color: #4a453b; line-height: 1.7;">대가를 치르는 것은 굵게 표시된 둘뿐입니다. 나머지는 마음 놓고 하셔도 됩니다.</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isUndo }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; gap: 18px; align-items: stretch;">
+            <div style="flex: 1; padding: 22px 20px; background: #f2efe9; border: 1px solid #ddd8d0; border-radius: 8px; display: flex; flex-direction: column; gap: 11px;">
+              <div style="font-size: 11.5px; font-weight: 600; color: #1f6f5c;">기본 · 권장</div>
+              <div style="font-size: 15px; font-weight: 600; color: #232019;">기록을 남기고 되돌리기</div>
+              <div style="font-size: 12.5px; color: #4a453b; line-height: 1.65;">예전 내용을 되살린 <strong style="color: #232019;">새 커밋을 하나 더 쌓습니다.</strong> 지운 것이 없으니 되돌리기를 또 되돌릴 수 있습니다.</div>
+              <div style="margin-top: auto; padding-top: 11px; border-top: 1px solid #ddd8d0; font-size: 12.5px; color: #4a453b;">대가: 기록이 한 줄 길어집니다</div>
+            </div>
+            <div style="flex: 1; padding: 22px 20px; background: #fbf6ee; border: 1px solid #e4d9b8; border-left: 4px solid #c4a94e; border-radius: 8px; display: flex; flex-direction: column; gap: 11px;">
+              <div style="font-size: 11.5px; font-weight: 600; color: #8a6d12;">고급 · 주의</div>
+              <div style="font-size: 15px; font-weight: 600; color: #232019;">기록까지 지우고 되돌리기</div>
+              <div style="font-size: 12.5px; color: #4a453b; line-height: 1.65;">커밋을 <strong style="color: #232019;">아예 없앱니다.</strong> 이미 올린 커밋이라면 그 사본을 받아 간 사람의 폴더가 어긋납니다.</div>
+              <div style="margin-top: auto; padding-top: 11px; border-top: 1px solid #e4d9b8; font-size: 12.5px; font-weight: 600; color: #8a6d12;">대가: 되돌릴 수 없습니다</div>
+            </div>
+          </div>
+          <div style="font-size: 13px; color: #4a453b; line-height: 1.7;">어느 쪽을 고르든, 실행 직전에 무엇이 바뀌는지 파일 목록으로 먼저 보여드립니다.</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSafety }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 18px;">
+          <div style="display: flex; flex-direction: column; gap: 11px;">
+            <sc-for list="{{ safetyRows }}" as="s" hint-placeholder-count="3">
+              <div style="display: flex; align-items: flex-start; gap: 14px; padding: 15px 18px; background: #f2efe9; border: 1px solid #ddd8d0; border-radius: 8px;">
+                <div style="width: 7px; height: 7px; border-radius: 50%; background: #1f6f5c; margin-top: 7px; flex-shrink: 0;"></div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <div style="font-size: 13.5px; font-weight: 600; color: #232019;">{{ s.title }}</div>
+                  <div style="font-size: 12.5px; color: #4a453b; line-height: 1.65;">{{ s.body }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size: 13px; color: #4a453b; line-height: 1.7;">이 안내는 오른쪽 위 <strong style="color: #232019;">도움말</strong>에서 언제든 다시 볼 수 있습니다.</div>
+        </div>
+      </sc-if>
+
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-top: 1px solid #e6e1d8; background: #f2efe9;">
+      <div style="display: flex; gap: 7px;">
+        <sc-for list="{{ dots }}" as="d" hint-placeholder-count="5">
+          <div onClick="{{ d.go }}" style="width: 8px; height: 8px; border-radius: 50%; cursor: pointer; background: {{ d.tone }};"></div>
+        </sc-for>
+      </div>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
+        <sc-if value="{{ showSkip }}" hint-placeholder-val="{{ true }}">
+          <div onClick="{{ skip }}" style="height: 34px; padding: 0 14px; display: flex; align-items: center; font-size: 12.5px; color: #6d675c; cursor: pointer;" style-hover="color: #3d382f;">건너뛰기</div>
+        </sc-if>
+        <sc-if value="{{ hasPrev }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ prev }}" style="height: 34px; padding: 0 18px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer;" style-hover="background: #f4f1e8;">이전</div>
+        </sc-if>
+        <div onClick="{{ next }}" style="height: 34px; padding: 0 22px; display: flex; align-items: center; background: #1f6f5c; color: #fff; font-size: 13px; font-weight: 600; border-radius: 5px; cursor: pointer;" style-hover="background: #185b4b;">{{ nextLabel }}</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:968,&quot;height&quot;:660},&quot;showSkip&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;동작&quot;}}">
+class Component extends DCLogic {
+  state = { i: 0 };
+
+  steps() {
+    return [
+      { key: "folders", title: "폴더가 두 곳에 있습니다",
+        lead: "클론업이 하는 일은 이 둘을 맞추는 것뿐입니다. 이것만 알면 나머지는 다 따라옵니다." },
+      { key: "commits", title: "커밋은 돌아올 수 있는 지점입니다",
+        lead: "사진을 찍어두는 것과 같습니다. 찍어둔 만큼 돌아갈 수 있습니다." },
+      { key: "cost", title: "무엇이 대가를 치르는지 먼저 보세요",
+        lead: "대부분의 동작은 잃는 것이 없습니다. 조심할 것은 둘뿐입니다." },
+      { key: "undo", title: "되돌리는 방법은 두 가지입니다",
+        lead: "이름은 비슷하지만 대가가 전혀 다릅니다." },
+      { key: "safety", title: "실수해도 됩니다",
+        lead: "위험한 동작은 앱이 먼저 막아섭니다." },
+    ];
+  }
+
+  renderVals() {
+    const steps = this.steps();
+    const i = Math.max(0, Math.min(this.state.i, steps.length - 1));
+    const step = steps[i];
+    const last = i === steps.length - 1;
+    const go = (n) => () => this.setState({ i: Math.max(0, Math.min(n, steps.length - 1)) });
+
+    const rows = [
+      { action: "커밋하기", gain: "돌아올 지점이 하나 생깁니다", loss: "없습니다", risky: false },
+      { action: "비공개로 올리기", gain: "다른 곳에서도 받아 쓸 수 있습니다", loss: "없습니다", risky: false },
+      { action: "공개로 올리기", gain: "누구나 받아 볼 수 있습니다", loss: "인터넷에 공개되고, 지워도 완전히 거두기 어렵습니다", risky: true },
+      { action: "기록 남기고 되돌리기", gain: "예전 내용이 돌아옵니다", loss: "기록이 한 줄 길어집니다", risky: false },
+      { action: "기록 지우고 되돌리기", gain: "기록이 깔끔해집니다", loss: "남의 사본이 어긋나고, 되돌릴 수 없습니다", risky: true },
+    ];
+
+    return {
+      step,
+      stepLabel: (i + 1) + " / " + steps.length,
+      isFolders: step.key === "folders",
+      isCommits: step.key === "commits",
+      isCost: step.key === "cost",
+      isUndo: step.key === "undo",
+      isSafety: step.key === "safety",
+      costRows: rows.map((r) => ({
+        action: r.action, gain: r.gain, loss: r.loss,
+        bg: r.risky ? "#fbf6ee" : "#fbfaf8",
+        lossColor: r.risky ? "#8a6d12" : "#6d675c",
+        lossWeight: r.risky ? "600" : "400",
+      })),
+      safetyRows: [
+        { title: "되돌리기 전에 백업 브랜치를 만듭니다", body: "잘못 눌러도 돌아올 자리가 남습니다. 따로 하실 일은 없습니다." },
+        { title: "비밀번호가 든 파일로 보이면 멈춥니다", body: "올리기 전에 파일 이름을 검사해 알려드립니다. 다만 파일 안쪽까지는 보지 못하니 마지막 확인은 직접 해주세요." },
+        { title: "위험한 동작은 실행 직전에 다시 묻습니다", body: "무엇이 바뀌는지 파일 목록으로 보여드린 뒤에 진행합니다." },
+      ],
+      dots: steps.map((s, n) => ({ tone: n === i ? "#1f6f5c" : "#cdc8bf", go: go(n) })),
+      hasPrev: i > 0,
+      showSkip: (this.props.showSkip ?? true) && !last,
+      nextLabel: last ? "시작하기" : "다음",
+      next: go(last ? i : i + 1),
+      prev: go(i - 1),
+      skip: go(steps.length - 1),
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -91,6 +91,22 @@
         </spacer>
        </item>
        <item>
+        <widget class="QPushButton" name="btnHelpOnboarding">
+         <property name="text">
+          <string>도움말</string>
+         </property>
+         <property name="flat">
+          <bool>true</bool>
+         </property>
+         <property name="cursor">
+          <cursorShape>PointingHandCursor</cursorShape>
+         </property>
+         <property name="toolTip">
+          <string>첫 실행 안내(폴더·커밋·안전)를 다시 봅니다</string>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QPushButton" name="btnLogout">
          <property name="text">
           <string>로그아웃</string>
