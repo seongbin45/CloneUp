@@ -237,6 +237,7 @@ class MainController(QObject):
         self.comboCloneUrl = window.findChild(QComboBox, "comboCloneUrl")
         # Back-compat alias used in older call sites / docs
         self.editCloneUrl = self.comboCloneUrl
+        self.btnCloneRepoList = window.findChild(QPushButton, "btnCloneRepoList")
         self.labelCloneHint = window.findChild(QLabel, "labelCloneHint")
         self.comboCloneBranch = window.findChild(QComboBox, "comboCloneBranch")
         self.editCloneParent = window.findChild(QLineEdit, "editCloneParent")
@@ -255,8 +256,7 @@ class MainController(QObject):
             self.comboCloneUrl.setSizeAdjustPolicy(
                 QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
             )
-            # Block empty/list popup when not logged in (URL-only mode)
-            self.comboCloneUrl.installEventFilter(self)
+            # Native arrow hidden in theme; list opens via btnCloneRepoList
         self._clone_url_timer = QTimer(self)
         self._clone_url_timer.setSingleShot(True)
         self._clone_url_timer.setInterval(350)
@@ -495,6 +495,7 @@ class MainController(QObject):
         for w in (
             self.btnClone,
             self.btnCloneBrowseParent,
+            self.btnCloneRepoList,
             self.comboCloneUrl,
             self.comboCloneBranch,
             self.editCloneParent,
@@ -544,19 +545,6 @@ class MainController(QObject):
 
     def eventFilter(self, obj, event):  # noqa: N802
         et = event.type()
-        # 받기 URL: 미로그인 시 드롭다운(팝업) 열지 않음 — 입력만
-        if (
-            self.comboCloneUrl is not None
-            and obj is self.comboCloneUrl
-            and et == QEvent.Type.MouseButtonPress
-            and not is_logged_in()
-        ):
-            # Clicks on the (hidden) drop-down zone still reach the combo;
-            # focus the line edit so typing/paste works like a plain field.
-            le = self.comboCloneUrl.lineEdit()
-            if le is not None:
-                le.setFocus(Qt.FocusReason.MouseFocusReason)
-            # Still allow selecting text in the edit area — do not swallow.
         if obj is self.window and et == QEvent.Type.Close:
             if not getattr(self, "_closing", False):
                 self._closing = True
@@ -693,6 +681,8 @@ class MainController(QObject):
                 le.editingFinished.connect(self._normalize_clone_url_field)
                 le.textChanged.connect(self._on_clone_url_text_changed)
             self.comboCloneUrl.activated.connect(self._on_clone_url_activated)
+        if self.btnCloneRepoList is not None:
+            self.btnCloneRepoList.clicked.connect(self._on_clone_repo_list_clicked)
         if self.tabWidget is not None:
             self.tabWidget.currentChanged.connect(self._on_tab_changed)
 
@@ -1457,31 +1447,24 @@ class MainController(QObject):
 
         self._clone_url_logged_in_mode = logged_in
         le = self.comboCloneUrl.lineEdit()
+        # Native combo arrow is always hidden (theme); use explicit 「목록 ▼」 button.
+        if self.btnCloneRepoList is not None:
+            self.btnCloneRepoList.setVisible(logged_in)
+            self.btnCloneRepoList.setEnabled(logged_in and not self._busy())
         if logged_in:
-            # Visible drop-down (object-specific style so global padding does not hide it)
-            self.comboCloneUrl.setStyleSheet(
-                "QComboBox#comboCloneUrl::drop-down {"
-                "  subcontrol-origin: padding; subcontrol-position: center right;"
-                "  width: 28px; border: none;"
-                "}"
-                "QComboBox#comboCloneUrl::down-arrow {"
-                "  width: 10px; height: 10px;"
-                "}"
-            )
             if le is not None:
                 le.setPlaceholderText(
-                    "목록에서 선택하거나 https://github.com/owner/repo"
+                    "「목록 ▼」에서 고르거나 https://github.com/owner/repo"
                 )
             if self.labelCloneHint is not None:
                 self.labelCloneHint.setText(
-                    "연결됨: 오른쪽 ▼ 로 내 저장소를 고르거나 주소를 붙여 넣으세요. "
+                    "연결됨: 오른쪽 「목록 ▼」으로 내 저장소를 고르거나 주소를 붙여 넣으세요. "
                     "루트 주소만 남고 branch는 아래에서 고릅니다."
                 )
             self._maybe_load_clone_repo_list(
                 force=force or mode_changed or self.comboCloneUrl.count() == 0
             )
         else:
-            # Line-edit look: hide drop-down arrow; no popup items
             cur = self._clone_url_text()
             self.comboCloneUrl.blockSignals(True)
             self.comboCloneUrl.clear()
@@ -1489,19 +1472,34 @@ class MainController(QObject):
                 self.comboCloneUrl.setEditText(cur)
             self.comboCloneUrl.blockSignals(False)
             self._clone_repos_loaded_for = "none"
-            self.comboCloneUrl.setStyleSheet(
-                "QComboBox#comboCloneUrl::drop-down { width: 0px; border: none; }"
-                "QComboBox#comboCloneUrl::down-arrow {"
-                "  width: 0px; height: 0px; image: none;"
-                "}"
-            )
             if le is not None:
                 le.setPlaceholderText("https://github.com/owner/repo")
             if self.labelCloneHint is not None:
                 self.labelCloneHint.setText(
                     "붙여넣으면 저장소 루트만 남습니다. branch는 아래에서 고르세요. "
-                    "내 저장소 목록은 GitHub 연결 후 사용할 수 있습니다."
+                    "내 저장소 목록은 GitHub 연결 후 「목록 ▼」으로 고를 수 있습니다."
                 )
+
+    @Slot()
+    def _on_clone_repo_list_clicked(self) -> None:
+        """Open the repo list popup (visible button — native ▼ is hidden)."""
+        if self.comboCloneUrl is None:
+            return
+        if not is_logged_in():
+            QMessageBox.information(
+                self.window,
+                "목록",
+                "GitHub에 연결한 뒤에 내 저장소 목록을 볼 수 있습니다.\n"
+                "위쪽 「GitHub: 연결」을 눌러 주세요.",
+            )
+            return
+        if self.comboCloneUrl.count() == 0:
+            self._maybe_load_clone_repo_list(force=True)
+            self._log("받기: 목록을 불러온 뒤 다시 「목록 ▼」을 눌러 주세요.")
+            return
+        # Drop-down under the field
+        self.comboCloneUrl.setFocus(Qt.FocusReason.MouseFocusReason)
+        self.comboCloneUrl.showPopup()
 
     @Slot()
     def _on_clone_url_text_changed(self, _text: str = "") -> None:
@@ -1590,10 +1588,14 @@ class MainController(QObject):
         self.comboCloneUrl.blockSignals(False)
         if n:
             self._log(
-                f"받기: 내 저장소 {n}개 준비됨 — 주소 칸 오른쪽 ▼ 를 눌러 고르세요"
+                f"받기: 내 저장소 {n}개 준비됨 — 「목록 ▼」 버튼으로 고르세요"
             )
+            if self.btnCloneRepoList is not None:
+                self.btnCloneRepoList.setText(f"목록 ▼ ({n})")
         else:
             self._log("받기: 목록이 비어 있습니다. 주소를 직접 붙여 넣으세요.")
+            if self.btnCloneRepoList is not None:
+                self.btnCloneRepoList.setText("목록 ▼")
 
     @Slot(str)
     def _on_clone_repo_list_fail(self, msg: str) -> None:

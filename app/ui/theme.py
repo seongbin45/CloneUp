@@ -430,6 +430,35 @@ def app_stylesheet(palette: Palette | None = None) -> str:
     QPushButton#btnCloneBrowseParent {{
         min-width: 96px;
     }}
+    /* Clone repo list — always a clear button (native combo arrow is unreliable) */
+    QPushButton#btnCloneRepoList {{
+        min-width: 88px;
+        padding: 6px 12px;
+        font-weight: 600;
+        color: {TEXT_ON_PRIMARY};
+        background: {PRIMARY};
+        border: 1px solid {PRIMARY};
+    }}
+    QPushButton#btnCloneRepoList:hover {{
+        background: {PRIMARY_HOVER};
+        border-color: {PRIMARY_HOVER};
+        color: {TEXT_ON_PRIMARY};
+    }}
+    QPushButton#btnCloneRepoList:disabled {{
+        color: {TEXT_DISABLED};
+        background: {BG_MUTED};
+        border-color: {BORDER_SOFT};
+    }}
+    /* Hide native combo arrow on clone URL — we use btnCloneRepoList instead */
+    QComboBox#comboCloneUrl::drop-down {{
+        width: 0px;
+        border: none;
+    }}
+    QComboBox#comboCloneUrl::down-arrow {{
+        width: 0px;
+        height: 0px;
+        image: none;
+    }}
     /* Refresh is secondary to browse — shorter label + slightly tighter pad */
     QPushButton#btnSyncRefresh,
     QPushButton#btnSyncHistory {{
