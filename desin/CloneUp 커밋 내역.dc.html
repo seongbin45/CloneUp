@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #e8e6e1; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 44px; display: flex; justify-content: center; align-items: flex-start; overflow-x: auto;">
+  <div style="width: 1000px; flex-shrink: 0; background: #fbfaf8; border: 1px solid #c9c5bd; border-radius: 10px; box-shadow: 0 18px 48px rgba(40,36,30,.18); overflow: hidden; display: flex; flex-direction: column;">
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+      <div style="display: flex; gap: 7px;">
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+      </div>
+      <div style="font-size: 13px; font-weight: 600; color: #3d382f;">커밋 내역</div>
+      <div style="font-size: 12.5px; color: #8b8477; font-family: 'IBM Plex Mono', monospace;">my-project</div>
+    </div>
+
+    <div style="display: flex; align-items: flex-start; gap: 10px; margin: 16px 20px 0; padding: 12px 14px; background: #f4f1e8; border-left: 3px solid #1f6f5c; border-radius: 0 6px 6px 0;">
+      <div style="font-size: 13px; font-weight: 600; color: #1f6f5c; flex-shrink: 0;">읽기 전용</div>
+      <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">이 창에서는 무엇을 눌러도 파일이 바뀌지 않습니다. 지난 시점의 내용을 확인하는 용도입니다.</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 78px 1fr auto; gap: 10px; align-items: center; padding: 16px 20px 14px;">
+      <label style="font-size: 13px; color: #4a453b;">폴더</label>
+      <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">C:\Users\seong\Desktop\my-project</div>
+      <div style="height: 32px; padding: 0 14px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #4a453b; cursor: pointer;" style-hover="background: #e9e5dd;">목록 새로고침</div>
+    </div>
+
+    <div style="display: flex; gap: 0; border-top: 1px solid #e6e1d8; min-height: 430px;">
+
+      <div style="flex: 1.55; display: flex; flex-direction: column; border-right: 1px solid #e6e1d8;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 11px 20px 9px; background: #fbfaf8;">
+          <span style="font-size: 12px; font-weight: 600; color: #4a453b;">커밋 목록</span>
+          <span style="font-size: 11.5px; color: #6d675c;">최신순 · {{ loadedLabel }}</span>
+        </div>
+        <div style="display: flex; flex-direction: column;">
+          <sc-for list="{{ commits }}" as="c" hint-placeholder-count="6">
+            <div onClick="{{ c.select }}" style="display: flex; gap: 0; cursor: pointer; border-top: 1px solid #eeeae2; background: {{ c.bg }};" style-hover="background: #f4f1e8;">
+              <div style="width: 3px; flex-shrink: 0; background: {{ c.bar }};"></div>
+              <div style="flex: 1; padding: 11px 20px 12px 17px; display: flex; flex-direction: column; gap: 5px; min-width: 0;">
+                <div style="font-size: 13.5px; font-weight: 500; color: #232019; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ c.message }}</div>
+                <div style="display: flex; align-items: center; gap: 9px; font-size: 11.5px; color: #6d675c;">
+                  <span>{{ c.rel }}</span>
+                  <span style="color: #cdc8bf;">·</span>
+                  <span style="font-family: 'IBM Plex Mono', monospace;">{{ c.abs }}</span>
+                  <span style="color: #cdc8bf;">·</span>
+                  <span>{{ c.author }}</span>
+                  <span style="color: #cdc8bf;">·</span>
+                  <span>파일 {{ c.files }}개</span>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding: 13px 20px; border-top: 1px solid #eeeae2; display: flex; justify-content: center;">
+          <sc-if value="{{ canLoadMore }}" hint-placeholder-val="{{ true }}">
+            <div onClick="{{ loadMore }}" style="padding: 8px 20px; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #4a453b; cursor: pointer;" style-hover="background: #e9e5dd;">더 보기</div>
+          </sc-if>
+          <sc-if value="{{ allShown }}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 8px 20px; font-size: 12.5px; color: #6d675c;">전체 표시됨</div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="flex: 1; display: flex; flex-direction: column; background: #faf8f4;">
+        <div style="padding: 11px 20px 9px;">
+          <span style="font-size: 12px; font-weight: 600; color: #4a453b;">선택한 시점의 내용</span>
+        </div>
+        <div style="padding: 0 20px 16px; display: flex; flex-direction: column; gap: 14px;">
+          <div style="padding: 13px 15px; background: #fff; border: 1px solid #e6e1d8; border-radius: 6px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="font-size: 13.5px; font-weight: 600; color: #232019; line-height: 1.5;">{{ sel.message }}</div>
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: #6d675c;">
+              <div>{{ sel.abs }} · {{ sel.rel }}</div>
+              <div>{{ sel.author }}</div>
+              <div style="font-family: 'IBM Plex Mono', monospace;">{{ sel.hash }}</div>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 7px;">
+            <div style="font-size: 12px; font-weight: 600; color: #4a453b;">이 커밋에서 바뀐 파일</div>
+            <sc-for list="{{ selFiles }}" as="f" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; gap: 9px; padding: 7px 10px; background: #fff; border: 1px solid #e6e1d8; border-radius: 5px;">
+                <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; color: #fbfaf8; background: {{ f.tone }};">{{ f.kind }}</span>
+                <span style="font-size: 12px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ f.path }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; padding-top: 2px;">
+            <div style="height: 38px; display: flex; align-items: center; justify-content: center; background: #1f6f5c; color: #fff; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer;" style-hover="background: #185b4b;">이 시점 파일 보기</div>
+            <div style="font-size: 11.5px; color: #6d675c; line-height: 1.6; text-align: center;">따로 만든 임시 폴더에 그 시점의 파일을 꺼내 보여줍니다. 지금 작업 중인 폴더는 그대로 있습니다.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 20px; border-top: 1px solid #e6e1d8; background: #f2efe9;">
+      <div style="font-size: 11.5px; color: #6d675c; line-height: 1.6;">되돌리기는 다음 단계에서 추가됩니다. 그때는 되돌리기 전에 백업 브랜치를 자동으로 만듭니다.</div>
+      <div style="height: 32px; padding: 0 18px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer; flex-shrink: 0;" style-hover="background: #f4f1e8;">닫기</div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1088,&quot;height&quot;:720}}">
+class Component extends DCLogic {
+  state = { picked: 0, page: 1 };
+
+  data() {
+    return [
+      { message: "버튼 색 수정", rel: "3시간 전", abs: "8/7 14:02", author: "seong", files: 2, hash: "a4f19c2",
+        changed: [{ kind: "M", path: "app/ui/theme.py" }, { kind: "M", path: "app/ui/main_window.py" }] },
+      { message: "로그인 화면 추가", rel: "6시간 전", abs: "8/7 11:30", author: "seong", files: 4, hash: "7d3e08b",
+        changed: [{ kind: "A", path: "app/ui/login_dialog.py" }, { kind: "A", path: "app/auth/session.py" }, { kind: "M", path: "app/ui/main_window.py" }, { kind: "M", path: "app/config.py" }] },
+      { message: "비밀 파일 점검 기능", rel: "1일 전", abs: "8/6 19:14", author: "seong", files: 3, hash: "c81b5f4",
+        changed: [{ kind: "A", path: "app/git/safety.py" }, { kind: "M", path: "app/git/publish.py" }, { kind: "D", path: "app/git/old_check.py" }] },
+      { message: "동기화 탭 상태 표시", rel: "2일 전", abs: "8/5 16:48", author: "seong", files: 2, hash: "e29a730",
+        changed: [{ kind: "M", path: "app/git/sync_ops.py" }, { kind: "M", path: "app/ui/tab_workers.py" }] },
+      { message: "받기 탭 주소 정리", rel: "3일 전", abs: "8/4 10:05", author: "seong", files: 1, hash: "b6c4d81",
+        changed: [{ kind: "A", path: "app/git/url_utils.py" }] },
+      { message: "첫 커밋", rel: "5일 전", abs: "8/2 09:22", author: "seong", files: 12, hash: "0f5e6a9",
+        changed: [{ kind: "A", path: "app/main.py" }, { kind: "A", path: "requirements.txt" }, { kind: "A", path: "README.md" }] },
+    ];
+  }
+
+  renderVals() {
+    const all = this.data();
+    const shown = this.state.page === 1 ? all.slice(0, 4) : all;
+    const pick = Math.min(this.state.picked, shown.length - 1);
+    const sel = shown[pick];
+    const tone = { A: "#1f6f5c", M: "#8a6d12", D: "#9a4a45" };
+    const exhausted = shown.length === all.length;
+    return {
+      commits: shown.map((c, i) => ({
+        message: c.message, rel: c.rel, abs: c.abs, author: c.author, files: c.files,
+        bg: i === pick ? "#f2efe9" : "#fbfaf8",
+        bar: i === pick ? "#1f6f5c" : "transparent",
+        select: () => this.setState({ picked: i }),
+      })),
+      sel: { message: sel.message, rel: sel.rel, abs: sel.abs, author: sel.author, hash: sel.hash },
+      selFiles: sel.changed.map((f) => ({ kind: f.kind, path: f.path, tone: tone[f.kind] })),
+      loadedLabel: shown.length + "개 표시 중",
+      canLoadMore: !exhausted,
+      allShown: exhausted,
+      loadMore: () => this.setState({ page: 2, picked: this.state.picked }),
+    };
+  }
+}
+</script>
+</body>
+</html>

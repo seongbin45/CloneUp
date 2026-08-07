@@ -11,6 +11,7 @@
 | `clone_ops.py` | 저장소 받기 |
 | `publish.py` | 새 저장소 만들고 첫 푸시, 커밋 이메일 peek |
 | `sync_ops.py` | pull / commit+push / 충돌 abort |
+| `history.py` | **커밋 내역** 읽기 전용 (목록·변경 파일·시점 스냅샷 추출) |
 | `safety.py` | 빈 폴더, `.env` 등 파일명, **내용 전화·이메일 스캔** |
 | `credentials.py` | 임시 credential helper (토큰이 config에 안 남게) |
 | `url_utils.py` | GitHub URL 정규화 (`/tree/main` 제거 등) |
