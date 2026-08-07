@@ -173,10 +173,18 @@ def main() -> int:
         )
         fail("G2 origin 이미 있음", "예외 없음")
     except PublishError as e:
-        if "origin" in str(e).lower():
-            ok("G2 origin 이미 있음", str(e)[:60])
+        msg = str(e)
+        # Beginner copy may say 「이미 GitHub와 연결」 without the English word "origin"
+        low = msg.lower()
+        if (
+            "origin" in low
+            or "연결" in msg
+            or "github" in low
+            or "동기화" in msg
+        ):
+            ok("G2 origin 이미 있음", msg[:80])
         else:
-            fail("G2 origin 이미 있음", str(e))
+            fail("G2 origin 이미 있음", msg)
     except Exception as e:
         # may fail earlier on safety if secrets — should not
         fail("G2 origin 이미 있음", f"{type(e).__name__}: {e}")
@@ -185,8 +193,12 @@ def main() -> int:
     section("토큰 마스킹")
     sample = "token gho_abcdefghijklmnopqrstuvwxyz012345 and more"
     masked = mask_secrets_in_text(sample)
-    if "gho_abcdefghijklmnopqrstuvwxyz012345" not in masked and "gho_" in masked:
-        ok("mask_secrets_in_text")
+    raw_tok = "gho_abcdefghijklmnopqrstuvwxyz012345"
+    # Full redact is OK (*** (len=N)); must never leave the raw secret
+    if raw_tok not in masked and (
+        "***" in masked or "gho_" in masked or "…" in masked or "..." in masked
+    ):
+        ok("mask_secrets_in_text", masked[:80])
     else:
         fail("mask_secrets_in_text", masked)
 
