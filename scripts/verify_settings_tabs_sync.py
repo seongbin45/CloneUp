@@ -212,20 +212,20 @@ def main() -> int:
             )
 
         # ----- S6 recent clear -----
-        RESULTS.append("\n## S6 최근 폴더 → 만들기/동기화 드롭다운(QCompleter)")
+        RESULTS.append("\n## S6 최근 폴더 → 만들기/동기화 드롭다운")
         fake = str(Path.home() / "CloneUpCrossVerifyFake")
         remember_folder(fake)
         ctrl._apply_settings_store_to_tabs("recent")
-        texts_p = ctrl._recentModelPublish.stringList()
-        texts_s = ctrl._recentModelSync.stringList()
+        texts_p = ctrl._recentPopupPublish.items()
+        texts_s = ctrl._recentPopupSync.items()
         if fake in texts_p and fake in texts_s:
             ok("S6", "remember_folder → 양쪽 드롭다운 반영")
         else:
             fail("S6", "remember 반영", f"pub={texts_p} sync={texts_s}")
         clear_recent_folders()
         ctrl._apply_settings_store_to_tabs("recent")
-        texts_p2 = ctrl._recentModelPublish.stringList()
-        texts_s2 = ctrl._recentModelSync.stringList()
+        texts_p2 = ctrl._recentPopupPublish.items()
+        texts_s2 = ctrl._recentPopupSync.items()
         if fake not in texts_p2 and fake not in texts_s2:
             ok("S6", "목록 비우기 → 양쪽 드롭다운에서 제거")
         else:

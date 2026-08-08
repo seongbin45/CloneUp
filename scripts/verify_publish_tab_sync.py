@@ -268,19 +268,19 @@ def main() -> int:
         else:
             fail("P7", "브랜치", repr(combo_br.currentText() if combo_br else None))
 
-        # ----- P8 recent folder completer -----
-        OUT.append("\n## P8 최근 폴더 드롭다운(QCompleter)")
+        # ----- P8 recent folder dropdown -----
+        OUT.append("\n## P8 최근 폴더 드롭다운")
         fake = str(Path.home() / "CloneUpPublishTabRecentFake")
         remember_folder(fake)
         ctrl._apply_settings_store_to_tabs("recent")
-        items = ctrl._recentModelPublish.stringList()
+        items = ctrl._recentPopupPublish.items()
         if fake in items:
             ok("P8", "recent → 최근 폴더 드롭다운", fake)
         else:
             fail("P8", "recent", str(items))
         clear_recent_folders()
         ctrl._apply_settings_store_to_tabs("recent")
-        items2 = ctrl._recentModelPublish.stringList()
+        items2 = ctrl._recentPopupPublish.items()
         if fake not in items2:
             ok("P8", "목록 비우기 → 드롭다운에서 제거")
         else:

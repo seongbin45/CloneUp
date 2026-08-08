@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -9,7 +10,6 @@ from PySide6.QtCore import (
     QFile,
     QObject,
     Qt,
-    QStringListModel,
     QThread,
     QTimer,
     Signal,
@@ -20,12 +20,12 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
-    QCompleter,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QSizePolicy,
     QTabWidget,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -135,6 +136,90 @@ def _set_folder_path(edit: QLineEdit | None, path: str) -> None:
     edit.setCursorPosition(0)
 
 
+class _RecentFolderPopup(QFrame):
+    """Frameless, non-activating recent-folder dropdown.
+
+    Deliberately NOT a native combo/completer popup (those use the
+    Qt::Popup window flag and grab the mouse): while one is open, a click on
+    another widget just closes it without also reaching that widget, so you
+    need a second click to actually act on it. This widget never grabs
+    input — MainController's application-wide event filter hides it on an
+    outside click instead, so the very same click still reaches whatever is
+    underneath.
+    """
+
+    picked = Signal(str)
+
+    def __init__(self, owner: QWidget | None = None) -> None:
+        # `owner` (the main window) keeps this floating above it via normal
+        # Tool-window stacking, without reparenting it into that window.
+        super().__init__(
+            owner,
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.NoDropShadowWindowHint,
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._list = QListWidget(self)
+        self._list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._list.itemClicked.connect(self._on_item_clicked)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.addWidget(self._list)
+
+    def set_items(self, items: list[str]) -> None:
+        self._list.clear()
+        self._list.addItems(items)
+
+    def items(self) -> list[str]:
+        return [self._list.item(i).text() for i in range(self._list.count())]
+
+    def popup_below(self, edit: QLineEdit) -> None:
+        if self._list.count() == 0:
+            self.hide()
+            return
+        from app.ui.theme import active_palette
+
+        p = active_palette()
+        self._list.setStyleSheet(
+            f"""
+            QListWidget {{
+                background-color: {p.bg_input};
+                color: {p.text};
+                border: none;
+                outline: 0;
+            }}
+            QListWidget::item {{
+                padding: 6px 10px;
+            }}
+            QListWidget::item:selected, QListWidget::item:hover {{
+                background-color: {p.primary};
+                color: {p.text_on_primary};
+            }}
+            """
+        )
+        self.setStyleSheet(
+            f"_RecentFolderPopup {{ background-color: {p.bg_input};"
+            f" border: 1px solid {p.border_input}; }}"
+        )
+        width = max(edit.width(), 200)
+        # +4px: sizeHintForRow() can undercount the QSS item padding above,
+        # since a stylesheet's polish pass doesn't always land before this
+        # call — a small buffer avoids an unwanted scrollbar for it.
+        row_h = (self._list.sizeHintForRow(0) or 28) + 4
+        height = min(row_h * self._list.count(), row_h * 8) + 8
+        pos = edit.mapToGlobal(edit.rect().bottomLeft())
+        self.setGeometry(pos.x(), pos.y() + 2, width, height)
+        self.show()
+        self.raise_()
+
+    def _on_item_clicked(self, item) -> None:
+        text = item.text()
+        self.hide()
+        self.picked.emit(text)
+
+
 def _format_commit_email_g3(
     email: str,
     *,
@@ -234,15 +319,18 @@ class MainController(QObject):
                 app.styleHints().colorSchemeChanged.connect(
                     self._on_color_scheme_changed
                 )
+                # App-wide: lets us hide the recent-folder popups (below) on
+                # any outside click without grabbing/eating that click.
+                app.installEventFilter(self)
         except Exception:
             pass
 
         # --- publish ---
         self.editFolder = window.findChild(QLineEdit, "editFolder")
         self.btnBrowseFolder = window.findChild(QPushButton, "btnBrowseFolder")
-        self._recentModelPublish = QStringListModel(self)
-        self._recentCompleterPublish = self._install_recent_completer(
-            self.editFolder, self._recentModelPublish, self._on_recent_picked
+        self._last_recent_dropdown_hide_at = 0.0
+        self._recentPopupPublish = self._install_recent_dropdown(
+            self.editFolder, self._on_recent_picked
         )
         self.editRepoName = window.findChild(QLineEdit, "editRepoName")
         self.radioPublic = window.findChild(QRadioButton, "radioPublic")
@@ -297,9 +385,8 @@ class MainController(QObject):
 
         # --- sync ---
         self.editSyncFolder = window.findChild(QLineEdit, "editSyncFolder")
-        self._recentModelSync = QStringListModel(self)
-        self._recentCompleterSync = self._install_recent_completer(
-            self.editSyncFolder, self._recentModelSync, self._on_sync_recent_picked
+        self._recentPopupSync = self._install_recent_dropdown(
+            self.editSyncFolder, self._on_sync_recent_picked
         )
         self.btnSyncBrowse = window.findChild(QPushButton, "btnSyncBrowse")
         self.btnSyncRefresh = window.findChild(QPushButton, "btnSyncRefresh")
@@ -635,12 +722,24 @@ class MainController(QObject):
         worker.start()
 
     def eventFilter(self, obj, event):  # noqa: N802
+        try:
+            return self._event_filter_impl(obj, event)
+        except Exception:
+            # Installed app-wide (for the recent-folder popups' outside-click
+            # detection), so this can be reached for objects torn down by
+            # someone else entirely — e.g. in tests that create/close their
+            # own window while this filter is still registered. A dead C++
+            # object here is a teardown race, not a real error to surface.
+            return False
+
+    def _event_filter_impl(self, obj, event) -> bool:
         et = event.type()
         if obj is self.window and et == QEvent.Type.Close:
             if not getattr(self, "_closing", False):
                 self._closing = True
                 self._shutdown_workers()
                 self._close_device_overlay()
+                self._detach_app_event_filter()
         elif obj is self.window and et in (
             QEvent.Type.Resize,
             QEvent.Type.WindowStateChange,
@@ -653,7 +752,22 @@ class MainController(QObject):
             QEvent.Type.MouseButtonPress,
         ):
             self._show_recent_dropdown(obj)
+        elif et == QEvent.Type.MouseButtonPress:
+            # App-wide: close recent-folder popups on an outside click.
+            # These popups don't grab the mouse, so this never blocks the
+            # click from also reaching whatever widget is underneath it.
+            self._maybe_hide_recent_dropdowns(event)
         return False
+
+    def _detach_app_event_filter(self) -> None:
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            app = QApplication.instance()
+            if app is not None:
+                app.removeEventFilter(self)
+        except Exception:
+            pass
 
     def _shutdown_workers(self) -> None:
         w = self._worker
@@ -844,10 +958,12 @@ class MainController(QObject):
             le.setFocus()
 
     def _reload_recent_combo(self) -> None:
-        """Refresh both folder fields' recent-folder completer popups."""
+        """Refresh both folder fields' recent-folder dropdown popups."""
         items = load_recent_folders()
-        self._recentModelPublish.setStringList(items)
-        self._recentModelSync.setStringList(items)
+        if self._recentPopupPublish is not None:
+            self._recentPopupPublish.set_items(items)
+        if self._recentPopupSync is not None:
+            self._recentPopupSync.set_items(items)
 
     def _on_color_scheme_changed(self, *_args) -> None:
         """OS theme changed — main.py already reapplied QSS; refresh inline styles."""
@@ -944,30 +1060,60 @@ class MainController(QObject):
             self.editRepoName.setText(new_base)
             self._publish_folder_for_repo_name = folder
 
-    def _install_recent_completer(
-        self, edit: QLineEdit | None, model: QStringListModel, on_pick
-    ) -> QCompleter | None:
+    def _install_recent_dropdown(
+        self, edit: QLineEdit | None, on_pick
+    ) -> _RecentFolderPopup | None:
         """Attach a recent-folder dropdown to `edit` that shows the full list
-        on focus/click (not prefix-filtered), regardless of current text."""
+        on focus/click, regardless of current text."""
         if edit is None:
             return None
-        completer = QCompleter(model, self)
-        completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.activated[str].connect(on_pick)
-        edit.setCompleter(completer)
+        popup = _RecentFolderPopup(self.window)
+        popup.picked.connect(on_pick)
         edit.installEventFilter(self)
-        return completer
+        return popup
+
+    def _recent_popup_for(self, edit: QLineEdit) -> _RecentFolderPopup | None:
+        if edit is self.editFolder:
+            return self._recentPopupPublish
+        if edit is self.editSyncFolder:
+            return self._recentPopupSync
+        return None
 
     def _show_recent_dropdown(self, edit: QLineEdit) -> None:
-        completer = edit.completer()
-        if completer is None:
+        # Hiding one of these popups (a Tool window) makes Windows queue a
+        # spurious FocusIn back onto `edit` shortly after — without this
+        # debounce that immediately reopens the very popup we just closed
+        # (e.g. right after picking an item, or on an outside click).
+        if time.monotonic() - self._last_recent_dropdown_hide_at < 0.3:
             return
-        completer.setCompletionPrefix("")
-        completer.complete()
+        popup = self._recent_popup_for(edit)
+        if popup is not None:
+            popup.popup_below(edit)
+
+    def _note_recent_dropdown_hidden(self) -> None:
+        self._last_recent_dropdown_hide_at = time.monotonic()
+
+    def _maybe_hide_recent_dropdowns(self, event) -> None:
+        try:
+            pos = event.globalPosition().toPoint()
+        except AttributeError:
+            pos = event.globalPos()
+        for popup, edit in (
+            (self._recentPopupPublish, self.editFolder),
+            (self._recentPopupSync, self.editSyncFolder),
+        ):
+            if popup is None or not popup.isVisible():
+                continue
+            if popup.geometry().contains(pos):
+                continue  # click on a row — its own itemClicked handles it
+            if edit is not None and edit.rect().contains(edit.mapFromGlobal(pos)):
+                continue  # click on the originating field itself
+            popup.hide()
+            self._note_recent_dropdown_hidden()
 
     @Slot(str)
     def _on_recent_picked(self, path: str) -> None:
+        self._note_recent_dropdown_hidden()
         if not path or not self.editFolder:
             return
         _set_folder_path(self.editFolder, path)
@@ -976,6 +1122,7 @@ class MainController(QObject):
 
     @Slot(str)
     def _on_sync_recent_picked(self, path: str) -> None:
+        self._note_recent_dropdown_hidden()
         if not path or self.editSyncFolder is None:
             return
         _set_folder_path(self.editSyncFolder, path)
