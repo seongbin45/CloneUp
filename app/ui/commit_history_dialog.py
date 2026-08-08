@@ -387,8 +387,10 @@ class CommitHistoryDialog(QDialog):
         repo: str | None = None,
         access_token: str | None = None,
         display_url: str | None = None,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
+        self._embedded = embedded
         owner_s = (owner or "").strip()
         repo_s = (repo or "").strip()
         folder_s = (folder or "").strip()
@@ -413,6 +415,16 @@ class CommitHistoryDialog(QDialog):
             self._path_text = self._folder
             self._project_name = repo_display_name(self._folder)
             path_label = "폴더"
+        elif embedded:
+            # Tab use: no folder chosen yet — set_folder() fills this in later.
+            self._remote = False
+            self._folder = ""
+            self._owner = ""
+            self._repo = ""
+            self._token = None
+            self._path_text = "(동기화 탭에서 폴더를 먼저 선택하세요)"
+            self._project_name = "-"
+            path_label = "폴더"
         else:
             raise ValueError("folder 또는 owner/repo 가 필요합니다.")
 
@@ -422,10 +434,14 @@ class CommitHistoryDialog(QDialog):
         self._exhausted = False
         p = active_palette()
 
-        self.setWindowTitle("커밋 내역")
-        self.setModal(True)
-        self.setMinimumSize(880, 560)
-        self.resize(980, 640)
+        if embedded:
+            # Plain child widget in a tab page, not a floating dialog window.
+            self.setWindowFlags(Qt.WindowType.Widget)
+        else:
+            self.setWindowTitle("커밋 내역")
+            self.setModal(True)
+            self.setMinimumSize(880, 560)
+            self.resize(980, 640)
         self.setStyleSheet(self._dialog_qss(p))
 
         root = QVBoxLayout(self)
@@ -622,14 +638,19 @@ class CommitHistoryDialog(QDialog):
         foot_note = QLabel(foot_text)
         foot_note.setObjectName("histMeta")
         foot_note.setWordWrap(True)
-        btn_close = QPushButton("닫기")
-        btn_close.setObjectName("histClose")
-        btn_close.clicked.connect(self.accept)
         foot_l.addWidget(foot_note, 1)
-        foot_l.addWidget(btn_close)
+        if not embedded:
+            # A tab has nothing to "close" — it just sits there.
+            btn_close = QPushButton("닫기")
+            btn_close.setObjectName("histClose")
+            btn_close.clicked.connect(self.accept)
+            foot_l.addWidget(btn_close)
         root.addWidget(foot)
 
-        self._reload_from_start()
+        if self._folder or self._remote:
+            self._reload_from_start()
+        else:
+            self._show_no_folder_placeholder()
 
     @staticmethod
     def _mono_font(base: QFont) -> QFont:
@@ -821,6 +842,39 @@ class CommitHistoryDialog(QDialog):
         self._btn_more.show()
         self._all_lbl.hide()
         self._fetch_page(skip=0)
+
+    def _show_no_folder_placeholder(self) -> None:
+        """Embedded tab, no folder chosen yet — no git call, just a hint."""
+        self._commits.clear()
+        self._list.clear()
+        self._exhausted = True
+        self._selected = None
+        self._clear_detail()
+        self._btn_more.hide()
+        self._all_lbl.hide()
+        self._loaded_lbl.setText("폴더 없음")
+        self._btn_refresh.setEnabled(False)
+
+    def set_folder(self, folder: str | None) -> None:
+        """Embedded tab only: rebind to a new local folder and reload."""
+        folder = (folder or "").strip()
+        if not folder:
+            self._folder = ""
+            self._path_text = "(동기화 탭에서 폴더를 먼저 선택하세요)"
+            self._project_name = "-"
+            self._path_lbl.setText(self._path_text)
+            self._stop_worker()
+            self._show_no_folder_placeholder()
+            return
+        resolved = str(Path(folder).expanduser())
+        if resolved == self._folder:
+            return
+        self._folder = resolved
+        self._path_text = self._folder
+        self._project_name = repo_display_name(self._folder)
+        self._path_lbl.setText(self._path_text)
+        self._btn_refresh.setEnabled(True)
+        self._reload_from_start()
 
     @Slot()
     def _load_more(self) -> None:
