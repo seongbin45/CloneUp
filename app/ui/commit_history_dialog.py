@@ -30,7 +30,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.auth.session import AuthError, ensure_valid_token
+from app.auth.token_store import load_token
 from app.git.history import (
+    ChangedFile,
     CommitInfo,
     export_commit_snapshot,
     list_changed_files,
@@ -38,16 +41,28 @@ from app.git.history import (
     relative_time_ko,
     repo_display_name,
 )
+from app.git.publish import PublishError
 from app.git.runner import GitError
+from app.git.revert import (
+    RevertError,
+    RevertResult,
+    pick_backup_branch_name,
+    preview_revert,
+    revert_to_commit,
+)
+from app.git.sync_ops import SyncError
 from app.github.api_client import (
     GitHubAPIError,
     export_remote_commit_snapshot,
     list_remote_changed_files,
     list_repo_commits,
 )
+from app.ui.settings_store import load_hide_real_email
 from app.ui.theme import Palette, active_palette
+from app.util.log_mask import mask_secrets_in_text
 
 _PAGE = 4  # design “더 보기” page size
+_REVERT_ERRORS = (RevertError, GitError, PublishError, SyncError, AuthError, OSError)
 
 
 def _kind_color(kind: str, p: Palette) -> str:
@@ -191,6 +206,173 @@ class _ExportWorker(QThread):
             self.failed.emit(str(e))
         except Exception as e:  # pragma: no cover
             self.failed.emit(str(e))
+
+
+class _RevertPreviewWorker(QThread):
+    """Local-only: what would change if we reverted *folder* to *rev* now."""
+
+    succeeded = Signal(list)
+    failed = Signal(str)
+
+    def __init__(self, *, folder: str, rev: str, parent=None) -> None:
+        super().__init__(parent)
+        self._folder = folder
+        self._rev = rev
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            files = preview_revert(self._folder, self._rev)
+            self.succeeded.emit(files)
+        except _REVERT_ERRORS as e:
+            self.failed.emit(mask_secrets_in_text(str(e)))
+        except Exception as e:  # pragma: no cover
+            self.failed.emit(mask_secrets_in_text(f"예상치 못한 오류: {e}"))
+
+
+class _RevertWorker(QThread):
+    """Backup branch → reset to target tree → new commit → push (local only)."""
+
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, *, folder: str, rev: str, parent=None) -> None:
+        super().__init__(parent)
+        self._folder = folder
+        self._rev = rev
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            token, user = ensure_valid_token()
+            result = revert_to_commit(
+                self._folder,
+                self._rev,
+                token=token,
+                user=user,
+                hide_real_email=load_hide_real_email(),
+            )
+            self.succeeded.emit(result)
+        except _REVERT_ERRORS as e:
+            self.failed.emit(mask_secrets_in_text(str(e)))
+        except Exception as e:  # pragma: no cover
+            self.failed.emit(mask_secrets_in_text(f"예상치 못한 오류: {e}"))
+
+
+class _RevertConfirmDialog(QDialog):
+    """되돌리기 확인 — files that will change + backup-branch / auto-push notice."""
+
+    def __init__(
+        self,
+        parent: QWidget | None,
+        *,
+        target_label: str,
+        backup_branch: str,
+        files: list[ChangedFile],
+    ) -> None:
+        super().__init__(parent)
+        p = active_palette()
+        self.setWindowTitle("이 시점으로 되돌립니다")
+        self.setModal(True)
+        self.setMinimumWidth(480)
+        self.setStyleSheet(
+            f"QDialog {{ background: {p.bg_window}; color: {p.text}; }}"
+        )
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(22, 20, 22, 18)
+        root.setSpacing(14)
+
+        title = QLabel("이 시점으로 되돌립니다")
+        title.setStyleSheet(f"font-size: 15px; font-weight: 600; color: {p.text};")
+        sub = QLabel(target_label)
+        sub.setWordWrap(True)
+        sub.setStyleSheet(f"font-size: 12.5px; color: {p.text_secondary};")
+        root.addWidget(title)
+        root.addWidget(sub)
+
+        files_lbl = QLabel(f"바뀌는 파일 {len(files)}개")
+        files_lbl.setStyleSheet(
+            f"font-size: 12px; font-weight: 600; color: {p.text_secondary};"
+        )
+        root.addWidget(files_lbl)
+
+        note = {"A": "되살아납니다", "D": "지워집니다", "M": "예전 내용으로"}
+        files_scroll = QScrollArea()
+        files_scroll.setWidgetResizable(True)
+        files_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        files_scroll.setMaximumHeight(180)
+        host = QWidget()
+        host_l = QVBoxLayout(host)
+        host_l.setContentsMargins(0, 0, 0, 0)
+        host_l.setSpacing(6)
+        for f in files[:200]:
+            row = QFrame()
+            row.setStyleSheet(
+                f"background: {p.bg_input}; border: 1px solid {p.border_divider}; "
+                f"border-radius: 5px;"
+            )
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(9, 6, 9, 6)
+            rl.setSpacing(8)
+            badge = QLabel((f.kind or "?")[:1].upper())
+            badge.setFixedSize(16, 16)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            tone = _kind_color(f.kind, p)
+            badge.setStyleSheet(
+                f"background: {tone}; color: {p.bg_window}; border-radius: 3px; "
+                f"font-size: 9.5px; font-weight: 600; font-family: Consolas, monospace;"
+            )
+            path = QLabel(f.path)
+            path.setStyleSheet(
+                f"font-size: 11.5px; color: {p.text}; "
+                f"font-family: Consolas, 'Cascadia Mono', monospace;"
+            )
+            path.setToolTip(f.path)
+            hint = QLabel(note.get((f.kind or "?").upper(), ""))
+            hint.setStyleSheet(f"font-size: 11px; color: {p.text_muted};")
+            rl.addWidget(badge)
+            rl.addWidget(path, 1)
+            rl.addWidget(hint)
+            host_l.addWidget(row)
+        host_l.addStretch(1)
+        files_scroll.setWidget(host)
+        root.addWidget(files_scroll)
+
+        info = QFrame()
+        info.setStyleSheet(
+            f"background: {p.bg_hint}; border-radius: 6px;"
+        )
+        info_l = QVBoxLayout(info)
+        info_l.setContentsMargins(14, 12, 14, 12)
+        info_l.setSpacing(6)
+        for line in (
+            f"백업 브랜치 {backup_branch} 를 먼저 만듭니다.",
+            "지금까지의 커밋은 하나도 지워지지 않습니다. "
+            "되돌린 내용이 새 커밋으로 쌓입니다.",
+            "끝나면 GitHub에도 자동으로 올라갑니다. "
+            "공개 저장소라면 이 시점의 내용이 곧바로 공개됩니다.",
+        ):
+            lab = QLabel(line)
+            lab.setWordWrap(True)
+            lab.setStyleSheet(f"font-size: 12px; color: {p.text_secondary};")
+            info_l.addWidget(lab)
+        root.addWidget(info)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        btn_cancel = QPushButton("취소")
+        btn_cancel.clicked.connect(self.reject)
+        btn_go = QPushButton("되돌리기")
+        btn_go.setDefault(True)
+        btn_go.setStyleSheet(
+            f"QPushButton {{ background: {p.primary}; color: {p.text_on_primary}; "
+            f"border: 1px solid {p.primary}; border-radius: 5px; padding: 7px 18px; "
+            f"font-size: 12.5px; font-weight: 600; }}"
+            f"QPushButton:hover {{ background: {p.primary_hover}; }}"
+        )
+        btn_go.clicked.connect(self.accept)
+        btn_row.addWidget(btn_cancel)
+        btn_row.addWidget(btn_go)
+        root.addLayout(btn_row)
 
 
 class CommitHistoryDialog(QDialog):
@@ -414,6 +596,14 @@ class CommitHistoryDialog(QDialog):
         view_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         right_l.addWidget(view_hint)
 
+        self._btn_revert: QPushButton | None = None
+        if not self._remote:
+            self._btn_revert = QPushButton("이 시점으로 되돌리기")
+            self._btn_revert.setObjectName("histSecondary")
+            self._btn_revert.setEnabled(False)
+            self._btn_revert.clicked.connect(self._on_revert_clicked)
+            right_l.addWidget(self._btn_revert)
+
         split.addWidget(left, 155)
         split.addWidget(right, 100)
         root.addLayout(split, 1)
@@ -422,10 +612,14 @@ class CommitHistoryDialog(QDialog):
         foot.setObjectName("histFooter")
         foot_l = QHBoxLayout(foot)
         foot_l.setContentsMargins(20, 12, 20, 12)
-        foot_note = QLabel(
-            "되돌리기는 다음 단계에서 추가됩니다. "
-            "그때는 되돌리기 전에 백업 브랜치를 자동으로 만듭니다."
-        )
+        if self._remote:
+            foot_text = "되돌리기는 로컬 폴더(동기화 탭)에서만 할 수 있습니다."
+        else:
+            foot_text = (
+                "되돌리기 전에 백업 브랜치를 자동으로 만듭니다. "
+                "되돌린 결과는 GitHub에도 함께 올라갑니다."
+            )
+        foot_note = QLabel(foot_text)
         foot_note.setObjectName("histMeta")
         foot_note.setWordWrap(True)
         btn_close = QPushButton("닫기")
@@ -608,6 +802,8 @@ class CommitHistoryDialog(QDialog):
         self._btn_refresh.setEnabled(not busy)
         self._btn_more.setEnabled(not busy and not self._exhausted)
         self._btn_view.setEnabled(not busy and self._selected is not None)
+        if self._btn_revert is not None:
+            self._btn_revert.setEnabled(not busy and self._can_revert_selected())
 
     def _stop_worker(self) -> None:
         w = self._worker
@@ -726,6 +922,13 @@ class CommitHistoryDialog(QDialog):
         self._sel_hash.setText("")
         self._clear_files()
         self._btn_view.setEnabled(False)
+        if self._btn_revert is not None:
+            self._btn_revert.setEnabled(False)
+
+    def _can_revert_selected(self) -> bool:
+        if self._remote or self._selected is None or not self._commits:
+            return False
+        return self._selected.full_hash != self._commits[0].full_hash
 
     def _clear_files(self) -> None:
         while self._files_layout.count():
@@ -760,6 +963,8 @@ class CommitHistoryDialog(QDialog):
         self._sel_author.setText(c.author)
         self._sel_hash.setText(c.short_hash)
         self._btn_view.setEnabled(True)
+        if self._btn_revert is not None:
+            self._btn_revert.setEnabled(self._can_revert_selected())
         self._load_detail(c)
 
     def _load_detail(self, c: CommitInfo) -> None:
@@ -890,6 +1095,85 @@ class CommitHistoryDialog(QDialog):
     @Slot(str)
     def _on_export_fail(self, msg: str) -> None:
         QMessageBox.warning(self, "이 시점 파일 보기", msg)
+
+    @Slot()
+    def _on_revert_clicked(self) -> None:
+        if self._selected is None or not self._can_revert_selected():
+            return
+        if not load_token():
+            QMessageBox.information(
+                self,
+                "이 시점으로 되돌리기",
+                "먼저 GitHub에 연결해야 되돌리고 다시 올릴 수 있습니다.\n"
+                "메인 창 위쪽의 「GitHub: 연결」에서 로그인한 뒤 다시 시도하세요.",
+            )
+            return
+        self._stop_worker()
+        self._set_busy(True)
+        w = _RevertPreviewWorker(
+            folder=self._folder, rev=self._selected.full_hash, parent=self
+        )
+        self._worker = w
+        w.succeeded.connect(self._on_revert_preview_ok)
+        w.failed.connect(self._on_revert_preview_fail)
+        w.finished.connect(lambda: self._set_busy(False))
+        w.start()
+
+    @Slot(list)
+    def _on_revert_preview_ok(self, files: list) -> None:
+        if self._selected is None:
+            return
+        files = [f for f in files if isinstance(f, ChangedFile)]
+        if not files:
+            QMessageBox.information(
+                self, "이 시점으로 되돌리기", "바뀌는 파일이 없습니다."
+            )
+            return
+        try:
+            backup_branch = pick_backup_branch_name(Path(self._folder))
+        except _REVERT_ERRORS:
+            backup_branch = "cloneup-backup-…"  # actual name is chosen at commit time
+        dlg = _RevertConfirmDialog(
+            self,
+            target_label=f"{self._selected.abs_time} · {self._selected.message}",
+            backup_branch=backup_branch,
+            files=files,
+        )
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._execute_revert(self._selected.full_hash)
+
+    @Slot(str)
+    def _on_revert_preview_fail(self, msg: str) -> None:
+        QMessageBox.warning(self, "이 시점으로 되돌리기", msg)
+
+    def _execute_revert(self, rev: str) -> None:
+        self._stop_worker()
+        self._set_busy(True)
+        w = _RevertWorker(folder=self._folder, rev=rev, parent=self)
+        self._worker = w
+        w.succeeded.connect(self._on_revert_ok)
+        w.failed.connect(self._on_revert_fail)
+        w.finished.connect(lambda: self._set_busy(False))
+        w.start()
+
+    @Slot(object)
+    def _on_revert_ok(self, result: object) -> None:
+        if not isinstance(result, RevertResult):
+            return
+        QMessageBox.information(
+            self,
+            "되돌렸습니다",
+            f"{result.target_message!r} 시점의 내용으로 되돌렸고, GitHub에도 올렸습니다.\n\n"
+            f"새로 만든 커밋: {result.new_commit[:7]}\n"
+            f"백업 브랜치: {result.backup_branch}\n\n"
+            "이 되돌리기가 마음에 들지 않으면 목록 맨 위 커밋을 골라 다시 되돌리면 됩니다.",
+        )
+        self._reload_from_start()
+
+    @Slot(str)
+    def _on_revert_fail(self, msg: str) -> None:
+        QMessageBox.warning(self, "이 시점으로 되돌리기", msg)
 
     @staticmethod
     def _log_open_folder(path: str) -> None:

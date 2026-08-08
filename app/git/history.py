@@ -149,15 +149,7 @@ def count_changed_files(folder: str | Path, rev: str) -> int:
     return sum(1 for ln in (r.stdout or "").splitlines() if ln.strip())
 
 
-def list_changed_files(folder: str | Path, rev: str) -> list[ChangedFile]:
-    """Name-status for one commit (A/M/D/…)."""
-    # --root required so the initial commit lists added files
-    r = run_git(
-        ["diff-tree", "--no-commit-id", "--name-status", "-r", "-z", "--root", rev],
-        cwd=str(folder),
-        check=True,
-    )
-    raw = r.stdout or ""
+def _parse_name_status_z(raw: str) -> list[ChangedFile]:
     # -z: status\0path\0  or R100\0old\0new\0
     parts = [p for p in raw.split("\0") if p != ""]
     out: list[ChangedFile] = []
@@ -181,6 +173,37 @@ def list_changed_files(folder: str | Path, rev: str) -> list[ChangedFile]:
         else:
             break
     return out
+
+
+def list_changed_files(folder: str | Path, rev: str) -> list[ChangedFile]:
+    """Name-status for one commit (A/M/D/…)."""
+    # --root required so the initial commit lists added files
+    r = run_git(
+        ["diff-tree", "--no-commit-id", "--name-status", "-r", "-z", "--root", rev],
+        cwd=str(folder),
+        check=True,
+    )
+    return _parse_name_status_z(r.stdout or "")
+
+
+def changed_files_between(
+    folder: str | Path, rev_a: str, rev_b: str
+) -> list[ChangedFile]:
+    """
+    Name-status diff from *rev_a* to *rev_b* (A/M/D relative to that direction).
+
+    Used to preview a revert: ``changed_files_between(folder, "HEAD", target)``
+    reports exactly what moving HEAD's tree to *target*'s tree would do —
+    A = file *target* has that HEAD doesn't (revert brings it back),
+    D = file HEAD has that *target* doesn't (revert removes it),
+    M = present in both, different content.
+    """
+    r = run_git(
+        ["diff", "--name-status", "-z", "-M", rev_a, rev_b],
+        cwd=str(folder),
+        check=True,
+    )
+    return _parse_name_status_z(r.stdout or "")
 
 
 def export_commit_snapshot(folder: str | Path, rev: str) -> Path:
