@@ -12,10 +12,13 @@ History is never rewritten:
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from app.git.clone_ops import CloneError, clone_repository
 from app.git.credentials import (
     credential_helper_configs,
     delete_credential_file,
@@ -172,12 +175,19 @@ def revert_to_commit(
     token: str,
     user: dict,
     hide_real_email: bool = False,
+    push_backup_branch: bool = False,
 ) -> RevertResult:
     """
     Revert *folder* to *target_rev*'s tree as one new commit, then push.
 
     Requires a clean working tree first, so the tree swap can't silently
     discard unsaved work — callers should point the user at the sync tab.
+
+    ``push_backup_branch``: the backup branch normally stays local-only (the
+    folder is the user's real working copy, so it's always right there). Set
+    True when *folder* is a throwaway clone that's about to be deleted —
+    without this, the backup branch would vanish along with it and the
+    "백업 브랜치를 자동으로 만듭니다" promise would be broken.
     """
     root = _ensure_git_repo(Path(folder))
     try:
@@ -208,6 +218,15 @@ def revert_to_commit(
                 "인터넷 연결을 확인한 뒤 동기화 탭의 「올리고 보내기」로 다시 보내세요."
                 + (f"\n\n(참고)\n{out[:400]}" if out else "")
             )
+        if push_backup_branch:
+            # Best-effort: the revert itself already succeeded either way.
+            run_git(
+                ["push", "origin", f"{result.backup_branch}:{result.backup_branch}"],
+                cwd=str(root),
+                check=False,
+                config=credential_helper_configs(cred_path),
+                timeout=300,
+            )
     finally:
         delete_credential_file(cred_path)
 
@@ -217,3 +236,40 @@ def revert_to_commit(
         raise RevertError(str(e)) from e
 
     return result
+
+
+def revert_remote_commit(
+    clone_url: str,
+    target_rev: str,
+    *,
+    token: str,
+    user: dict,
+    hide_real_email: bool = False,
+) -> RevertResult:
+    """
+    받기 탭 (URL only, no pre-existing local clone): clone to a throwaway
+    temp folder, run the normal revert_to_commit() against it, then delete
+    the temp clone regardless of outcome — it only ever existed to push the
+    revert commit, the user never asked to keep it on disk.
+
+    Needs the *full* history (clone_repository does a plain, unshallowed
+    clone) so an old target_rev's tree is guaranteed to be present. The
+    backup branch is pushed to origin too (push_backup_branch=True) since
+    the local one won't survive the cleanup.
+    """
+    tmp_parent = Path(tempfile.mkdtemp(prefix="cloneup-revert-clone-"))
+    try:
+        try:
+            cloned = clone_repository(clone_url, tmp_parent, token=token)
+        except CloneError as e:
+            raise RevertError(f"임시로 받는 중 실패했습니다: {e}") from e
+        return revert_to_commit(
+            cloned.target_dir,
+            target_rev,
+            token=token,
+            user=user,
+            hide_real_email=hide_real_email,
+            push_backup_branch=True,
+        )
+    finally:
+        shutil.rmtree(tmp_parent, ignore_errors=True)

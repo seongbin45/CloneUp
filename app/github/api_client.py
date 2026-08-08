@@ -348,6 +348,59 @@ def list_remote_changed_files(
     return out
 
 
+def compare_remote_commits(
+    owner: str,
+    repo: str,
+    base: str,
+    head: str,
+    *,
+    access_token: str | None = None,
+) -> list[ChangedFile]:
+    """
+    GET /repos/{owner}/{repo}/compare/{base}...{head} → files[] as ChangedFile.
+
+    Same direction as app.git.history.changed_files_between(folder, base, head):
+    A = file *head* has that *base* doesn't, D = file *base* has that *head*
+    doesn't, M = present in both, different content. Used to preview a
+    revert without cloning: compare(HEAD, target) shows exactly what
+    resetting HEAD's tree to target's tree would do.
+    """
+    owner = (owner or "").strip()
+    repo = (repo or "").strip()
+    base = (base or "").strip()
+    head = (head or "").strip()
+    if not owner or not repo or not base or not head:
+        raise GitHubAPIError(400, "owner/repo/base/head 가 비어 있습니다.")
+    try:
+        resp = requests.get(
+            f"{API_BASE}/repos/{owner}/{repo}/compare/{base}...{head}",
+            headers=_repo_headers(access_token),
+            timeout=45,
+        )
+        _raise_for_status(resp)
+    except GitHubAPIError as e:
+        raise GitHubAPIError(
+            e.status, _friendly_repo_error(e, owner=owner, repo=repo), body=e.body
+        ) from e
+    data = resp.json()
+    if not isinstance(data, dict):
+        return []
+    files = data.get("files")
+    if not isinstance(files, list):
+        return []
+    out: list[ChangedFile] = []
+    for f in files:
+        if not isinstance(f, dict):
+            continue
+        path = (f.get("filename") or "").strip()
+        if not path:
+            continue
+        status = (f.get("status") or "").strip().lower()
+        kind = _STATUS_KIND.get(status, "?")
+        out.append(ChangedFile(kind=kind, path=path))
+    return out
+
+
 def export_remote_commit_snapshot(
     owner: str,
     repo: str,

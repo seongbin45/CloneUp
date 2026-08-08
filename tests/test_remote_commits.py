@@ -9,6 +9,7 @@ import pytest
 from app.github.api_client import (
     GitHubAPIError,
     _parse_gh_iso_unix,
+    compare_remote_commits,
     list_remote_changed_files,
     list_repo_commits,
 )
@@ -109,3 +110,35 @@ def test_list_remote_changed_files_status_map() -> None:
         ("D", "c.py"),
         ("R", "d.py"),
     ]
+
+
+def test_compare_remote_commits_status_map_and_url() -> None:
+    payload = {
+        "files": [
+            {"filename": "new.py", "status": "added"},
+            {"filename": "kept.py", "status": "modified"},
+            {"filename": "gone.py", "status": "removed"},
+        ]
+    }
+    mock_resp = MagicMock()
+    mock_resp.ok = True
+    mock_resp.json.return_value = payload
+
+    with patch(
+        "app.github.api_client.requests.get", return_value=mock_resp
+    ) as get:
+        files = compare_remote_commits("o", "r", "head-sha", "target-sha")
+
+    url = get.call_args.args[0]
+    assert url.endswith("/repos/o/r/compare/head-sha...target-sha")
+    kinds = [(f.kind, f.path) for f in files]
+    assert kinds == [
+        ("A", "new.py"),
+        ("M", "kept.py"),
+        ("D", "gone.py"),
+    ]
+
+
+def test_compare_remote_commits_requires_all_args() -> None:
+    with pytest.raises(GitHubAPIError):
+        compare_remote_commits("o", "r", "", "target-sha")

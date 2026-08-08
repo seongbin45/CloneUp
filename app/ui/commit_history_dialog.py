@@ -48,11 +48,13 @@ from app.git.revert import (
     RevertResult,
     pick_backup_branch_name,
     preview_revert,
+    revert_remote_commit,
     revert_to_commit,
 )
 from app.git.sync_ops import SyncError
 from app.github.api_client import (
     GitHubAPIError,
+    compare_remote_commits,
     export_remote_commit_snapshot,
     list_remote_changed_files,
     list_repo_commits,
@@ -62,7 +64,15 @@ from app.ui.theme import Palette, active_palette
 from app.util.log_mask import mask_secrets_in_text
 
 _PAGE = 4  # design “더 보기” page size
-_REVERT_ERRORS = (RevertError, GitError, PublishError, SyncError, AuthError, OSError)
+_REVERT_ERRORS = (
+    RevertError,
+    GitError,
+    PublishError,
+    SyncError,
+    AuthError,
+    GitHubAPIError,
+    OSError,
+)
 
 
 def _kind_color(kind: str, p: Palette) -> str:
@@ -209,19 +219,50 @@ class _ExportWorker(QThread):
 
 
 class _RevertPreviewWorker(QThread):
-    """Local-only: what would change if we reverted *folder* to *rev* now."""
+    """
+    What would change if we reverted to *rev* now.
+
+    Local: plain file diff (no network). Remote: GitHub compare API between
+    the current top-of-list commit and *rev* — same direction/semantics as
+    the local diff, just without needing a clone yet.
+    """
 
     succeeded = Signal(list)
     failed = Signal(str)
 
-    def __init__(self, *, folder: str, rev: str, parent=None) -> None:
+    def __init__(
+        self,
+        *,
+        remote: bool,
+        folder: str = "",
+        owner: str = "",
+        repo: str = "",
+        access_token: str | None = None,
+        head_rev: str = "",
+        rev: str,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
+        self._remote = remote
         self._folder = folder
+        self._owner = owner
+        self._repo = repo
+        self._token = access_token
+        self._head_rev = head_rev
         self._rev = rev
 
     def run(self) -> None:  # noqa: N802
         try:
-            files = preview_revert(self._folder, self._rev)
+            if self._remote:
+                files = compare_remote_commits(
+                    self._owner,
+                    self._repo,
+                    self._head_rev,
+                    self._rev,
+                    access_token=self._token,
+                )
+            else:
+                files = preview_revert(self._folder, self._rev)
             self.succeeded.emit(files)
         except _REVERT_ERRORS as e:
             self.failed.emit(mask_secrets_in_text(str(e)))
@@ -230,26 +271,48 @@ class _RevertPreviewWorker(QThread):
 
 
 class _RevertWorker(QThread):
-    """Backup branch → reset to target tree → new commit → push (local only)."""
+    """
+    Local: backup branch → reset to target tree → new commit → push.
+    Remote: clone to a throwaway temp folder first, then the same.
+    """
 
     succeeded = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, *, folder: str, rev: str, parent=None) -> None:
+    def __init__(
+        self,
+        *,
+        remote: bool,
+        folder: str = "",
+        clone_url: str = "",
+        rev: str,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
+        self._remote = remote
         self._folder = folder
+        self._clone_url = clone_url
         self._rev = rev
 
     def run(self) -> None:  # noqa: N802
         try:
             token, user = ensure_valid_token()
-            result = revert_to_commit(
-                self._folder,
-                self._rev,
-                token=token,
-                user=user,
-                hide_real_email=load_hide_real_email(),
-            )
+            if self._remote:
+                result = revert_remote_commit(
+                    self._clone_url,
+                    self._rev,
+                    token=token,
+                    user=user,
+                    hide_real_email=load_hide_real_email(),
+                )
+            else:
+                result = revert_to_commit(
+                    self._folder,
+                    self._rev,
+                    token=token,
+                    user=user,
+                    hide_real_email=load_hide_real_email(),
+                )
             self.succeeded.emit(result)
         except _REVERT_ERRORS as e:
             self.failed.emit(mask_secrets_in_text(str(e)))
@@ -267,6 +330,7 @@ class _RevertConfirmDialog(QDialog):
         target_label: str,
         backup_branch: str,
         files: list[ChangedFile],
+        remote: bool = False,
     ) -> None:
         super().__init__(parent)
         p = active_palette()
@@ -344,13 +408,22 @@ class _RevertConfirmDialog(QDialog):
         info_l = QVBoxLayout(info)
         info_l.setContentsMargins(14, 12, 14, 12)
         info_l.setSpacing(6)
-        for line in (
+        info_lines = [
             f"백업 브랜치 {backup_branch} 를 먼저 만듭니다.",
             "지금까지의 커밋은 하나도 지워지지 않습니다. "
             "되돌린 내용이 새 커밋으로 쌓입니다.",
-            "끝나면 GitHub에도 자동으로 올라갑니다. "
-            "공개 저장소라면 이 시점의 내용이 곧바로 공개됩니다.",
-        ):
+        ]
+        if remote:
+            info_lines.append(
+                "받은 폴더가 없으니 임시로 잠깐 받아서 되돌린 뒤 GitHub로 보내고, "
+                "임시 폴더는 자동으로 정리합니다. 백업 브랜치도 GitHub에 함께 올립니다."
+            )
+        else:
+            info_lines.append(
+                "끝나면 GitHub에도 자동으로 올라갑니다. "
+                "공개 저장소라면 이 시점의 내용이 곧바로 공개됩니다."
+            )
+        for line in info_lines:
             lab = QLabel(line)
             lab.setWordWrap(True)
             lab.setStyleSheet(f"font-size: 12px; color: {p.text_secondary};")
@@ -397,6 +470,7 @@ class CommitHistoryDialog(QDialog):
             self._folder = ""
             self._owner = owner_s
             self._repo = repo_s
+            self._clone_url = f"https://github.com/{owner_s}/{repo_s}.git"
             self._token = (access_token or "").strip() or None
             self._path_text = (
                 (display_url or "").strip()
@@ -409,6 +483,7 @@ class CommitHistoryDialog(QDialog):
             self._folder = str(Path(folder_s).expanduser())
             self._owner = ""
             self._repo = ""
+            self._clone_url = ""
             self._token = None
             self._path_text = self._folder
             self._project_name = repo_display_name(self._folder)
@@ -417,8 +492,11 @@ class CommitHistoryDialog(QDialog):
             raise ValueError("folder 또는 owner/repo 가 필요합니다.")
 
         # Settings > 안전 > "커밋 내역에서 되돌리기 허용" (기본 꺼짐 = 읽기 전용).
-        # Remote view never gets revert regardless — there's no local .git to write to.
-        self._revert_available = (not self._remote) and load_history_revert_enabled()
+        # Applies the same way to local (동기화 탭) and remote (받기 탭 URL) —
+        # remote clones to a throwaway temp folder to do it
+        # (app.git.revert.revert_remote_commit), so 받기 탭 never depends on
+        # 동기화 탭 state.
+        self._revert_available = load_history_revert_enabled()
 
         self._commits: list[CommitInfo] = []
         self._selected: CommitInfo | None = None
@@ -630,8 +708,6 @@ class CommitHistoryDialog(QDialog):
                 "되돌리기 전에 백업 브랜치를 자동으로 만듭니다. "
                 "되돌린 결과는 GitHub에도 함께 올라갑니다."
             )
-        elif self._remote:
-            foot_text = "되돌리기는 로컬 폴더(동기화 탭)에서만 할 수 있습니다."
         else:
             foot_text = (
                 "되돌리기가 필요하면 설정 > 안전 > "
@@ -961,11 +1037,7 @@ class CommitHistoryDialog(QDialog):
         if self._btn_revert is None:
             return
         self._btn_revert.setEnabled(enabled)
-        is_current = (
-            not self._remote
-            and self._selected is not None
-            and not self._can_revert_selected()
-        )
+        is_current = self._selected is not None and not self._can_revert_selected()
         self._btn_revert.setText(
             "지금 이 상태입니다" if is_current else "이 시점으로 되돌리기"
         )
@@ -1149,8 +1221,16 @@ class CommitHistoryDialog(QDialog):
             return
         self._stop_worker()
         self._set_busy(True)
+        head_rev = self._commits[0].full_hash if self._commits else ""
         w = _RevertPreviewWorker(
-            folder=self._folder, rev=self._selected.full_hash, parent=self
+            remote=self._remote,
+            folder=self._folder,
+            owner=self._owner,
+            repo=self._repo,
+            access_token=self._token,
+            head_rev=head_rev,
+            rev=self._selected.full_hash,
+            parent=self,
         )
         self._worker = w
         w.succeeded.connect(self._on_revert_preview_ok)
@@ -1168,15 +1248,23 @@ class CommitHistoryDialog(QDialog):
                 self, "이 시점으로 되돌리기", "바뀌는 파일이 없습니다."
             )
             return
-        try:
-            backup_branch = pick_backup_branch_name(Path(self._folder))
-        except _REVERT_ERRORS:
-            backup_branch = "cloneup-backup-…"  # actual name is chosen at commit time
+        if self._remote:
+            # No local folder to inspect for name collisions — the real
+            # name (deduped) is picked inside the temp clone at revert time.
+            from datetime import datetime
+
+            backup_branch = f"cloneup-backup-{datetime.now().strftime('%Y%m%d-%H%M')}"
+        else:
+            try:
+                backup_branch = pick_backup_branch_name(Path(self._folder))
+            except _REVERT_ERRORS:
+                backup_branch = "cloneup-backup-…"  # real name chosen at commit time
         dlg = _RevertConfirmDialog(
             self,
             target_label=f"{self._selected.abs_time} · {self._selected.message}",
             backup_branch=backup_branch,
             files=files,
+            remote=self._remote,
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -1189,7 +1277,13 @@ class CommitHistoryDialog(QDialog):
     def _execute_revert(self, rev: str) -> None:
         self._stop_worker()
         self._set_busy(True)
-        w = _RevertWorker(folder=self._folder, rev=rev, parent=self)
+        w = _RevertWorker(
+            remote=self._remote,
+            folder=self._folder,
+            clone_url=self._clone_url,
+            rev=rev,
+            parent=self,
+        )
         self._worker = w
         w.succeeded.connect(self._on_revert_ok)
         w.failed.connect(self._on_revert_fail)
