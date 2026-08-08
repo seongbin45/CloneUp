@@ -448,25 +448,26 @@ class CommitHistoryDialog(QDialog):
         bar_l.addStretch(1)
         root.addWidget(bar)
 
-        # read-only banner
+        # banner — read-only for remote, "지워지지 않습니다" once revert exists
         banner = QFrame()
         banner.setObjectName("histBanner")
         ban_l = QHBoxLayout(banner)
         ban_l.setContentsMargins(14, 12, 14, 12)
         ban_l.setSpacing(10)
-        ban_tag = QLabel("읽기 전용")
-        ban_tag.setObjectName("histBannerTag")
         if self._remote:
+            ban_tag = QLabel("읽기 전용")
             ban_body = QLabel(
                 "GitHub 저장소의 커밋을 읽기만 합니다. "
                 "로그인하지 않아도 공개 저장소는 볼 수 있습니다. "
                 "비공개는 GitHub 연결이 필요합니다. 로컬 파일은 바뀌지 않습니다."
             )
         else:
+            ban_tag = QLabel("지워지지 않습니다")
             ban_body = QLabel(
-                "이 창에서는 무엇을 눌러도 작업 중인 파일이 바뀌지 않습니다. "
-                "지난 시점의 내용을 확인하는 용도입니다."
+                "되돌리기는 예전 내용을 되살린 새 커밋을 쌓는 방식입니다. "
+                "지금까지의 기록은 그대로 남고, 되돌린 뒤에 다시 되돌릴 수 있습니다."
             )
+        ban_tag.setObjectName("histBannerTag")
         ban_body.setObjectName("histBannerBody")
         ban_body.setWordWrap(True)
         ban_l.addWidget(ban_tag, 0, Qt.AlignmentFlag.AlignTop)
@@ -582,8 +583,17 @@ class CommitHistoryDialog(QDialog):
         files_scroll.setWidget(self._files_host)
         right_l.addWidget(files_scroll, 1)
 
+        # 시안 순서: 되돌리기(또는 "지금 이 상태입니다") → 파일 보기 → 안내문
+        self._btn_revert: QPushButton | None = None
+        if not self._remote:
+            self._btn_revert = QPushButton("이 시점으로 되돌리기")
+            self._btn_revert.setObjectName("histPrimary")
+            self._btn_revert.setEnabled(False)
+            self._btn_revert.clicked.connect(self._on_revert_clicked)
+            right_l.addWidget(self._btn_revert)
+
         self._btn_view = QPushButton("이 시점 파일 보기")
-        self._btn_view.setObjectName("histPrimary")
+        self._btn_view.setObjectName("histClose")
         self._btn_view.setEnabled(False)
         self._btn_view.clicked.connect(self._export_selected)
         right_l.addWidget(self._btn_view)
@@ -595,14 +605,6 @@ class CommitHistoryDialog(QDialog):
         view_hint.setWordWrap(True)
         view_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         right_l.addWidget(view_hint)
-
-        self._btn_revert: QPushButton | None = None
-        if not self._remote:
-            self._btn_revert = QPushButton("이 시점으로 되돌리기")
-            self._btn_revert.setObjectName("histSecondary")
-            self._btn_revert.setEnabled(False)
-            self._btn_revert.clicked.connect(self._on_revert_clicked)
-            right_l.addWidget(self._btn_revert)
 
         split.addWidget(left, 155)
         split.addWidget(right, 100)
@@ -792,6 +794,10 @@ class CommitHistoryDialog(QDialog):
         QPushButton#histClose:hover {{
             background: {p.bg_hint};
         }}
+        QPushButton#histClose:disabled {{
+            color: {p.text_disabled};
+            border-color: {p.border_soft};
+        }}
         """
 
     def closeEvent(self, event) -> None:  # noqa: N802
@@ -802,8 +808,7 @@ class CommitHistoryDialog(QDialog):
         self._btn_refresh.setEnabled(not busy)
         self._btn_more.setEnabled(not busy and not self._exhausted)
         self._btn_view.setEnabled(not busy and self._selected is not None)
-        if self._btn_revert is not None:
-            self._btn_revert.setEnabled(not busy and self._can_revert_selected())
+        self._update_revert_button(enabled=not busy and self._can_revert_selected())
 
     def _stop_worker(self) -> None:
         w = self._worker
@@ -922,13 +927,32 @@ class CommitHistoryDialog(QDialog):
         self._sel_hash.setText("")
         self._clear_files()
         self._btn_view.setEnabled(False)
-        if self._btn_revert is not None:
-            self._btn_revert.setEnabled(False)
+        self._update_revert_button(enabled=False)
 
     def _can_revert_selected(self) -> bool:
         if self._remote or self._selected is None or not self._commits:
             return False
         return self._selected.full_hash != self._commits[0].full_hash
+
+    def _update_revert_button(self, *, enabled: bool) -> None:
+        """
+        시안: canRevert → green button / isCurrent → "지금 이 상태입니다" (disabled).
+
+        ``enabled`` also folds in "busy" (a worker is running) — that must
+        not flip the label to "지금 이 상태입니다", so the label is decided
+        from the selection alone, independent of ``enabled``.
+        """
+        if self._btn_revert is None:
+            return
+        self._btn_revert.setEnabled(enabled)
+        is_current = (
+            not self._remote
+            and self._selected is not None
+            and not self._can_revert_selected()
+        )
+        self._btn_revert.setText(
+            "지금 이 상태입니다" if is_current else "이 시점으로 되돌리기"
+        )
 
     def _clear_files(self) -> None:
         while self._files_layout.count():
@@ -963,8 +987,7 @@ class CommitHistoryDialog(QDialog):
         self._sel_author.setText(c.author)
         self._sel_hash.setText(c.short_hash)
         self._btn_view.setEnabled(True)
-        if self._btn_revert is not None:
-            self._btn_revert.setEnabled(self._can_revert_selected())
+        self._update_revert_button(enabled=self._can_revert_selected())
         self._load_detail(c)
 
     def _load_detail(self, c: CommitInfo) -> None:
