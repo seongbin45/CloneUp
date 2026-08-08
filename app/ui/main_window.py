@@ -376,9 +376,49 @@ class MainController(QObject):
             on_open_onboarding=self.on_help_onboarding,
         )
 
-    def _on_settings_prefs_changed(self) -> None:
-        """Reload publish/sync fields after settings dialog auto-saves."""
-        self._load_prefs()
+    def _on_settings_prefs_changed(self, what: str = "all") -> None:
+        """
+        Push settings-store values into main tabs after 설정 auto-save.
+
+        *what* limits which widgets update so toggling 안전 does not wipe
+        an in-progress commit message on 만들고 올리기.
+        """
+        self._apply_settings_store_to_tabs(what)
+
+    def _apply_settings_store_to_tabs(self, what: str = "all") -> None:
+        """Selective settings → tab sync. Startup uses ``_load_prefs`` (full)."""
+        w = (what or "all").strip().lower() or "all"
+
+        if w in ("all", "defaults", "private", "visibility"):
+            if load_last_private() and self.radioPrivate is not None:
+                self.radioPrivate.setChecked(True)
+            elif self.radioPublic is not None:
+                self.radioPublic.setChecked(True)
+
+        if w in ("all", "defaults", "message", "commit_message"):
+            if self.editCommitMessage is not None:
+                self.editCommitMessage.setText(load_last_commit_message())
+
+        if w in ("all", "defaults", "branch", "publish_branch"):
+            if self.comboPublishBranch is not None:
+                br = load_last_publish_branch()
+                idx = self.comboPublishBranch.findText(br)
+                if idx >= 0:
+                    self.comboPublishBranch.setCurrentIndex(idx)
+                else:
+                    self.comboPublishBranch.setEditText(br)
+
+        if w in ("all", "safety", "hide_email", "email"):
+            hide = load_hide_real_email()
+            if self.checkHideEmail is not None:
+                self.checkHideEmail.setChecked(hide)
+            if self.checkSyncHideEmail is not None:
+                self.checkSyncHideEmail.setChecked(hide)
+
+        if w in ("all", "folders", "recent"):
+            self._reload_recent_combo()
+
+        # secret_scan: no tab widget; read live via load_secret_pii_scan_enabled()
 
     def _log_token_age_hint(self) -> None:
         """Soft reminder: PAT may expire; we only know connect age on this PC."""
@@ -741,25 +781,9 @@ class MainController(QObject):
             self.btnSyncCancel.clicked.connect(self.on_cancel)
 
     def _load_prefs(self) -> None:
-        if self.editCommitMessage is not None:
-            self.editCommitMessage.setText(load_last_commit_message())
-        if load_last_private() and self.radioPrivate is not None:
-            self.radioPrivate.setChecked(True)
-        elif self.radioPublic is not None:
-            self.radioPublic.setChecked(True)
-        if self.comboPublishBranch is not None:
-            br = load_last_publish_branch()
-            idx = self.comboPublishBranch.findText(br)
-            if idx >= 0:
-                self.comboPublishBranch.setCurrentIndex(idx)
-            else:
-                self.comboPublishBranch.setEditText(br)
-        hide = load_hide_real_email()
-        if self.checkHideEmail is not None:
-            self.checkHideEmail.setChecked(hide)
-        if self.checkSyncHideEmail is not None:
-            self.checkSyncHideEmail.setChecked(hide)
-        self._reload_recent_combo()
+        """Startup (and full) load: settings store → all related tab fields."""
+        self._apply_settings_store_to_tabs("all")
+        # First-run convenience only (not on every settings live-save)
         recent = load_recent_folders()
         if recent and self.editFolder is not None and not _folder_path(self.editFolder):
             for p in recent:

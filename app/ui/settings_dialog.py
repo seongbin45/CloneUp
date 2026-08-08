@@ -8,6 +8,7 @@ Colors follow active_palette() (OS light/dark).
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from PySide6.QtCore import QRectF, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPaintEvent
@@ -200,7 +201,7 @@ class SettingsDialog(QDialog):
         *,
         on_login: Callable[[], None] | None = None,
         on_logout: Callable[[], None] | None = None,
-        on_prefs_changed: Callable[[], None] | None = None,
+        on_prefs_changed: Callable[..., Any] | None = None,
         on_open_onboarding: Callable[[], None] | None = None,
         initial_tab: int = 0,
     ) -> None:
@@ -321,8 +322,14 @@ class SettingsDialog(QDialog):
                     f"QPushButton#setNavItem:hover {{background: {p.hover_muted};}}"
                 )
 
-    def _notify_prefs(self) -> None:
-        if self._on_prefs_changed is not None:
+    def _notify_prefs(self, what: str = "all") -> None:
+        """Tell main window which settings group changed (selective tab sync)."""
+        if self._on_prefs_changed is None:
+            return
+        try:
+            self._on_prefs_changed(what)
+        except TypeError:
+            # Older callback with no args
             self._on_prefs_changed()
 
     # ----- pages -----
@@ -717,7 +724,7 @@ class SettingsDialog(QDialog):
         self._private = bool(private)
         save_last_private(self._private)
         self._paint_visibility()
-        self._notify_prefs()
+        self._notify_prefs("private")
 
     def _paint_visibility(self) -> None:
         p = active_palette()
@@ -763,21 +770,21 @@ class SettingsDialog(QDialog):
         text = (self._edit_msg.text() or "").strip()
         if text:
             save_last_commit_message(text)
-            self._notify_prefs()
+            self._notify_prefs("message")
 
     @Slot()
     def _save_branch(self) -> None:
         text = (self._edit_branch.text() or "").strip()
         if text:
             save_last_publish_branch(text)
-            self._notify_prefs()
+            self._notify_prefs("branch")
 
     # ----- safety -----
     @Slot(bool)
     def _on_hide_email_toggled(self, checked: bool) -> None:
         self._hide_email = bool(checked)
         save_hide_real_email(self._hide_email)
-        self._notify_prefs()
+        self._notify_prefs("hide_email")
 
     @Slot(bool)
     def _on_secret_scan_toggled(self, checked: bool) -> None:
@@ -787,7 +794,7 @@ class SettingsDialog(QDialog):
         if want_on:
             self._secret_scan = True
             save_secret_pii_scan_enabled(True)
-            self._notify_prefs()
+            self._notify_prefs("secret_scan")
             return
         # Turning OFF requires typed acknowledgment
         if not confirm_disable_secret_pii_scan(self):
@@ -799,7 +806,7 @@ class SettingsDialog(QDialog):
             return
         self._secret_scan = False
         save_secret_pii_scan_enabled(False)
-        self._notify_prefs()
+        self._notify_prefs("secret_scan")
 
     # ----- folders -----
     def _refresh_folders(self) -> None:
@@ -851,7 +858,7 @@ class SettingsDialog(QDialog):
             return
         clear_recent_folders()
         self._refresh_folders()
-        self._notify_prefs()
+        self._notify_prefs("recent")
 
     # ----- about -----
     @Slot()
@@ -1140,7 +1147,7 @@ def show_settings(
     *,
     on_login: Callable[[], None] | None = None,
     on_logout: Callable[[], None] | None = None,
-    on_prefs_changed: Callable[[], None] | None = None,
+    on_prefs_changed: Callable[..., Any] | None = None,
     on_open_onboarding: Callable[[], None] | None = None,
     initial_tab: int = 0,
 ) -> None:
