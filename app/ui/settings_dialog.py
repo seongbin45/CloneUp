@@ -7,8 +7,9 @@ Prefs save immediately (footer: 바꾸면 바로 저장됩니다).
 from __future__ import annotations
 
 from collections.abc import Callable
-from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont
+
+from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QFont, QMouseEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -51,6 +52,78 @@ from app.ui.settings_store import (
 from app.ui.theme import Palette, active_palette
 
 _NAV = ("계정", "올리기 기본값", "안전", "최근 폴더", "정보")
+
+
+class _ToggleSwitch(QFrame):
+    """Track + knob toggle matching desin 설정 (40×23, knob 19)."""
+
+    toggled = Signal(bool)
+
+    def __init__(self, checked: bool = True, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._on = bool(checked)
+        self.setObjectName("setSwitchTrack")
+        self.setFixedSize(40, 23)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+        self._lay = QHBoxLayout(self)
+        self._lay.setContentsMargins(2, 2, 2, 2)
+        self._lay.setSpacing(0)
+        self._knob = QFrame()
+        self._knob.setObjectName("setSwitchKnob")
+        self._knob.setFixedSize(19, 19)
+        self._knob.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._paint()
+
+    def isChecked(self) -> bool:
+        return self._on
+
+    def setChecked(self, checked: bool, *, emit: bool = True) -> None:
+        on = bool(checked)
+        if self._on == on:
+            self._paint()
+            return
+        self._on = on
+        self._paint()
+        if emit:
+            self.toggled.emit(self._on)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setChecked(not self._on)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.setChecked(not self._on)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _paint(self) -> None:
+        p = active_palette()
+        track = p.primary if self._on else p.border_input
+        # Design: track #1f6f5c / #cdc8bf, knob #fbfaf8, justify flex-end/start
+        self.setStyleSheet(
+            f"QFrame#setSwitchTrack {{"
+            f"background: {track}; border: none; border-radius: 12px;}}"
+            f"QFrame#setSwitchKnob {{"
+            f"background: {p.bg_window}; border: none; border-radius: 9px;}}"
+        )
+        while self._lay.count():
+            item = self._lay.takeAt(0)
+            # keep knob; discard stretch spacers
+            if item is not None and item.widget() is self._knob:
+                pass
+        if self._on:
+            self._lay.addStretch(1)
+            self._lay.addWidget(self._knob, 0, Qt.AlignmentFlag.AlignVCenter)
+        else:
+            self._lay.addWidget(self._knob, 0, Qt.AlignmentFlag.AlignVCenter)
+            self._lay.addStretch(1)
 
 
 def _mono(base: QFont) -> QFont:
@@ -364,6 +437,7 @@ class SettingsDialog(QDialog):
         return w
 
     def _build_safety(self, p: Palette) -> QWidget:
+        # Design: column gap 22 between heading / toggle card / secret block
         w, lay = self._page_shell()
         lay.addWidget(
             self._heading(
@@ -375,19 +449,15 @@ class SettingsDialog(QDialog):
         toggle_row = QFrame()
         toggle_row.setObjectName("setCard")
         tr = QHBoxLayout(toggle_row)
-        tr.setContentsMargins(15, 15, 17, 15)
+        # design padding: 15px 17px
+        tr.setContentsMargins(17, 15, 17, 15)
         tr.setSpacing(14)
 
-        self._btn_hide_email = QPushButton()
-        self._btn_hide_email.setObjectName("setSwitch")
-        self._btn_hide_email.setCheckable(True)
-        self._btn_hide_email.setChecked(self._hide_email)
-        self._btn_hide_email.setFixedSize(40, 23)
-        self._btn_hide_email.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_hide_email.toggled.connect(self._on_hide_email_toggled)
-        self._paint_switch()
+        self._sw_hide_email = _ToggleSwitch(checked=self._hide_email)
+        self._sw_hide_email.toggled.connect(self._on_hide_email_toggled)
 
         text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
         text_col.setSpacing(4)
         tt = QLabel("커밋에 실제 이메일 숨기기")
         tt.setObjectName("setCardTitle")
@@ -399,20 +469,24 @@ class SettingsDialog(QDialog):
         tb.setWordWrap(True)
         text_col.addWidget(tt)
         text_col.addWidget(tb)
-        tr.addWidget(self._btn_hide_email, 0, Qt.AlignmentFlag.AlignTop)
+        tr.addWidget(self._sw_hide_email, 0, Qt.AlignmentFlag.AlignTop)
         tr.addLayout(text_col, 1)
         lay.addWidget(toggle_row)
 
+        # design: column gap 9 for 비밀 파일 점검 block
+        secret = QVBoxLayout()
+        secret.setContentsMargins(0, 0, 0, 0)
+        secret.setSpacing(9)
         sec = QLabel("비밀 파일 점검")
         sec.setObjectName("setSection")
-        lay.addWidget(sec)
+        secret.addWidget(sec)
         always = QLabel(
             "항상 켜져 있습니다. 올리기 전에 비밀번호가 들어 있을 만한 "
             "파일 이름을 찾아 알려드립니다."
         )
         always.setObjectName("setInfoBox")
         always.setWordWrap(True)
-        lay.addWidget(always)
+        secret.addWidget(always)
         warn = QLabel(
             "파일 이름만 봅니다. 파일 안에 적어둔 비밀번호는 찾지 못하니 "
             "마지막 확인은 직접 해주세요. 경고를 무시하고 진행하는 것은 "
@@ -420,7 +494,8 @@ class SettingsDialog(QDialog):
         )
         warn.setObjectName("setWarnBanner")
         warn.setWordWrap(True)
-        lay.addWidget(warn)
+        secret.addWidget(warn)
+        lay.addLayout(secret)
         lay.addStretch(1)
         return w
 
@@ -451,7 +526,6 @@ class SettingsDialog(QDialog):
         self._btn_clear_recent.setObjectName("setSecondary")
         self._btn_clear_recent.clicked.connect(self._clear_recent)
         note = QLabel(
-            "CloneUp이 기억한 경로만 지웁니다. "
             "컴퓨터·외장디스크에 있는 실제 폴더는 삭제되지 않습니다."
         )
         note.setObjectName("setMeta")
@@ -617,24 +691,10 @@ class SettingsDialog(QDialog):
             self._notify_prefs()
 
     # ----- safety -----
-    def _paint_switch(self) -> None:
-        p = active_palette()
-        on = self._btn_hide_email.isChecked()
-        # Approximate the design toggle with a flat checkable button
-        bg = p.primary if on else p.border_input
-        self._btn_hide_email.setText("●" if on else "○")
-        self._btn_hide_email.setStyleSheet(
-            f"QPushButton#setSwitch {{"
-            f"background: {bg}; border: none; border-radius: 11px; "
-            f"color: {p.bg_window}; font-size: 14px; padding: 0;}}"
-            f"QPushButton#setSwitch:checked {{background: {p.primary};}}"
-        )
-
     @Slot(bool)
     def _on_hide_email_toggled(self, checked: bool) -> None:
         self._hide_email = bool(checked)
         save_hide_real_email(self._hide_email)
-        self._paint_switch()
         self._notify_prefs()
 
     # ----- folders -----
@@ -645,7 +705,6 @@ class SettingsDialog(QDialog):
             if w is not None:
                 w.deleteLater()
         paths = load_recent_folders()
-        p = active_palette()
         if not paths:
             empty = QLabel("최근 폴더가 없습니다.")
             empty.setObjectName("setMeta")
@@ -815,7 +874,7 @@ class SettingsDialog(QDialog):
             background: {p.bg_input};
             border: 1px solid {p.border_divider};
             border-radius: 6px;
-            padding: 12px 15px;
+            padding: 13px 15px;
             font-size: 12.5px;
             color: {p.text_secondary};
         }}
