@@ -113,6 +113,14 @@ def test_list_remote_changed_files_status_map() -> None:
 
 
 def test_compare_remote_commits_status_map_and_url() -> None:
+    """
+    base=current HEAD (descendant), head=revert target (an ancestor of base)
+    — the only shape this is ever called with. GitHub's compare is
+    BASE...HEAD with merge-base semantics, so a literal base...head call
+    would diff the ancestor against itself and report nothing; the function
+    must call the API as head...base (ancestor first) and flip A/D on the
+    result so callers still see it in base→head direction.
+    """
     payload = {
         "files": [
             {"filename": "new.py", "status": "added"},
@@ -130,12 +138,12 @@ def test_compare_remote_commits_status_map_and_url() -> None:
         files = compare_remote_commits("o", "r", "head-sha", "target-sha")
 
     url = get.call_args.args[0]
-    assert url.endswith("/repos/o/r/compare/head-sha...target-sha")
+    assert url.endswith("/repos/o/r/compare/target-sha...head-sha")
     kinds = [(f.kind, f.path) for f in files]
     assert kinds == [
-        ("A", "new.py"),
+        ("D", "new.py"),
         ("M", "kept.py"),
-        ("D", "gone.py"),
+        ("A", "gone.py"),
     ]
 
 

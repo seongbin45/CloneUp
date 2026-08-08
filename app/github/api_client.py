@@ -357,13 +357,23 @@ def compare_remote_commits(
     access_token: str | None = None,
 ) -> list[ChangedFile]:
     """
-    GET /repos/{owner}/{repo}/compare/{base}...{head} → files[] as ChangedFile.
-
-    Same direction as app.git.history.changed_files_between(folder, base, head):
+    Files that differ between *base* and *head*, in base→head direction:
     A = file *head* has that *base* doesn't, D = file *base* has that *head*
-    doesn't, M = present in both, different content. Used to preview a
-    revert without cloning: compare(HEAD, target) shows exactly what
-    resetting HEAD's tree to target's tree would do.
+    doesn't, M = present in both, different content. Same direction as
+    app.git.history.changed_files_between(folder, base, head). Used to
+    preview a revert without cloning: compare(HEAD, target) shows exactly
+    what resetting HEAD's tree to target's tree would do.
+
+    GitHub's compare endpoint is BASE...HEAD with **triple-dot** (merge-base)
+    semantics, not a literal two-tree diff: it diffs merge_base(base, head)
+    against head. Our revert preview always calls this with *head* = an
+    older commit the caller wants to revert *to* — i.e. an ancestor of
+    *base* — so merge_base(base, head) == head, and a direct base...head
+    call would silently diff head against itself and report zero changes.
+    We call the API as head...base instead (ancestor first, so its
+    merge-base is itself and the diff is meaningful), then flip A/D on the
+    result so the returned ChangedFile list still matches the base→head
+    contract described above.
     """
     owner = (owner or "").strip()
     repo = (repo or "").strip()
@@ -373,7 +383,7 @@ def compare_remote_commits(
         raise GitHubAPIError(400, "owner/repo/base/head 가 비어 있습니다.")
     try:
         resp = requests.get(
-            f"{API_BASE}/repos/{owner}/{repo}/compare/{base}...{head}",
+            f"{API_BASE}/repos/{owner}/{repo}/compare/{head}...{base}",
             headers=_repo_headers(access_token),
             timeout=45,
         )
@@ -388,6 +398,7 @@ def compare_remote_commits(
     files = data.get("files")
     if not isinstance(files, list):
         return []
+    flip = {"A": "D", "D": "A"}
     out: list[ChangedFile] = []
     for f in files:
         if not isinstance(f, dict):
@@ -397,6 +408,7 @@ def compare_remote_commits(
             continue
         status = (f.get("status") or "").strip().lower()
         kind = _STATUS_KIND.get(status, "?")
+        kind = flip.get(kind, kind)
         out.append(ChangedFile(kind=kind, path=path))
     return out
 
