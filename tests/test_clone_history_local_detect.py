@@ -78,3 +78,45 @@ def test_folder_without_git_is_none(tmp_path: Path) -> None:
         tmp_path, "seongbin45", "cloneup-fake-repo"
     )
     assert found is None
+
+
+@requires_git
+def test_find_local_clone_falls_back_to_recent_folders(tmp_path: Path) -> None:
+    """
+    Regression: editCloneParent/editCloneDirName reset every app restart (not
+    settings-backed), so a clone from a *previous* session must still be
+    found via 최근 폴더 — not just whatever the 받기 탭 fields show right now.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    from app.ui.main_window import load_main_window
+    from app.ui.settings_store import _settings, remember_folder
+
+    QApplication.instance() or QApplication([])
+
+    clone_dir = tmp_path / "old-session-clone"
+    clone_dir.mkdir()
+    _init_repo_with_origin(
+        clone_dir, "https://github.com/seongbin45/cloneup-fake-repo.git"
+    )
+
+    s = _settings()
+    prev = s.value("recent_folders")
+    try:
+        s.setValue("recent_folders", [])
+        remember_folder(str(clone_dir))
+
+        window = load_main_window()
+        ctrl = window._cloneup_controller
+        # 받기 탭 fields point somewhere unrelated — simulates a fresh session
+        ctrl.editCloneParent.setText(str(tmp_path / "somewhere-else"))
+        ctrl.editCloneDirName.setText("")
+
+        found = ctrl._find_local_clone_for_url("seongbin45", "cloneup-fake-repo")
+        assert found == str(clone_dir)
+        window.close()
+    finally:
+        if prev is None:
+            s.remove("recent_folders")
+        else:
+            s.setValue("recent_folders", prev)

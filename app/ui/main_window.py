@@ -2239,15 +2239,43 @@ class MainController(QObject):
             return str(target)
         return None
 
+    def _find_local_clone_for_url(self, owner: str, repo: str) -> str | None:
+        """
+        Look for an existing local clone of owner/repo.
+
+        editCloneParent/editCloneDirName are plain text fields — not saved
+        anywhere, so they reset to their defaults on every app restart and
+        after navigating away. Checking only those means "이미 받았음" is
+        detected in the same session right after cloning, then quietly stops
+        working the next time the app opens. 최근 폴더 (settings-backed,
+        survives restarts) is the fallback so a previously cloned repo is
+        still found regardless of what's currently typed in the 받기 탭.
+        """
+        parent = (self.editCloneParent.text() if self.editCloneParent else "") or ""
+        if parent.strip():
+            dirname = (
+                self.editCloneDirName.text() if self.editCloneDirName else ""
+            ) or ""
+            target = Path(parent).expanduser() / (dirname.strip() or repo)
+            found = self._local_clone_for_url(target, owner, repo)
+            if found:
+                return found
+        for candidate in load_recent_folders():
+            found = self._local_clone_for_url(Path(candidate), owner, repo)
+            if found:
+                return found
+        return None
+
     @Slot()
     def on_clone_history(self) -> None:
         """Open commit history for the GitHub URL on the 받기 tab.
 
-        Already cloned to the folder this tab targets? Open that local
-        folder instead — same 읽기 전용/되돌리기 popup as 동기화 탭, gated
-        by the same Settings > 안전 switch. Not cloned yet (or a different
-        repo sits there)? Fall back to the read-only GitHub API view; public
-        repos work without login, private needs a stored token.
+        Already cloned somewhere on this computer (checked against 최근
+        폴더, not just whatever the 받기 탭 fields currently show)? Open
+        that local folder instead — same 읽기 전용/되돌리기 popup as 동기화
+        탭, gated by the same Settings > 안전 switch. Never cloned? Fall
+        back to the read-only GitHub API view; public repos work without
+        login, private needs a stored token.
         """
         if self._busy():
             return
@@ -2267,15 +2295,11 @@ class MainController(QObject):
             QMessageBox.warning(self.window, "커밋 내역", str(e))
             return
 
-        parent = (self.editCloneParent.text() if self.editCloneParent else "") or ""
-        dirname = (self.editCloneDirName.text() if self.editCloneDirName else "") or ""
-        if parent.strip():
-            target = Path(parent).expanduser() / (dirname.strip() or n.repo)
-            local = self._local_clone_for_url(target, n.owner, n.repo)
-            if local:
-                self._log(f"커밋 내역 열기(이미 받은 로컬 폴더): {local}")
-                show_commit_history(self.window, local)
-                return
+        local = self._find_local_clone_for_url(n.owner, n.repo)
+        if local:
+            self._log(f"커밋 내역 열기(이미 받은 로컬 폴더): {local}")
+            show_commit_history(self.window, local)
+            return
 
         # Optional token: public OK without; private needs connect
         token = load_token()
