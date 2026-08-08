@@ -102,6 +102,20 @@ def save_secret_pii_scan_enabled(enabled: bool) -> None:
     _settings().setValue("secret_pii_scan_enabled", bool(enabled))
 
 
+def load_hard_revert_enabled() -> bool:
+    """
+    Default False (opt-in): offer "기록까지 지우고 되돌리기" in 커밋 내역.
+
+    That path rewrites history (git reset --hard + force push) — more than
+    the default "기록을 남기고 되돌리기", which stays available either way.
+    """
+    return bool(_settings().value("hard_revert_enabled", False, type=bool))
+
+
+def save_hard_revert_enabled(enabled: bool) -> None:
+    _settings().setValue("hard_revert_enabled", bool(enabled))
+
+
 def load_last_publish_branch() -> str:
     """Default branch for first publish (usually main)."""
     val = _settings().value("last_publish_branch", "main")
