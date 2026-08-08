@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QFont, QGuiApplication, QKeyEvent, QKeySequence, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
@@ -22,7 +22,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.settings_store import load_history_revert_enabled, save_history_revert_enabled
 from app.ui.theme import Palette, active_palette
+
+
+class _SelectableCard(QFrame):
+    """Plain QFrame with a click signal — used for the 읽기전용/되돌리기 picker."""
+
+    clicked = Signal()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 @dataclass(frozen=True)
@@ -42,6 +54,11 @@ _STEPS: tuple[_Step, ...] = (
         "commits",
         "커밋은 돌아올 수 있는 지점입니다",
         "사진을 찍어두는 것과 같습니다. 찍어둔 만큼 돌아갈 수 있습니다.",
+    ),
+    _Step(
+        "history_mode",
+        "커밋 내역을 어떻게 쓸지 골라 보세요",
+        "나중에 설정 > 안전에서 언제든 바꿀 수 있습니다.",
     ),
     _Step(
         "cost",
@@ -109,6 +126,7 @@ class OnboardingDialog(QDialog):
         super().__init__(parent)
         self._i = 0
         self._fullscreen_applied = False
+        self._history_revert = load_history_revert_enabled()
         p = active_palette()
         self.setWindowTitle("클론업 시작하기")
         self.setModal(True)
@@ -151,7 +169,7 @@ class OnboardingDialog(QDialog):
         bar_l.setSpacing(12)
         title = QLabel("클론업 시작하기")
         title.setObjectName("obTitle")
-        self._step_lbl = QLabel("1 / 5")
+        self._step_lbl = QLabel(f"1 / {len(_STEPS)}")
         self._step_lbl.setObjectName("obStepMeta")
         self._fs_hint = QLabel("전체 화면 · Esc 닫기 · F11 창 모드")
         self._fs_hint.setObjectName("obStepMeta")
@@ -183,6 +201,7 @@ class OnboardingDialog(QDialog):
         )
         self._stack.addWidget(self._page_folders(p))
         self._stack.addWidget(self._page_commits(p))
+        self._stack.addWidget(self._page_history_mode(p))
         self._stack.addWidget(self._page_cost(p))
         self._stack.addWidget(self._page_undo(p))
         self._stack.addWidget(self._page_safety(p))
@@ -443,6 +462,109 @@ class OnboardingDialog(QDialog):
         lay.addWidget(foot)
         lay.addStretch(1)
         return w
+
+    def _page_history_mode(self, p: Palette) -> QWidget:
+        """
+        시안: CloneUp 커밋 내역.dc.읽기전용.html / .지워지지않습니다.html — the
+        user picks between the two here (and can change it later in
+        Settings > 안전). Clicking a card saves immediately.
+        """
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(18)
+
+        row = QHBoxLayout()
+        row.setSpacing(18)
+        self._readonly_card, self._readonly_tag = self._history_mode_card(
+            p,
+            title="읽기 전용",
+            body=(
+                "지난 시점의 내용을 확인만 합니다. "
+                "이 화면에서는 무엇을 눌러도 파일이 바뀌지 않습니다."
+            ),
+        )
+        self._readonly_card.clicked.connect(lambda: self._set_history_mode(False))
+        self._revert_card, self._revert_tag = self._history_mode_card(
+            p,
+            title="지워지지 않습니다",
+            body=(
+                "예전 내용을 되살린 새 커밋을 쌓을 수 있습니다. "
+                "지금까지의 기록은 그대로 남고, 되돌린 뒤에 다시 되돌릴 수 있습니다."
+            ),
+        )
+        self._revert_card.clicked.connect(lambda: self._set_history_mode(True))
+        row.addWidget(self._readonly_card, 1)
+        row.addWidget(self._revert_card, 1)
+        lay.addLayout(row)
+
+        foot = QLabel("클릭해서 고르세요. 설정 > 안전에서 언제든 바꿀 수 있습니다.")
+        foot.setObjectName("obBody")
+        foot.setWordWrap(True)
+        lay.addWidget(foot)
+        lay.addStretch(1)
+
+        self._refresh_history_mode_cards()
+        return w
+
+    @staticmethod
+    def _history_mode_card(
+        p: Palette, *, title: str, body: str
+    ) -> tuple[_SelectableCard, QLabel]:
+        card = _SelectableCard()
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(20, 22, 20, 22)
+        lay.setSpacing(11)
+        tag = QLabel()
+        h = QLabel(title)
+        h.setStyleSheet(f"font-size: 15px; font-weight: 600; color: {p.text};")
+        h.setWordWrap(True)
+        b = QLabel(body)
+        b.setWordWrap(True)
+        b.setObjectName("obBody")
+        lay.addWidget(tag)
+        lay.addWidget(h)
+        lay.addWidget(b)
+        return card, tag
+
+    def _set_history_mode(self, enabled: bool) -> None:
+        self._history_revert = enabled
+        save_history_revert_enabled(enabled)
+        self._refresh_history_mode_cards()
+
+    def _refresh_history_mode_cards(self) -> None:
+        p = active_palette()
+        self._style_history_mode_card(
+            self._readonly_card,
+            self._readonly_tag,
+            p,
+            selected=not self._history_revert,
+        )
+        self._style_history_mode_card(
+            self._revert_card, self._revert_tag, p, selected=self._history_revert
+        )
+
+    @staticmethod
+    def _style_history_mode_card(
+        card: _SelectableCard, tag: QLabel, p: Palette, *, selected: bool
+    ) -> None:
+        if selected:
+            card.setStyleSheet(
+                f"QFrame {{ background: {p.bg_muted}; "
+                f"border: 2px solid {p.primary}; border-radius: 8px; }}"
+            )
+            tag.setText("● 선택됨")
+            tag.setStyleSheet(
+                f"font-size: 11.5px; font-weight: 600; color: {p.primary};"
+            )
+        else:
+            card.setStyleSheet(
+                f"QFrame {{ background: {p.bg_muted}; "
+                f"border: 1px solid {p.border_soft}; border-radius: 8px; }}"
+            )
+            tag.setText("선택하려면 클릭")
+            tag.setStyleSheet(f"font-size: 11.5px; color: {p.text_muted};")
 
     def _page_cost(self, p: Palette) -> QWidget:
         w = QWidget()

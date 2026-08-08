@@ -57,7 +57,7 @@ from app.github.api_client import (
     list_remote_changed_files,
     list_repo_commits,
 )
-from app.ui.settings_store import load_hide_real_email
+from app.ui.settings_store import load_hide_real_email, load_history_revert_enabled
 from app.ui.theme import Palette, active_palette
 from app.util.log_mask import mask_secrets_in_text
 
@@ -416,6 +416,10 @@ class CommitHistoryDialog(QDialog):
         else:
             raise ValueError("folder 또는 owner/repo 가 필요합니다.")
 
+        # Settings > 안전 > "커밋 내역에서 되돌리기 허용" (기본 꺼짐 = 읽기 전용).
+        # Remote view never gets revert regardless — there's no local .git to write to.
+        self._revert_available = (not self._remote) and load_history_revert_enabled()
+
         self._commits: list[CommitInfo] = []
         self._selected: CommitInfo | None = None
         self._worker: QThread | None = None
@@ -454,7 +458,13 @@ class CommitHistoryDialog(QDialog):
         ban_l = QHBoxLayout(banner)
         ban_l.setContentsMargins(14, 12, 14, 12)
         ban_l.setSpacing(10)
-        if self._remote:
+        if self._revert_available:
+            ban_tag = QLabel("지워지지 않습니다")
+            ban_body = QLabel(
+                "되돌리기는 예전 내용을 되살린 새 커밋을 쌓는 방식입니다. "
+                "지금까지의 기록은 그대로 남고, 되돌린 뒤에 다시 되돌릴 수 있습니다."
+            )
+        elif self._remote:
             ban_tag = QLabel("읽기 전용")
             ban_body = QLabel(
                 "GitHub 저장소의 커밋을 읽기만 합니다. "
@@ -462,10 +472,11 @@ class CommitHistoryDialog(QDialog):
                 "비공개는 GitHub 연결이 필요합니다. 로컬 파일은 바뀌지 않습니다."
             )
         else:
-            ban_tag = QLabel("지워지지 않습니다")
+            ban_tag = QLabel("읽기 전용")
             ban_body = QLabel(
-                "되돌리기는 예전 내용을 되살린 새 커밋을 쌓는 방식입니다. "
-                "지금까지의 기록은 그대로 남고, 되돌린 뒤에 다시 되돌릴 수 있습니다."
+                "이 창에서는 무엇을 눌러도 작업 중인 파일이 바뀌지 않습니다. "
+                "지난 시점의 내용을 확인하는 용도입니다. "
+                "되돌리기가 필요하면 설정 > 안전에서 켤 수 있습니다."
             )
         ban_tag.setObjectName("histBannerTag")
         ban_body.setObjectName("histBannerBody")
@@ -585,7 +596,7 @@ class CommitHistoryDialog(QDialog):
 
         # 시안 순서: 되돌리기(또는 "지금 이 상태입니다") → 파일 보기 → 안내문
         self._btn_revert: QPushButton | None = None
-        if not self._remote:
+        if self._revert_available:
             self._btn_revert = QPushButton("이 시점으로 되돌리기")
             self._btn_revert.setObjectName("histPrimary")
             self._btn_revert.setEnabled(False)
@@ -614,12 +625,17 @@ class CommitHistoryDialog(QDialog):
         foot.setObjectName("histFooter")
         foot_l = QHBoxLayout(foot)
         foot_l.setContentsMargins(20, 12, 20, 12)
-        if self._remote:
-            foot_text = "되돌리기는 로컬 폴더(동기화 탭)에서만 할 수 있습니다."
-        else:
+        if self._revert_available:
             foot_text = (
                 "되돌리기 전에 백업 브랜치를 자동으로 만듭니다. "
                 "되돌린 결과는 GitHub에도 함께 올라갑니다."
+            )
+        elif self._remote:
+            foot_text = "되돌리기는 로컬 폴더(동기화 탭)에서만 할 수 있습니다."
+        else:
+            foot_text = (
+                "되돌리기가 필요하면 설정 > 안전 > "
+                "「커밋 내역에서 되돌리기 허용」을 켜세요."
             )
         foot_note = QLabel(foot_text)
         foot_note.setObjectName("histMeta")
@@ -930,7 +946,7 @@ class CommitHistoryDialog(QDialog):
         self._update_revert_button(enabled=False)
 
     def _can_revert_selected(self) -> bool:
-        if self._remote or self._selected is None or not self._commits:
+        if not self._revert_available or self._selected is None or not self._commits:
             return False
         return self._selected.full_hash != self._commits[0].full_hash
 

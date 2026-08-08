@@ -42,6 +42,7 @@ from app.paths import app_root
 from app.ui.settings_store import (
     clear_recent_folders,
     load_hide_real_email,
+    load_history_revert_enabled,
     load_last_commit_message,
     load_last_github_login,
     load_last_private,
@@ -49,6 +50,7 @@ from app.ui.settings_store import (
     load_recent_folders,
     load_secret_pii_scan_enabled,
     save_hide_real_email,
+    save_history_revert_enabled,
     save_last_commit_message,
     save_last_private,
     save_last_publish_branch,
@@ -214,6 +216,7 @@ class SettingsDialog(QDialog):
         self._private = load_last_private()
         self._hide_email = load_hide_real_email()
         self._secret_scan = load_secret_pii_scan_enabled()
+        self._history_revert = load_history_revert_enabled()
         self._secret_scan_block = False  # ignore toggle while reverting UI
         p = active_palette()
 
@@ -550,6 +553,23 @@ class SettingsDialog(QDialog):
         warn.setObjectName("setWarnBanner")
         warn.setWordWrap(True)
         lay.addWidget(warn)
+
+        # --- 커밋 내역: 읽기 전용 vs 지워지지 않습니다 (되돌리기) ---
+        self._sw_history_revert = _ToggleSwitch(checked=self._history_revert)
+        self._sw_history_revert.toggled.connect(self._on_history_revert_toggled)
+        lay.addWidget(
+            self._safety_toggle_card(
+                switch=self._sw_history_revert,
+                title="커밋 내역에서 되돌리기 허용",
+                body=(
+                    "꺼져 있으면 커밋 내역은 읽기 전용입니다 (기본값). "
+                    "켜면 「이 시점으로 되돌리기」 버튼이 나타납니다 — "
+                    "예전 내용을 되살린 새 커밋을 쌓을 뿐, 지금까지의 기록은 "
+                    "하나도 지워지지 않습니다. 처음 실행 안내에서도 고를 수 있습니다."
+                ),
+            )
+        )
+
         lay.addStretch(1)
         return w
 
@@ -807,6 +827,12 @@ class SettingsDialog(QDialog):
         self._secret_scan = False
         save_secret_pii_scan_enabled(False)
         self._notify_prefs("secret_scan")
+
+    @Slot(bool)
+    def _on_history_revert_toggled(self, checked: bool) -> None:
+        self._history_revert = bool(checked)
+        save_history_revert_enabled(self._history_revert)
+        self._notify_prefs("history_revert")
 
     # ----- folders -----
     def _refresh_folders(self) -> None:

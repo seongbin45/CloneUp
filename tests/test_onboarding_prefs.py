@@ -8,9 +8,11 @@ from app.ui.settings_dialog import (
 )
 from app.ui.settings_store import (
     clear_recent_folders,
+    load_history_revert_enabled,
     load_onboarding_done,
     load_recent_folders,
     load_secret_pii_scan_enabled,
+    save_history_revert_enabled,
     save_onboarding_done,
     save_secret_pii_scan_enabled,
     _settings,
@@ -38,9 +40,34 @@ def test_onboarding_done_roundtrip() -> None:
 def test_onboarding_steps_count() -> None:
     from app.ui.onboarding_dialog import _STEPS
 
-    assert len(_STEPS) == 5
+    assert len(_STEPS) == 6
     keys = [st.key for st in _STEPS]
-    assert keys == ["folders", "commits", "cost", "undo", "safety"]
+    assert keys == [
+        "folders",
+        "commits",
+        "history_mode",
+        "cost",
+        "undo",
+        "safety",
+    ]
+
+
+def test_history_revert_enabled_default_off() -> None:
+    s = _settings()
+    key = "history_revert_enabled"
+    prev = s.value(key)
+    try:
+        s.remove(key)
+        assert load_history_revert_enabled() is False
+        save_history_revert_enabled(True)
+        assert load_history_revert_enabled() is True
+        save_history_revert_enabled(False)
+        assert load_history_revert_enabled() is False
+    finally:
+        if prev is None:
+            s.remove(key)
+        else:
+            s.setValue(key, prev)
 
 
 def test_clear_recent_folders() -> None:

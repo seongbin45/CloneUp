@@ -102,6 +102,22 @@ def save_secret_pii_scan_enabled(enabled: bool) -> None:
     _settings().setValue("secret_pii_scan_enabled", bool(enabled))
 
 
+def load_history_revert_enabled() -> bool:
+    """
+    Default False: 커밋 내역 stays 읽기 전용 until the user opts in.
+
+    Chosen once in first-run onboarding (skippable — this default is what
+    skip-through users get); changeable any time in Settings > 안전.
+    True unlocks 지워지지 않습니다 mode: a revert button that stacks a new
+    commit restoring old content (nothing is ever erased).
+    """
+    return bool(_settings().value("history_revert_enabled", False, type=bool))
+
+
+def save_history_revert_enabled(enabled: bool) -> None:
+    _settings().setValue("history_revert_enabled", bool(enabled))
+
+
 def load_last_publish_branch() -> str:
     """Default branch for first publish (usually main)."""
     val = _settings().value("last_publish_branch", "main")
