@@ -450,7 +450,10 @@ class SettingsDialog(QDialog):
         self._btn_clear_recent = QPushButton("목록 비우기")
         self._btn_clear_recent.setObjectName("setSecondary")
         self._btn_clear_recent.clicked.connect(self._clear_recent)
-        note = QLabel("목록만 지웁니다. 폴더와 파일은 그대로 있습니다.")
+        note = QLabel(
+            "CloneUp이 기억한 경로만 지웁니다. "
+            "컴퓨터·외장디스크에 있는 실제 폴더는 삭제되지 않습니다."
+        )
         note.setObjectName("setMeta")
         note.setWordWrap(True)
         row.addWidget(self._btn_clear_recent)
@@ -675,8 +678,9 @@ class SettingsDialog(QDialog):
         r = QMessageBox.question(
             self,
             "목록 비우기",
-            f"최근 폴더 {n}개를 목록에서 지울까요?\n"
-            "폴더와 파일은 그대로 있습니다.",
+            f"최근 폴더 {n}개를 이 목록에서만 지울까요?\n\n"
+            "CloneUp이 기억한 경로만 사라집니다.\n"
+            "컴퓨터에 있는 실제 폴더·파일은 삭제되지 않습니다.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
