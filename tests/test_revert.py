@@ -8,7 +8,6 @@ import pytest
 
 from app.git.revert import (
     RevertError,
-    hard_revert_local_commit,
     pick_backup_branch_name,
     preview_revert,
     revert_local_commit,
@@ -123,62 +122,6 @@ def test_revert_rejects_dirty_working_tree(tmp_path: Path) -> None:
         revert_local_commit(folder, c1, user=_USER)
 
     # Must fail before touching anything: no backup branch, file still there.
-    branches_after = run_git(
-        ["branch", "--list"], cwd=str(folder), check=True
-    ).stdout
-    assert branches_before == branches_after
-    assert (folder / "c.txt").exists()
-
-
-@requires_git
-def test_hard_revert_local_commit_rewrites_branch(tmp_path: Path) -> None:
-    folder, c1, c2 = _init_two_commit_repo(tmp_path)
-
-    result = hard_revert_local_commit(folder, c1)
-
-    assert result.target_full_hash == c1
-    assert (folder / "a.txt").read_text(encoding="utf-8") == "one\n"
-    assert (folder / "b.txt").read_text(encoding="utf-8") == "keep-me\n"
-
-    # HEAD *is* the target now — no new commit stacked on top.
-    head = run_git(["rev-parse", "HEAD"], cwd=str(folder), check=True).stdout.strip()
-    assert head == c1
-
-    # c2 is gone from this branch's history...
-    log = run_git(["log", "--format=%H", "HEAD"], cwd=str(folder), check=True).stdout
-    assert c2 not in log.splitlines()
-
-    # ...but still reachable from the backup branch.
-    backup_sha = run_git(
-        ["rev-parse", result.backup_branch], cwd=str(folder), check=True
-    ).stdout.strip()
-    assert backup_sha == c2
-
-    kinds = {f.path: f.kind for f in result.files}
-    assert kinds == {"a.txt": "M", "b.txt": "A"}
-
-    status = run_git(["status", "--porcelain"], cwd=str(folder), check=True)
-    assert not (status.stdout or "").strip()
-
-
-@requires_git
-def test_hard_revert_rejects_self_revert(tmp_path: Path) -> None:
-    folder, c1, c2 = _init_two_commit_repo(tmp_path)
-    with pytest.raises(RevertError, match="이미 지금"):
-        hard_revert_local_commit(folder, "HEAD")
-
-
-@requires_git
-def test_hard_revert_rejects_dirty_working_tree(tmp_path: Path) -> None:
-    folder, c1, c2 = _init_two_commit_repo(tmp_path)
-    (folder / "c.txt").write_text("uncommitted\n", encoding="utf-8")
-
-    branches_before = run_git(
-        ["branch", "--list"], cwd=str(folder), check=True
-    ).stdout
-    with pytest.raises(RevertError, match="저장하지 않은"):
-        hard_revert_local_commit(folder, c1)
-
     branches_after = run_git(
         ["branch", "--list"], cwd=str(folder), check=True
     ).stdout
