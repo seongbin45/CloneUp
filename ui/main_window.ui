@@ -867,7 +867,7 @@
                 <string>폴더를 고르면 표시됩니다</string>
                </property>
                <property name="wordWrap">
-                <bool>true</bool>
+                <bool>false</bool>
                </property>
               </widget>
              </item>

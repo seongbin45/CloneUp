@@ -761,11 +761,14 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         background: transparent;
         border: none;
     }}
-    /* Placeholder when no chips yet */
+    /* Placeholder when no chips yet — muted pill, matches the chip look below */
     QLabel#labelSyncStatus {{
+        background: {BG_HINT};
         color: {TEXT_MUTED};
+        border: 1px solid {BORDER_SOFT};
+        border-radius: 14px;
+        padding: 7px 12px;
         font-size: 12.5px;
-        padding: 4px 2px;
     }}
     /* Status chips (set objectName syncChip_ok / warn / bad / info / muted) */
     QLabel#syncChip_ok {{
