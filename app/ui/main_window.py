@@ -48,7 +48,10 @@ from app.ui.login_dialog import (
     show_missing_repo_help,
 )
 from app.ui.publish_worker import LoginWorker, PatLoginWorker, PublishWorker
-from app.ui.commit_history_dialog import show_commit_history
+from app.ui.commit_history_dialog import (
+    show_commit_history,
+    show_remote_commit_history,
+)
 from app.ui.success_dialog import show_clone_success, show_publish_success
 from app.ui.tip_card import install_tip_card
 from app.util.next_action import format_next_step_line
@@ -392,7 +395,8 @@ class MainController(QObject):
                 "• 주소를 붙여 넣거나, GitHub 연결 후 「목록 ▼」에서 내 저장소를 고를 수 있습니다.\n"
                 "• 같은 이름의 폴더가 이미 있으면 실패합니다. 이름을 바꾸세요.\n"
                 "• 비공개 저장소는 「비공개 저장소 받을 때 GitHub 연결 사용」을 켠 뒤 연결하세요.\n"
-                "• 「커밋 내역」으로 이미 받아 둔 폴더의 지난 시점을 읽기 전용으로 볼 수 있습니다.",
+                "• 「커밋 내역」으로 주소의 GitHub 커밋을 읽기 전용으로 볼 수 있습니다. "
+                "공개 저장소는 로그인 없이도 됩니다.",
             ),
             (
                 "labelTabIntroSync",
@@ -2113,36 +2117,6 @@ class MainController(QObject):
         self._log(f"커밋 내역 열기: {p}")
         show_commit_history(self.window, str(p))
 
-    def _resolve_clone_target_repo(self) -> Path | None:
-        """
-        Best-effort path for 받기 tab: 저장 위치 / 폴더 이름.
-
-        Returns a path that exists and has .git, or None.
-        """
-        parent = (
-            (self.editCloneParent.text() if self.editCloneParent else "") or ""
-        ).strip()
-        name = (
-            (self.editCloneDirName.text() if self.editCloneDirName else "") or ""
-        ).strip()
-        if not name:
-            # Infer from clone URL when folder name field is empty
-            raw = self._clone_url_text()
-            if raw:
-                try:
-                    name = normalize_github_clone_url(raw).repo
-                except UrlError:
-                    name = ""
-        if not parent or not name:
-            return None
-        try:
-            cand = Path(parent).expanduser().resolve() / name
-            if cand.is_dir() and (cand / ".git").exists():
-                return cand
-        except OSError:
-            return None
-        return None
-
     @Slot()
     def on_sync_history(self) -> None:
         """Open read-only commit history for the sync-tab folder."""
@@ -2152,26 +2126,38 @@ class MainController(QObject):
 
     @Slot()
     def on_clone_history(self) -> None:
-        """Open commit history from 받기 tab (local clone folder)."""
+        """Open remote commit history for the GitHub URL on the 받기 tab.
+
+        Public repos work without login. Private needs a stored token.
+        (동기화 탭 커밋 내역은 로컬 폴더 기준.)
+        """
         if self._busy():
             return
-        # 1) Prefer 저장 위치 + 폴더 이름 when that repo already exists
-        cand = self._resolve_clone_target_repo()
-        if cand is not None:
-            self._open_commit_history(str(cand))
+        raw = self._clone_url_text()
+        if not raw:
+            QMessageBox.warning(
+                self.window,
+                "커밋 내역",
+                "GitHub 저장소 주소를 입력하세요.\n"
+                "예: https://github.com/사용자/저장소\n\n"
+                "공개 저장소는 로그인 없이 볼 수 있습니다.",
+            )
             return
-        # 2) Ask user to pick a local .git folder
-        start = (
-            (self.editCloneParent.text() if self.editCloneParent else "") or ""
-        ).strip() or str(Path.home())
-        path = QFileDialog.getExistingDirectory(
+        try:
+            n = normalize_github_clone_url(raw)
+        except UrlError as e:
+            QMessageBox.warning(self.window, "커밋 내역", str(e))
+            return
+        # Optional token: public OK without; private needs connect
+        token = load_token()
+        self._log(f"커밋 내역 열기(GitHub): {n.display_url}")
+        show_remote_commit_history(
             self.window,
-            "커밋 내역을 볼 로컬 저장소 선택",
-            start,
+            n.owner,
+            n.repo,
+            access_token=token,
+            display_url=n.display_url,
         )
-        if not path:
-            return
-        self._open_commit_history(path)
 
     @Slot()
     def on_sync_refresh(self, quiet: bool = False) -> None:

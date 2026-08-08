@@ -6,7 +6,7 @@
 
 | 파일 | 역할 |
 |------|------|
-| `api_client.py` | `GET /user`, `POST /user/repos` (auto_init 금지 등) |
+| `api_client.py` | `GET /user`, repos/branches/commits, zipball 스냅샷, `POST /user/repos` (auto_init 금지 등) |
 
 ## 초심자 메모
 

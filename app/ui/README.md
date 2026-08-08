@@ -10,7 +10,7 @@
 | `main_window.py` | 메인 창 로직, 탭 동작, G3 확인, 로그아웃, Git 부트스트랩 호출 |
 | `login_dialog.py` | GitHub 연결 **3단계 마법사** (키 만들기→붙여넣기) |
 | `success_dialog.py` | 올리기/받기 성공 후 「다음에 할 수 있는 일」 |
-| `commit_history_dialog.py` | **커밋 내역** 읽기 전용 팝업 (시안 `desin/CloneUp 커밋 내역.dc.html`) |
+| `commit_history_dialog.py` | **커밋 내역** 읽기 전용 팝업 (로컬 `.git` / GitHub URL 원격 API, 시안 `desin/…`) |
 | `onboarding_dialog.py` | **첫 실행 안내** 5단계 (시안 `desin/CloneUp 첫 실행 안내.dc.html`) |
 | `device_code_dialog.py` | 장치 코드 팝업 (로그인 취소 / 로그아웃) |
 | `auth_status.py` | 상단 GitHub 로그인 상태 점 |

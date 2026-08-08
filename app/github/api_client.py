@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import tempfile
+import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import requests
+
+from app.git.history import ChangedFile, CommitInfo, format_abs_time
 
 API_BASE = "https://api.github.com"
 DEFAULT_HEADERS = {
@@ -178,6 +184,220 @@ def list_repo_branches(
             if n:
                 names.append(n)
     return names
+
+
+def _parse_gh_iso_unix(iso: str) -> int:
+    """Parse GitHub ISO-8601 date (…Z) to local unix seconds."""
+    s = (iso or "").strip()
+    if not s:
+        return 0
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except ValueError:
+        return 0
+
+
+def _friendly_repo_error(err: GitHubAPIError, *, owner: str, repo: str) -> str:
+    """Beginner-friendly Korean message for common commit/repo API failures."""
+    if err.status == 404:
+        return (
+            f"저장소를 찾을 수 없습니다 ({owner}/{repo}).\n"
+            "주소가 맞는지 확인하세요. 비공개 저장소는 GitHub 연결이 필요합니다."
+        )
+    if err.status == 401:
+        return (
+            "GitHub 연결이 만료되었거나 올바르지 않습니다.\n"
+            "위쪽 「GitHub: 연결」에서 다시 연결한 뒤 시도하세요."
+        )
+    if err.status == 403:
+        msg = (err.message or "").lower()
+        if "rate limit" in msg or "api rate limit" in msg:
+            return (
+                "GitHub 요청 한도에 걸렸습니다.\n"
+                "잠시 후 다시 시도하거나, GitHub 연결 후 더 넉넉한 한도를 쓰세요."
+            )
+        return (
+            f"이 저장소를 볼 권한이 없습니다 ({owner}/{repo}).\n"
+            "비공개 저장소는 GitHub 연결이 필요합니다."
+        )
+    return str(err)
+
+
+def list_repo_commits(
+    owner: str,
+    repo: str,
+    *,
+    access_token: str | None = None,
+    page: int = 1,
+    per_page: int = 20,
+) -> list[CommitInfo]:
+    """
+    GET /repos/{owner}/{repo}/commits — newest first.
+
+    Works without token for public repos. Private needs a valid token.
+    ``file_count`` is 0 here; fill via ``list_remote_changed_files`` on detail.
+    """
+    owner = (owner or "").strip()
+    repo = (repo or "").strip()
+    if not owner or not repo:
+        raise GitHubAPIError(400, "owner/repo 가 비어 있습니다.")
+    per = max(1, min(int(per_page), 100))
+    pg = max(1, int(page))
+    try:
+        resp = requests.get(
+            f"{API_BASE}/repos/{owner}/{repo}/commits",
+            headers=_repo_headers(access_token),
+            params={"page": pg, "per_page": per},
+            timeout=45,
+        )
+        _raise_for_status(resp)
+    except GitHubAPIError as e:
+        raise GitHubAPIError(e.status, _friendly_repo_error(e, owner=owner, repo=repo), body=e.body) from e
+    data = resp.json()
+    if not isinstance(data, list):
+        return []
+    out: list[CommitInfo] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        sha = (item.get("sha") or "").strip()
+        if not sha:
+            continue
+        commit = item.get("commit") if isinstance(item.get("commit"), dict) else {}
+        author_block = (
+            commit.get("author") if isinstance(commit.get("author"), dict) else {}
+        )
+        # Prefer commit.author (git), fall back to GitHub user login
+        author = (author_block.get("name") or "").strip()
+        if not author:
+            gh_user = item.get("author") if isinstance(item.get("author"), dict) else {}
+            author = (gh_user.get("login") or "").strip() or "(작성자 없음)"
+        unix = _parse_gh_iso_unix(str(author_block.get("date") or ""))
+        message = (commit.get("message") or "").strip() or "(메시지 없음)"
+        # First line only (subject), like git %s
+        subject = message.splitlines()[0].strip() if message else "(메시지 없음)"
+        out.append(
+            CommitInfo(
+                full_hash=sha,
+                short_hash=sha[:7],
+                author=author,
+                unix_time=unix,
+                abs_time=format_abs_time(unix) if unix else "",
+                message=subject,
+                file_count=0,
+            )
+        )
+    return out
+
+
+_STATUS_KIND = {
+    "added": "A",
+    "modified": "M",
+    "removed": "D",
+    "renamed": "R",
+    "copied": "C",
+    "changed": "M",
+}
+
+
+def list_remote_changed_files(
+    owner: str,
+    repo: str,
+    rev: str,
+    *,
+    access_token: str | None = None,
+) -> list[ChangedFile]:
+    """
+    GET /repos/{owner}/{repo}/commits/{rev} → files[] as ChangedFile list.
+    """
+    owner = (owner or "").strip()
+    repo = (repo or "").strip()
+    rev = (rev or "").strip()
+    if not owner or not repo or not rev:
+        raise GitHubAPIError(400, "owner/repo/rev 가 비어 있습니다.")
+    try:
+        resp = requests.get(
+            f"{API_BASE}/repos/{owner}/{repo}/commits/{rev}",
+            headers=_repo_headers(access_token),
+            timeout=45,
+        )
+        _raise_for_status(resp)
+    except GitHubAPIError as e:
+        raise GitHubAPIError(e.status, _friendly_repo_error(e, owner=owner, repo=repo), body=e.body) from e
+    data = resp.json()
+    if not isinstance(data, dict):
+        return []
+    files = data.get("files")
+    if not isinstance(files, list):
+        return []
+    out: list[ChangedFile] = []
+    for f in files:
+        if not isinstance(f, dict):
+            continue
+        path = (f.get("filename") or "").strip()
+        if not path:
+            continue
+        status = (f.get("status") or "").strip().lower()
+        kind = _STATUS_KIND.get(status, "?")
+        out.append(ChangedFile(kind=kind, path=path))
+    return out
+
+
+def export_remote_commit_snapshot(
+    owner: str,
+    repo: str,
+    rev: str,
+    *,
+    access_token: str | None = None,
+) -> Path:
+    """
+    Download GET /repos/{owner}/{repo}/zipball/{rev} into a new temp folder.
+
+    Does not touch any local clone. Returns extract directory.
+    """
+    owner = (owner or "").strip()
+    repo = (repo or "").strip()
+    rev = (rev or "").strip()
+    if not owner or not repo or not rev:
+        raise GitHubAPIError(400, "owner/repo/rev 가 비어 있습니다.")
+    dest = Path(tempfile.mkdtemp(prefix="CloneUp-view-"))
+    zip_path = dest / "_tree.zip"
+    try:
+        try:
+            resp = requests.get(
+                f"{API_BASE}/repos/{owner}/{repo}/zipball/{rev}",
+                headers=_repo_headers(access_token),
+                timeout=180,
+                stream=True,
+            )
+            _raise_for_status(resp)
+        except GitHubAPIError as e:
+            raise GitHubAPIError(
+                e.status, _friendly_repo_error(e, owner=owner, repo=repo), body=e.body
+            ) from e
+        with open(zip_path, "wb") as fh:
+            for chunk in resp.iter_content(chunk_size=256 * 1024):
+                if chunk:
+                    fh.write(chunk)
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(dest)
+    except Exception:
+        try:
+            zip_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    finally:
+        try:
+            zip_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return dest
 
 
 def create_repo(

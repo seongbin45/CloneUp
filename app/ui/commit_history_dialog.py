@@ -1,6 +1,10 @@
 """Commit history popup — desin/CloneUp 커밋 내역.dc.html.
 
 Read-only: list commits, show changed files, export a past tree to a temp folder.
+
+Two sources:
+- **local** — ``folder`` with .git (동기화 탭 / 로컬 저장소)
+- **remote** — GitHub owner/repo via API (받기 탭 URL; 공개는 로그인 불필요)
 """
 
 from __future__ import annotations
@@ -35,6 +39,12 @@ from app.git.history import (
     repo_display_name,
 )
 from app.git.runner import GitError
+from app.github.api_client import (
+    GitHubAPIError,
+    export_remote_commit_snapshot,
+    list_remote_changed_files,
+    list_repo_commits,
+)
 from app.ui.theme import Palette, active_palette
 
 _PAGE = 4  # design “더 보기” page size
@@ -55,17 +65,45 @@ class _LoadWorker(QThread):
     succeeded = Signal(list)
     failed = Signal(str)
 
-    def __init__(self, folder: str, *, skip: int, limit: int, parent=None) -> None:
+    def __init__(
+        self,
+        *,
+        remote: bool,
+        folder: str = "",
+        owner: str = "",
+        repo: str = "",
+        access_token: str | None = None,
+        skip: int = 0,
+        limit: int = _PAGE,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
+        self._remote = remote
         self._folder = folder
+        self._owner = owner
+        self._repo = repo
+        self._token = access_token
         self._skip = skip
         self._limit = limit
 
     def run(self) -> None:  # noqa: N802
         try:
-            rows = list_commits(self._folder, limit=self._limit, skip=self._skip)
+            if self._remote:
+                # GitHub is page-based (1-indexed); skip must be page-aligned
+                page = (max(0, self._skip) // max(1, self._limit)) + 1
+                rows = list_repo_commits(
+                    self._owner,
+                    self._repo,
+                    access_token=self._token,
+                    page=page,
+                    per_page=self._limit,
+                )
+            else:
+                rows = list_commits(
+                    self._folder, limit=self._limit, skip=self._skip
+                )
             self.succeeded.emit(rows)
-        except GitError as e:
+        except (GitError, GitHubAPIError) as e:
             self.failed.emit(str(e))
         except Exception as e:  # pragma: no cover
             self.failed.emit(str(e))
@@ -75,18 +113,40 @@ class _DetailWorker(QThread):
     succeeded = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, folder: str, commit: CommitInfo, parent=None) -> None:
+    def __init__(
+        self,
+        *,
+        remote: bool,
+        folder: str = "",
+        owner: str = "",
+        repo: str = "",
+        access_token: str | None = None,
+        commit: CommitInfo,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
+        self._remote = remote
         self._folder = folder
+        self._owner = owner
+        self._repo = repo
+        self._token = access_token
         self._commit = commit
 
     def run(self) -> None:  # noqa: N802
         try:
-            files = list_changed_files(self._folder, self._commit.full_hash)
+            if self._remote:
+                files = list_remote_changed_files(
+                    self._owner,
+                    self._repo,
+                    self._commit.full_hash,
+                    access_token=self._token,
+                )
+            else:
+                files = list_changed_files(self._folder, self._commit.full_hash)
             self._commit.changed = files
             self._commit.file_count = len(files)
             self.succeeded.emit(self._commit)
-        except GitError as e:
+        except (GitError, GitHubAPIError) as e:
             self.failed.emit(str(e))
         except Exception as e:  # pragma: no cover
             self.failed.emit(str(e))
@@ -96,16 +156,38 @@ class _ExportWorker(QThread):
     succeeded = Signal(str)
     failed = Signal(str)
 
-    def __init__(self, folder: str, rev: str, parent=None) -> None:
+    def __init__(
+        self,
+        *,
+        remote: bool,
+        folder: str = "",
+        owner: str = "",
+        repo: str = "",
+        access_token: str | None = None,
+        rev: str,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
+        self._remote = remote
         self._folder = folder
+        self._owner = owner
+        self._repo = repo
+        self._token = access_token
         self._rev = rev
 
     def run(self) -> None:  # noqa: N802
         try:
-            dest = export_commit_snapshot(self._folder, self._rev)
+            if self._remote:
+                dest = export_remote_commit_snapshot(
+                    self._owner,
+                    self._repo,
+                    self._rev,
+                    access_token=self._token,
+                )
+            else:
+                dest = export_commit_snapshot(self._folder, self._rev)
             self.succeeded.emit(str(dest))
-        except GitError as e:
+        except (GitError, GitHubAPIError) as e:
             self.failed.emit(str(e))
         except Exception as e:  # pragma: no cover
             self.failed.emit(str(e))
@@ -114,9 +196,44 @@ class _ExportWorker(QThread):
 class CommitHistoryDialog(QDialog):
     """Modal read-only commit browser (시안: CloneUp 커밋 내역)."""
 
-    def __init__(self, parent: QWidget | None, *, folder: str) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None,
+        *,
+        folder: str | None = None,
+        owner: str | None = None,
+        repo: str | None = None,
+        access_token: str | None = None,
+        display_url: str | None = None,
+    ) -> None:
         super().__init__(parent)
-        self._folder = str(Path(folder).expanduser())
+        owner_s = (owner or "").strip()
+        repo_s = (repo or "").strip()
+        folder_s = (folder or "").strip()
+        if owner_s and repo_s:
+            self._remote = True
+            self._folder = ""
+            self._owner = owner_s
+            self._repo = repo_s
+            self._token = (access_token or "").strip() or None
+            self._path_text = (
+                (display_url or "").strip()
+                or f"https://github.com/{owner_s}/{repo_s}"
+            )
+            self._project_name = f"{owner_s}/{repo_s}"
+            path_label = "주소"
+        elif folder_s:
+            self._remote = False
+            self._folder = str(Path(folder_s).expanduser())
+            self._owner = ""
+            self._repo = ""
+            self._token = None
+            self._path_text = self._folder
+            self._project_name = repo_display_name(self._folder)
+            path_label = "폴더"
+        else:
+            raise ValueError("folder 또는 owner/repo 가 필요합니다.")
+
         self._commits: list[CommitInfo] = []
         self._selected: CommitInfo | None = None
         self._worker: QThread | None = None
@@ -141,7 +258,7 @@ class CommitHistoryDialog(QDialog):
         bar_l.setSpacing(12)
         title = QLabel("커밋 내역")
         title.setObjectName("histTitle")
-        proj = QLabel(repo_display_name(self._folder))
+        proj = QLabel(self._project_name)
         proj.setObjectName("histProject")
         proj.setFont(self._mono_font(proj.font()))
         bar_l.addWidget(title)
@@ -157,10 +274,17 @@ class CommitHistoryDialog(QDialog):
         ban_l.setSpacing(10)
         ban_tag = QLabel("읽기 전용")
         ban_tag.setObjectName("histBannerTag")
-        ban_body = QLabel(
-            "이 창에서는 무엇을 눌러도 작업 중인 파일이 바뀌지 않습니다. "
-            "지난 시점의 내용을 확인하는 용도입니다."
-        )
+        if self._remote:
+            ban_body = QLabel(
+                "GitHub 저장소의 커밋을 읽기만 합니다. "
+                "로그인하지 않아도 공개 저장소는 볼 수 있습니다. "
+                "비공개는 GitHub 연결이 필요합니다. 로컬 파일은 바뀌지 않습니다."
+            )
+        else:
+            ban_body = QLabel(
+                "이 창에서는 무엇을 눌러도 작업 중인 파일이 바뀌지 않습니다. "
+                "지난 시점의 내용을 확인하는 용도입니다."
+            )
         ban_body.setObjectName("histBannerBody")
         ban_body.setWordWrap(True)
         ban_l.addWidget(ban_tag, 0, Qt.AlignmentFlag.AlignTop)
@@ -170,14 +294,14 @@ class CommitHistoryDialog(QDialog):
         wrap_ban.addWidget(banner)
         root.addLayout(wrap_ban)
 
-        # folder row
+        # path / URL row
         folder_row = QHBoxLayout()
         folder_row.setContentsMargins(20, 16, 20, 14)
         folder_row.setSpacing(10)
-        lab = QLabel("폴더")
+        lab = QLabel(path_label)
         lab.setObjectName("histFormLabel")
         lab.setFixedWidth(56)
-        self._path_lbl = QLabel(self._folder)
+        self._path_lbl = QLabel(self._path_text)
         self._path_lbl.setObjectName("histPath")
         self._path_lbl.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -512,7 +636,16 @@ class CommitHistoryDialog(QDialog):
         self._stop_worker()
         self._set_busy(True)
         self._loaded_lbl.setText("불러오는 중…")
-        w = _LoadWorker(self._folder, skip=skip, limit=_PAGE, parent=self)
+        w = _LoadWorker(
+            remote=self._remote,
+            folder=self._folder,
+            owner=self._owner,
+            repo=self._repo,
+            access_token=self._token,
+            skip=skip,
+            limit=_PAGE,
+            parent=self,
+        )
         self._worker = w
         w.succeeded.connect(self._on_page_ok)
         w.failed.connect(self._on_page_fail)
@@ -566,9 +699,14 @@ class CommitHistoryDialog(QDialog):
             f"font-size: 13.5px; font-weight: 500; color: {p.text}; background: transparent;"
         )
         msg.setWordWrap(False)
+        # Remote list omits per-commit file counts (extra API call); show after detail
+        if self._remote and c.file_count <= 0:
+            files_bit = "파일 목록은 선택 시"
+        else:
+            files_bit = f"파일 {c.file_count}개"
         meta = QLabel(
             f"{relative_time_ko(c.unix_time)}  ·  {c.abs_time}  ·  "
-            f"{c.author}  ·  파일 {c.file_count}개"
+            f"{c.author}  ·  {files_bit}"
         )
         meta.setStyleSheet(
             f"font-size: 11.5px; color: {p.text_muted}; background: transparent;"
@@ -638,7 +776,15 @@ class CommitHistoryDialog(QDialog):
                 w.deleteLater()
         self._files_layout.addWidget(placeholder)
         self._files_layout.addStretch(1)
-        w = _DetailWorker(self._folder, c, parent=self)
+        w = _DetailWorker(
+            remote=self._remote,
+            folder=self._folder,
+            owner=self._owner,
+            repo=self._repo,
+            access_token=self._token,
+            commit=c,
+            parent=self,
+        )
         self._worker = w
         w.succeeded.connect(self._on_detail_ok)
         w.failed.connect(self._on_detail_fail)
@@ -715,7 +861,15 @@ class CommitHistoryDialog(QDialog):
             return
         self._stop_worker()
         self._set_busy(True)
-        w = _ExportWorker(self._folder, self._selected.full_hash, parent=self)
+        w = _ExportWorker(
+            remote=self._remote,
+            folder=self._folder,
+            owner=self._owner,
+            repo=self._repo,
+            access_token=self._token,
+            rev=self._selected.full_hash,
+            parent=self,
+        )
         self._worker = w
         w.succeeded.connect(self._on_export_ok)
         w.failed.connect(self._on_export_fail)
@@ -749,6 +903,25 @@ class CommitHistoryDialog(QDialog):
 
 
 def show_commit_history(parent: QWidget | None, folder: str) -> None:
-    """Open the read-only commit history dialog for *folder*."""
+    """Open the read-only commit history dialog for a local *folder*."""
     dlg = CommitHistoryDialog(parent, folder=folder)
+    dlg.exec()
+
+
+def show_remote_commit_history(
+    parent: QWidget | None,
+    owner: str,
+    repo: str,
+    *,
+    access_token: str | None = None,
+    display_url: str | None = None,
+) -> None:
+    """Open commit history for a GitHub repo (public OK without token)."""
+    dlg = CommitHistoryDialog(
+        parent,
+        owner=owner,
+        repo=repo,
+        access_token=access_token,
+        display_url=display_url,
+    )
     dlg.exec()
