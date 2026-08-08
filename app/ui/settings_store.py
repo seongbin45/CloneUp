@@ -88,6 +88,20 @@ def save_hide_real_email(hide: bool) -> None:
     _settings().setValue("hide_real_email", bool(hide))
 
 
+def load_secret_pii_scan_enabled() -> bool:
+    """
+    Default True: run secret-filename / soft content / PII checks before upload.
+
+    When False (only after typed confirmation in Settings), soft checks are
+    skipped. High-confidence content secrets (keys, PEM) still always block.
+    """
+    return bool(_settings().value("secret_pii_scan_enabled", True, type=bool))
+
+
+def save_secret_pii_scan_enabled(enabled: bool) -> None:
+    _settings().setValue("secret_pii_scan_enabled", bool(enabled))
+
+
 def load_last_publish_branch() -> str:
     """Default branch for first publish (usually main)."""
     val = _settings().value("last_publish_branch", "main")

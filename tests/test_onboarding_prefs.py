@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from app.ui.settings_dialog import (
+    SECRET_SCAN_OFF_PHRASE,
+    phrase_matches_secret_scan_off,
+)
 from app.ui.settings_store import (
     clear_recent_folders,
     load_onboarding_done,
     load_recent_folders,
+    load_secret_pii_scan_enabled,
     save_onboarding_done,
+    save_secret_pii_scan_enabled,
     _settings,
 )
 
@@ -51,3 +57,29 @@ def test_clear_recent_folders() -> None:
             s.remove(key)
         else:
             s.setValue(key, prev)
+
+
+def test_secret_pii_scan_default_on() -> None:
+    s = _settings()
+    key = "secret_pii_scan_enabled"
+    prev = s.value(key)
+    try:
+        s.remove(key)
+        assert load_secret_pii_scan_enabled() is True
+        save_secret_pii_scan_enabled(False)
+        assert load_secret_pii_scan_enabled() is False
+        save_secret_pii_scan_enabled(True)
+        assert load_secret_pii_scan_enabled() is True
+    finally:
+        if prev is None:
+            s.remove(key)
+        else:
+            s.setValue(key, prev)
+
+
+def test_secret_scan_off_phrase_exact() -> None:
+    assert phrase_matches_secret_scan_off(SECRET_SCAN_OFF_PHRASE)
+    assert phrase_matches_secret_scan_off(f"  {SECRET_SCAN_OFF_PHRASE}  ")
+    assert not phrase_matches_secret_scan_off("")
+    assert not phrase_matches_secret_scan_off("이해했습니다")
+    assert not phrase_matches_secret_scan_off(SECRET_SCAN_OFF_PHRASE + ".")

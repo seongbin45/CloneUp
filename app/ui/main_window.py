@@ -64,6 +64,7 @@ from app.ui.settings_store import (
     load_last_publish_branch,
     load_onboarding_done,
     load_recent_folders,
+    load_secret_pii_scan_enabled,
     remember_folder,
     save_hide_real_email,
     save_last_commit_message,
@@ -1099,6 +1100,20 @@ class MainController(QObject):
 
         QMessageBox.critical(self.window, "실패", body)
 
+    def _safety_scan_enabled(self) -> bool:
+        """Settings → 안전 → 비밀·개인정보 점검 (default on)."""
+        return load_secret_pii_scan_enabled()
+
+    def _effective_allow_secrets(self, ui_allow: bool) -> bool:
+        """
+        Soft filename/content checks bypassed when global scan is off,
+        or when the per-action 「비밀 파일도 진행」 box is checked.
+        Hard content secrets still always block in G3 / run_safety_checks.
+        """
+        if not self._safety_scan_enabled():
+            return True
+        return bool(ui_allow)
+
     def _confirm_upload_g3(
         self,
         folder: Path,
@@ -1112,6 +1127,9 @@ class MainController(QObject):
         G3 — plain-language preflight before commit/push.
         Secrets list + PII samples + commit email. Cancel = do not start worker.
         """
+        scan_on = self._safety_scan_enabled()
+        # When global scan is off, treat soft checks as allowed
+        allow_secrets = bool(allow_secrets) or (not scan_on)
         parts: list[str] = []
         if private is True:
             vis_short = "비공개 저장소"
@@ -1129,8 +1147,17 @@ class MainController(QObject):
             vis_short = "원격 저장소"
             vis_risk = "원격에 올라가면 권한 있는 사람(또는 공개 시 누구나)이 볼 수 있습니다."
 
-        secrets = find_secret_candidates(folder)
-        content_secrets = scan_secret_in_contents(folder)
+        secrets: list = []
+        content_secrets: list = []
+        soft_content: list = []
+        pii_hits: list = []
+        if scan_on:
+            secrets = find_secret_candidates(folder)
+            content_secrets = scan_secret_in_contents(folder)
+        else:
+            # Still scan high-confidence content secrets (never fully bypassable)
+            content_secrets = scan_secret_in_contents(folder)
+
         # High-confidence content keys are never bypassable (H1 review).
         hard_kinds = {
             "github_token",
@@ -1140,14 +1167,16 @@ class MainController(QObject):
             "slack_token",
         }
         hard_content = [h for h in content_secrets if h.kind in hard_kinds]
-        soft_content = [h for h in content_secrets if h.kind not in hard_kinds]
+        soft_content = (
+            [h for h in content_secrets if h.kind not in hard_kinds] if scan_on else []
+        )
         if hard_content:
             listing = format_content_secret_list(hard_content)
             QMessageBox.warning(
                 self.window,
                 "올릴 수 없음",
                 "파일 내용에 비밀 키처럼 보이는 값이 있어 막을 수 없습니다.\n"
-                "(「비밀 파일도 진행」으로도 우회할 수 없습니다.)\n\n"
+                "(설정에서 점검을 꺼도, 「비밀 파일도 진행」으로도 우회할 수 없습니다.)\n\n"
                 f"{listing}\n\n"
                 "키·인증서를 파일에서 지운 뒤 다시 시도하세요.",
             )
@@ -1167,7 +1196,8 @@ class MainController(QObject):
                     "비밀처럼 보이는 파일이 있어 막았습니다.\n\n"
                     f"{listing}\n\n"
                     "1) 파일을 빼거나 이름 바꾸기\n"
-                    "2) 정말 필요하면 「비밀 파일도 진행 (고급)」을 켠 뒤 다시\n\n"
+                    "2) 정말 필요하면 「비밀 파일도 진행 (고급)」을 켠 뒤 다시\n"
+                    "3) 또는 설정 → 안전에서 점검을 끈 뒤 (경고 문구 입력)\n\n"
                     "참고: .env.example 같은 샘플 이름도 걸릴 수 있습니다.",
                 )
                 self._log(
@@ -1180,14 +1210,21 @@ class MainController(QObject):
                 "내용에 실제 비밀번호가 없는지 확인하세요."
             )
 
-        # Content PII (phone/email) — keep short for readability
-        pii_hits = scan_pii_in_contents(folder)
-        if pii_hits:
-            listing = format_pii_list(pii_hits)
+        # Content PII (phone/email) — only when scan is enabled
+        if scan_on:
+            pii_hits = scan_pii_in_contents(folder)
+            if pii_hits:
+                listing = format_pii_list(pii_hits)
+                parts.append(
+                    "【개인정보 후보】\n"
+                    f"{listing}\n"
+                    "실제 전화·이메일이면 지운 뒤 올리세요. (예시 값은 오탐일 수 있음)"
+                )
+        if not scan_on:
             parts.append(
-                "【개인정보 후보】\n"
-                f"{listing}\n"
-                "실제 전화·이메일이면 지운 뒤 올리세요. (예시 값은 오탐일 수 있음)"
+                "【안내】 설정에서 비밀·개인정보 점검이 꺼져 있습니다. "
+                "파일 이름·개인정보 자동 차단을 건너뜁니다. "
+                "(키·인증서 형태는 여전히 막습니다.)"
             )
 
         email = preview_commit_email(
@@ -1236,7 +1273,10 @@ class MainController(QObject):
             (self.editCommitMessage.text() if self.editCommitMessage else None)
             or "첫 업로드"
         ).strip()
-        allow = bool(self.checkAllowSecrets and self.checkAllowSecrets.isChecked())
+        allow_ui = bool(
+            self.checkAllowSecrets and self.checkAllowSecrets.isChecked()
+        )
+        allow = self._effective_allow_secrets(allow_ui)
         private = bool(self.radioPrivate and self.radioPrivate.isChecked())
         hide_email = bool(
             self.checkHideEmail is None or self.checkHideEmail.isChecked()
@@ -1300,7 +1340,10 @@ class MainController(QObject):
             self._log(f"안내: 이 폴더에 .git 준비를 마쳤습니다 (branch {branch}).")
 
         report = run_safety_checks(
-            root, allow_secrets=allow, write_gitignore=False
+            root,
+            allow_secrets=allow,
+            write_gitignore=False,
+            scan_pii=self._safety_scan_enabled(),
         )
         if not report.ok:
             # Prefer G3-style secret listing when that is the only block
@@ -2247,9 +2290,10 @@ class MainController(QObject):
             (self.editSyncMessage.text() if self.editSyncMessage else None)
             or "변경 사항 반영"
         ).strip()
-        allow = bool(
+        allow_ui = bool(
             self.checkSyncAllowSecrets and self.checkSyncAllowSecrets.isChecked()
         )
+        allow = self._effective_allow_secrets(allow_ui)
         hide_email = bool(
             self.checkSyncHideEmail is None or self.checkSyncHideEmail.isChecked()
         )

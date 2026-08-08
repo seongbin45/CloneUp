@@ -13,6 +13,7 @@ from PySide6.QtCore import QRectF, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QDialog,
+    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -45,14 +46,24 @@ from app.ui.settings_store import (
     load_last_private,
     load_last_publish_branch,
     load_recent_folders,
+    load_secret_pii_scan_enabled,
     save_hide_real_email,
     save_last_commit_message,
     save_last_private,
     save_last_publish_branch,
+    save_secret_pii_scan_enabled,
 )
 from app.ui.theme import Palette, active_palette
 
 _NAV = ("계정", "올리기 기본값", "안전", "최근 폴더", "정보")
+
+# Exact phrase required to disable secret/PII scan (user must type it).
+SECRET_SCAN_OFF_PHRASE = "나는 위의 안내, 경고 사항을 모두 읽고 이해했습니다"
+
+
+def phrase_matches_secret_scan_off(typed: str) -> bool:
+    """True when typed text matches the disable confirmation phrase exactly."""
+    return (typed or "").strip() == SECRET_SCAN_OFF_PHRASE
 
 
 def _warn_soft_bg(p: Palette) -> str:
@@ -201,6 +212,8 @@ class SettingsDialog(QDialog):
         self._nav_btns: list[QPushButton] = []
         self._private = load_last_private()
         self._hide_email = load_hide_real_email()
+        self._secret_scan = load_secret_pii_scan_enabled()
+        self._secret_scan_block = False  # ignore toggle while reverting UI
         p = active_palette()
 
         self.setWindowTitle("설정")
@@ -505,16 +518,17 @@ class SettingsDialog(QDialog):
             )
         )
 
-        # --- locked on: secret file + PII scan (cannot disable in CloneUp) ---
-        self._sw_secret_scan = _ToggleSwitch(checked=True, locked=True)
+        # --- secret/PII scan (off only after typed confirmation) ---
+        self._sw_secret_scan = _ToggleSwitch(checked=self._secret_scan)
+        self._sw_secret_scan.toggled.connect(self._on_secret_scan_toggled)
         lay.addWidget(
             self._safety_toggle_card(
                 switch=self._sw_secret_scan,
                 title="비밀·개인정보 점검",
                 body=(
-                    "항상 켜져 있습니다. 끌 수 없습니다. "
                     "올리기·동기화 전에 비밀번호·키가 들어 있을 만한 파일 이름과 "
-                    "개인정보 후보를 찾아 알려드립니다."
+                    "개인정보 후보를 찾아 알려드립니다. "
+                    "끄려면 경고 창에서 안내 문구를 그대로 입력해야 합니다."
                 ),
             )
         )
@@ -522,7 +536,9 @@ class SettingsDialog(QDialog):
         warn = QLabel(
             "파일 이름(과 일부 내용 검사) 범위에는 한계가 있습니다. "
             "파일 안에 적어둔 비밀번호를 모두 찾지는 못하니 마지막 확인은 직접 해주세요. "
-            "경고를 무시하고 진행하는 것은 그때그때 올리기·동기화 화면에서만 고를 수 있습니다."
+            "점검이 켜져 있을 때, 경고를 무시하고 진행하는 것은 "
+            "그때그때 올리기·동기화 화면의 「비밀 파일도 진행」에서만 고를 수 있습니다. "
+            "키·인증서처럼 명백한 비밀 값은 점검을 꺼도 막을 수 있습니다."
         )
         warn.setObjectName("setWarnBanner")
         warn.setWordWrap(True)
@@ -560,8 +576,6 @@ class SettingsDialog(QDialog):
         text_col.addWidget(tb)
         tr.addWidget(switch, 0, Qt.AlignmentFlag.AlignTop)
         tr.addLayout(text_col, 1)
-        if switch.isLocked():
-            card.setToolTip("이 점검은 CloneUp에서 항상 켜져 있습니다.")
         return card
 
     def _build_folders(self, p: Palette) -> QWidget:
@@ -763,6 +777,28 @@ class SettingsDialog(QDialog):
     def _on_hide_email_toggled(self, checked: bool) -> None:
         self._hide_email = bool(checked)
         save_hide_real_email(self._hide_email)
+        self._notify_prefs()
+
+    @Slot(bool)
+    def _on_secret_scan_toggled(self, checked: bool) -> None:
+        if self._secret_scan_block:
+            return
+        want_on = bool(checked)
+        if want_on:
+            self._secret_scan = True
+            save_secret_pii_scan_enabled(True)
+            self._notify_prefs()
+            return
+        # Turning OFF requires typed acknowledgment
+        if not confirm_disable_secret_pii_scan(self):
+            self._secret_scan_block = True
+            try:
+                self._sw_secret_scan.setChecked(True, emit=False)
+            finally:
+                self._secret_scan_block = False
+            return
+        self._secret_scan = False
+        save_secret_pii_scan_enabled(False)
         self._notify_prefs()
 
     # ----- folders -----
@@ -1008,6 +1044,95 @@ class SettingsDialog(QDialog):
             background: {danger_hover};
         }}
         """
+
+
+def confirm_disable_secret_pii_scan(parent: QWidget | None = None) -> bool:
+    """
+    Warn + require typing SECRET_SCAN_OFF_PHRASE to disable secret/PII scan.
+
+    Returns True only when the user typed the phrase and accepted.
+    """
+    p = active_palette()
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("비밀·개인정보 점검 끄기")
+    dlg.setModal(True)
+    dlg.setMinimumWidth(480)
+    dlg.resize(520, 420)
+    root = QVBoxLayout(dlg)
+    root.setSpacing(12)
+
+    title = QLabel("정말 점검을 끌까요?")
+    title.setStyleSheet(f"font-size: 15px; font-weight: 600; color: {p.text};")
+    root.addWidget(title)
+
+    warn = QLabel(
+        "끄면 올리기·동기화 전에 비밀 파일 이름·개인정보 후보를 "
+        "자동으로 막거나 자세히 안내하지 않습니다.\n\n"
+        "· 실수로 .env, 키 파일, 전화번호 등이 올라갈 위험이 커집니다.\n"
+        "· 키·인증서처럼 명백한 비밀 값은 끄더라도 막을 수 있습니다.\n"
+        "· 나중에 설정 → 안전에서 다시 켤 수 있습니다."
+    )
+    warn.setWordWrap(True)
+    warn.setStyleSheet(
+        f"background: {_warn_soft_bg(p)}; border-left: 3px solid {p.warn_border}; "
+        f"border-radius: 0 6px 6px 0; padding: 12px 14px; "
+        f"color: {p.text_secondary}; font-size: 12.5px;"
+    )
+    root.addWidget(warn)
+
+    prompt = QLabel(
+        "아래 안내를 읽고, 다음 문장을 <b>그대로</b> 입력하세요."
+    )
+    prompt.setWordWrap(True)
+    prompt.setTextFormat(Qt.TextFormat.RichText)
+    prompt.setStyleSheet(f"color: {p.text_secondary}; font-size: 12.5px;")
+    root.addWidget(prompt)
+
+    phrase = QLabel(SECRET_SCAN_OFF_PHRASE)
+    phrase.setWordWrap(True)
+    phrase.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    phrase.setStyleSheet(
+        f"background: {p.bg_input}; border: 1px solid {p.border_divider}; "
+        f"border-radius: 6px; padding: 10px 12px; font-size: 13px; "
+        f"font-weight: 600; color: {p.text};"
+    )
+    root.addWidget(phrase)
+
+    edit = QLineEdit()
+    edit.setPlaceholderText("위 문장을 그대로 입력")
+    edit.setClearButtonEnabled(True)
+    root.addWidget(edit)
+
+    hint = QLabel("문장이 일치해야 「끄기」를 누를 수 있습니다.")
+    hint.setStyleSheet(f"color: {p.text_muted}; font-size: 11.5px;")
+    root.addWidget(hint)
+
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+    )
+    ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+    cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+    if ok_btn is not None:
+        ok_btn.setText("끄기")
+        ok_btn.setEnabled(False)
+    if cancel_btn is not None:
+        cancel_btn.setText("취소")
+    root.addWidget(buttons)
+
+    def _sync_ok() -> None:
+        if ok_btn is not None:
+            ok_btn.setEnabled(phrase_matches_secret_scan_off(edit.text()))
+
+    edit.textChanged.connect(lambda _t: _sync_ok())
+    buttons.accepted.connect(dlg.accept)
+    buttons.rejected.connect(dlg.reject)
+    edit.returnPressed.connect(
+        lambda: dlg.accept() if phrase_matches_secret_scan_off(edit.text()) else None
+    )
+
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return False
+    return phrase_matches_secret_scan_off(edit.text())
 
 
 def show_settings(
