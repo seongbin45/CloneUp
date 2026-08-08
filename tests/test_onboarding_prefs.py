@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from app.ui.settings_store import (
+    clear_recent_folders,
     load_onboarding_done,
+    load_recent_folders,
     save_onboarding_done,
     _settings,
 )
@@ -33,3 +35,19 @@ def test_onboarding_steps_count() -> None:
     assert len(_STEPS) == 5
     keys = [st.key for st in _STEPS]
     assert keys == ["folders", "commits", "cost", "undo", "safety"]
+
+
+def test_clear_recent_folders() -> None:
+    s = _settings()
+    key = "recent_folders"
+    prev = s.value(key)
+    try:
+        s.setValue(key, [r"C:\fake\a", r"C:\fake\b"])
+        assert len(load_recent_folders()) >= 1
+        clear_recent_folders()
+        assert load_recent_folders() == []
+    finally:
+        if prev is None:
+            s.remove(key)
+        else:
+            s.setValue(key, prev)

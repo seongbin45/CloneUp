@@ -404,6 +404,8 @@ def main() -> int:
             ("comboSyncRecent", QComboBox),
             ("btnSyncRefresh", QPushButton),
             ("btnSyncBrowse", QPushButton),
+            ("btnSettings", QPushButton),
+            ("btnHelpOnboarding", QPushButton),
         ]
         missing = []
         for name, cls in need:

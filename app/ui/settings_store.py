@@ -40,6 +40,11 @@ def remember_folder(folder: str) -> list[str]:
     return items
 
 
+def clear_recent_folders() -> None:
+    """Wipe the recent-folder list (settings menu)."""
+    _settings().setValue("recent_folders", [])
+
+
 def load_last_private() -> bool:
     """Default True: beginner-safe private repos (M5 / security review)."""
     return bool(_settings().value("last_private", True, type=bool))
