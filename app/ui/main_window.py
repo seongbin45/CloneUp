@@ -419,6 +419,9 @@ class MainController(QObject):
             self._reload_recent_combo()
 
         # secret_scan: no tab widget; read live via load_secret_pii_scan_enabled()
+        # history_revert: no tab widget either — CommitHistoryDialog reads
+        # load_history_revert_enabled() itself, fresh, every time it opens
+        # (동기화/받기 tabs both go through it), so there's nothing to push here.
 
     def _log_token_age_hint(self) -> None:
         """Soft reminder: PAT may expire; we only know connect age on this PC."""
