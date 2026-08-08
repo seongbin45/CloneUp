@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
-    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -53,12 +52,12 @@ from app.ui.commit_history_dialog import (
     show_commit_history,
     show_remote_commit_history,
 )
+from app.ui.settings_dialog import show_settings
 from app.ui.success_dialog import show_clone_success, show_publish_success
 from app.ui.tip_card import install_tip_card
 from app.util.next_action import format_next_step_line
 from app.ui.onboarding_dialog import show_onboarding
 from app.ui.settings_store import (
-    clear_recent_folders,
     load_hide_real_email,
     load_last_commit_message,
     load_last_private,
@@ -364,94 +363,21 @@ class MainController(QObject):
 
     @Slot()
     def on_settings_menu(self) -> None:
-        """Show the 설정 drop-down next to 도움말."""
+        """Open 설정 dialog (시안: desin/CloneUp 설정.dc.html)."""
         if self._busy():
             return
-        btn = self.btnSettings
-        if btn is None:
-            return
-        menu = QMenu(self.window)
-        menu.setObjectName("settingsMenu")
-
-        act_find = menu.addAction("받은 폴더 찾기…")
-        act_find.setToolTip(
-            "받기 탭 주소와 같은 GitHub 저장소를 이 PC에서 찾습니다 (준비 중)"
-        )
-        act_find.triggered.connect(self.on_settings_find_clone)
-
-        act_clear = menu.addAction("최근 폴더 목록 지우기")
-        act_clear.triggered.connect(self.on_settings_clear_recent)
-
-        menu.addSeparator()
-        act_about = menu.addAction("CloneUp 정보")
-        act_about.triggered.connect(self.on_settings_about)
-
-        # Align under the button (beginner-friendly, no keyboard menu bar)
-        pos = btn.mapToGlobal(btn.rect().bottomLeft())
-        menu.exec(pos)
-
-    @Slot()
-    def on_settings_find_clone(self) -> None:
-        """Scaffold: find local clones for the clone-tab GitHub URL (next step)."""
-        if self._busy():
-            return
-        raw = self._clone_url_text()
-        hint = ""
-        if raw:
-            try:
-                n = normalize_github_clone_url(raw)
-                hint = f"\n\n받기 탭 주소: {n.display_url}"
-            except UrlError:
-                hint = f"\n\n받기 탭에 적힌 글: {raw[:80]}"
-        QMessageBox.information(
+        self._log("설정 열기")
+        show_settings(
             self.window,
-            "받은 폴더 찾기",
-            "곧 추가됩니다.\n\n"
-            "받기 탭에 있는 GitHub 주소로, 이 PC·외장 드라이브에 "
-            "이미 받아 둔 폴더를 찾아 동기화 탭에 넣을 예정입니다.\n"
-            "기본은 최근 폴더·문서 등 좁은 범위부터 찾고, "
-            "필요할 때만 더 넓게 찾습니다."
-            f"{hint}",
+            on_login=self.on_login,
+            on_logout=self.on_logout,
+            on_prefs_changed=self._on_settings_prefs_changed,
+            on_open_onboarding=self.on_help_onboarding,
         )
-        self._log("설정 — 받은 폴더 찾기 (준비 중)")
 
-    @Slot()
-    def on_settings_clear_recent(self) -> None:
-        if self._busy():
-            return
-        n = len(load_recent_folders())
-        if n == 0:
-            QMessageBox.information(
-                self.window, "설정", "지울 최근 폴더가 없습니다."
-            )
-            return
-        r = QMessageBox.question(
-            self.window,
-            "최근 폴더 목록 지우기",
-            f"최근 폴더 {n}개를 목록에서 지울까요?\n"
-            "실제 폴더나 GitHub 저장소는 삭제되지 않습니다.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if r != QMessageBox.StandardButton.Yes:
-            return
-        clear_recent_folders()
-        self._reload_recent_combo()
-        self._log("설정 — 최근 폴더 목록을 지움")
-        QMessageBox.information(self.window, "설정", "최근 폴더 목록을 지웠습니다.")
-
-    @Slot()
-    def on_settings_about(self) -> None:
-        from app import __version__
-
-        QMessageBox.information(
-            self.window,
-            "CloneUp 정보",
-            f"CloneUp {__version__}\n\n"
-            "Windows용 GitHub 도우미\n"
-            "만들고 올리기 · 받기 · 동기화\n\n"
-            "https://github.com/seongbin45/CloneUp",
-        )
+    def _on_settings_prefs_changed(self) -> None:
+        """Reload publish/sync fields after settings dialog auto-saves."""
+        self._load_prefs()
 
     def _log_token_age_hint(self) -> None:
         """Soft reminder: PAT may expire; we only know connect age on this PC."""

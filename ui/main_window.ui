@@ -102,7 +102,7 @@
           <cursorShape>PointingHandCursor</cursorShape>
          </property>
          <property name="toolTip">
-          <string>CloneUp 설정 (받은 폴더 찾기 등)</string>
+          <string>계정·올리기 기본값·안전·최근 폴더·정보</string>
          </property>
         </widget>
        </item>
