@@ -111,6 +111,11 @@ def _ui_path() -> Path:
     return app_root() / "ui" / "main_window.ui"
 
 
+# comboPublishBranch's last item — not a real branch name, picking it just
+# clears the field so beginners discover they can type a custom branch.
+_PUBLISH_BRANCH_CUSTOM_HINT = "사용자 지정…"
+
+
 def _folder_path(edit: QLineEdit | None) -> str:
     """Full folder path from a path line edit (always the real text, no elide)."""
     if edit is None:
@@ -759,6 +764,10 @@ class MainController(QObject):
             self.btnHelpOnboarding.clicked.connect(self.on_help_onboarding)
         if self.editFolder:
             self.editFolder.editingFinished.connect(self._maybe_fill_repo_name)
+        if self.comboPublishBranch is not None:
+            self.comboPublishBranch.activated.connect(
+                self._on_publish_branch_activated
+            )
 
         if self.btnCloneBrowseParent:
             self.btnCloneBrowseParent.clicked.connect(self.on_clone_browse_parent)
@@ -817,7 +826,22 @@ class MainController(QObject):
         """Current branch field value for first publish (default main)."""
         if self.comboPublishBranch is None:
             return "main"
-        return (self.comboPublishBranch.currentText() or "").strip() or "main"
+        text = (self.comboPublishBranch.currentText() or "").strip()
+        if not text or text == _PUBLISH_BRANCH_CUSTOM_HINT:
+            return "main"
+        return text
+
+    @Slot(int)
+    def _on_publish_branch_activated(self, index: int) -> None:
+        """Picking the "사용자 지정…" hint clears the field for free typing."""
+        if self.comboPublishBranch is None:
+            return
+        if self.comboPublishBranch.itemText(index) != _PUBLISH_BRANCH_CUSTOM_HINT:
+            return
+        self.comboPublishBranch.setEditText("")
+        le = self.comboPublishBranch.lineEdit()
+        if le is not None:
+            le.setFocus()
 
     def _reload_recent_combo(self) -> None:
         """Refresh both folder fields' recent-folder completer popups."""

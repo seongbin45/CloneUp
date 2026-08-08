@@ -298,6 +298,11 @@
               <string>develop</string>
              </property>
             </item>
+            <item>
+             <property name="text">
+              <string>사용자 지정…</string>
+             </property>
+            </item>
            </widget>
           </item>
           <item>
