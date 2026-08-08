@@ -276,7 +276,7 @@ def load_main_window() -> QMainWindow:
         wrap = QMainWindow()
         wrap.setCentralWidget(window)
         wrap.setWindowTitle("클론업 (CloneUp)")
-        wrap.resize(760, 620)
+        wrap.resize(760, 700)
         window = wrap
 
     ctrl = MainController(window)
@@ -1764,15 +1764,14 @@ class MainController(QObject):
         if self.btnCloneRepoList is not None:
             self.btnCloneRepoList.setVisible(logged_in)
             self.btnCloneRepoList.setEnabled(logged_in and not self._busy())
+        # labelCloneHint stays on its short static .ui text (root-only +
+        # branch-below) regardless of login state — the list-picker mention
+        # already lives in the placeholder below, the button's own tooltip,
+        # and the top tip card, so repeating it here just ate vertical space.
         if logged_in:
             if le is not None:
                 le.setPlaceholderText(
                     "「목록 ▼」에서 고르거나 https://github.com/owner/repo"
-                )
-            if self.labelCloneHint is not None:
-                self.labelCloneHint.setText(
-                    "연결됨: 오른쪽 「목록 ▼」으로 내 저장소를 고르거나 주소를 붙여 넣으세요. "
-                    "루트 주소만 남고 branch는 아래에서 고릅니다."
                 )
             self._maybe_load_clone_repo_list(
                 force=force or mode_changed or self.comboCloneUrl.count() == 0
@@ -1787,11 +1786,6 @@ class MainController(QObject):
             self._clone_repos_loaded_for = "none"
             if le is not None:
                 le.setPlaceholderText("https://github.com/owner/repo")
-            if self.labelCloneHint is not None:
-                self.labelCloneHint.setText(
-                    "붙여넣으면 저장소 루트만 남습니다. branch는 아래에서 고르세요. "
-                    "내 저장소 목록은 GitHub 연결 후 「목록 ▼」으로 고를 수 있습니다."
-                )
 
     @Slot()
     def _on_clone_repo_list_clicked(self) -> None:
