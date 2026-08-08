@@ -245,6 +245,7 @@ class MainController(QObject):
         self.editCloneDirName = window.findChild(QLineEdit, "editCloneDirName")
         self.checkCloneUseToken = window.findChild(QCheckBox, "checkCloneUseToken")
         self.btnClone = window.findChild(QPushButton, "btnClone")
+        self.btnCloneHistory = window.findChild(QPushButton, "btnCloneHistory")
         self.btnCloneCancel = window.findChild(QPushButton, "btnCloneCancel")
         # List-only selection (no free typing) — real names + (notes)
         if self.comboCloneBranch is not None:
@@ -388,9 +389,10 @@ class MainController(QObject):
             (
                 "labelTabIntroClone",
                 "GitHub에 있는 폴더를 내 컴퓨터로 복사합니다.",
-                "• 주소를 붙여 넣거나, GitHub 연결 후 목록에서 내 저장소를 고를 수 있습니다.\n"
+                "• 주소를 붙여 넣거나, GitHub 연결 후 「목록 ▼」에서 내 저장소를 고를 수 있습니다.\n"
                 "• 같은 이름의 폴더가 이미 있으면 실패합니다. 이름을 바꾸세요.\n"
-                "• 비공개 저장소는 「비공개 저장소 받을 때 GitHub 연결 사용」을 켠 뒤 연결하세요.",
+                "• 비공개 저장소는 「비공개 저장소 받을 때 GitHub 연결 사용」을 켠 뒤 연결하세요.\n"
+                "• 「커밋 내역」으로 이미 받아 둔 폴더의 지난 시점을 읽기 전용으로 볼 수 있습니다.",
             ),
             (
                 "labelTabIntroSync",
@@ -494,6 +496,7 @@ class MainController(QObject):
         # clone
         for w in (
             self.btnClone,
+            self.btnCloneHistory,
             self.btnCloneBrowseParent,
             self.btnCloneRepoList,
             self.comboCloneUrl,
@@ -673,6 +676,8 @@ class MainController(QObject):
             self.btnCloneBrowseParent.clicked.connect(self.on_clone_browse_parent)
         if self.btnClone:
             self.btnClone.clicked.connect(self.on_clone)
+        if self.btnCloneHistory is not None:
+            self.btnCloneHistory.clicked.connect(self.on_clone_history)
         if self.btnCloneCancel:
             self.btnCloneCancel.clicked.connect(self.on_cancel)
         if self.comboCloneUrl is not None:
@@ -2077,21 +2082,18 @@ class MainController(QObject):
             self._reload_recent_combo()
             self.on_sync_refresh(quiet=True)
 
-    @Slot()
-    def on_sync_history(self) -> None:
-        """Open read-only commit history popup (desin: 커밋 내역)."""
-        if self._busy():
-            return
-        folder = _folder_path(self.editSyncFolder)
+    def _open_commit_history(self, folder: str) -> None:
+        """Validate local git folder and open read-only commit history dialog."""
+        folder = (folder or "").strip()
         if not folder:
             QMessageBox.warning(
                 self.window,
                 "커밋 내역",
-                "먼저 로컬 폴더를 선택하세요.",
+                "로컬 폴더를 선택하세요.",
             )
             return
         try:
-            p = Path(folder).expanduser()
+            p = Path(folder).expanduser().resolve()
             if not p.is_dir():
                 QMessageBox.warning(
                     self.window, "커밋 내역", "폴더를 찾을 수 없습니다."
@@ -2102,14 +2104,74 @@ class MainController(QObject):
                     self.window,
                     "커밋 내역",
                     "이 폴더는 Git 저장소가 아닙니다.\n"
-                    "「받기」나 「만들고 올리기」를 먼저 하세요.",
+                    "「받기」로 받은 뒤이거나, .git 이 있는 폴더를 고르세요.",
                 )
                 return
         except OSError as e:
             QMessageBox.warning(self.window, "커밋 내역", str(e))
             return
-        self._log(f"커밋 내역 열기: {folder}")
-        show_commit_history(self.window, folder)
+        self._log(f"커밋 내역 열기: {p}")
+        show_commit_history(self.window, str(p))
+
+    def _resolve_clone_target_repo(self) -> Path | None:
+        """
+        Best-effort path for 받기 tab: 저장 위치 / 폴더 이름.
+
+        Returns a path that exists and has .git, or None.
+        """
+        parent = (
+            (self.editCloneParent.text() if self.editCloneParent else "") or ""
+        ).strip()
+        name = (
+            (self.editCloneDirName.text() if self.editCloneDirName else "") or ""
+        ).strip()
+        if not name:
+            # Infer from clone URL when folder name field is empty
+            raw = self._clone_url_text()
+            if raw:
+                try:
+                    name = normalize_github_clone_url(raw).repo
+                except UrlError:
+                    name = ""
+        if not parent or not name:
+            return None
+        try:
+            cand = Path(parent).expanduser().resolve() / name
+            if cand.is_dir() and (cand / ".git").exists():
+                return cand
+        except OSError:
+            return None
+        return None
+
+    @Slot()
+    def on_sync_history(self) -> None:
+        """Open read-only commit history for the sync-tab folder."""
+        if self._busy():
+            return
+        self._open_commit_history(_folder_path(self.editSyncFolder))
+
+    @Slot()
+    def on_clone_history(self) -> None:
+        """Open commit history from 받기 tab (local clone folder)."""
+        if self._busy():
+            return
+        # 1) Prefer 저장 위치 + 폴더 이름 when that repo already exists
+        cand = self._resolve_clone_target_repo()
+        if cand is not None:
+            self._open_commit_history(str(cand))
+            return
+        # 2) Ask user to pick a local .git folder
+        start = (
+            (self.editCloneParent.text() if self.editCloneParent else "") or ""
+        ).strip() or str(Path.home())
+        path = QFileDialog.getExistingDirectory(
+            self.window,
+            "커밋 내역을 볼 로컬 저장소 선택",
+            start,
+        )
+        if not path:
+            return
+        self._open_commit_history(path)
 
     @Slot()
     def on_sync_refresh(self, quiet: bool = False) -> None:

@@ -636,10 +636,29 @@
         </item>
         <item>
          <layout class="QHBoxLayout" name="cloneButtonLayout">
+          <property name="spacing">
+           <number>10</number>
+          </property>
           <item>
            <widget class="QPushButton" name="btnClone">
             <property name="text">
              <string>저장소 받기</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>36</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnCloneHistory">
+            <property name="text">
+             <string>커밋 내역</string>
+            </property>
+            <property name="toolTip">
+             <string>이미 받아 둔 로컬 폴더의 커밋을 읽기 전용으로 봅니다. 저장 위치·폴더 이름에 .git 이 있으면 바로 열고, 없으면 폴더를 고를 수 있습니다.</string>
             </property>
             <property name="minimumSize">
              <size>

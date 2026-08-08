@@ -399,6 +399,7 @@ def main() -> int:
             ("btnSyncAbort", QPushButton),
             ("comboCloneUrl", QComboBox),
             ("btnCloneRepoList", QPushButton),
+            ("btnCloneHistory", QPushButton),
             ("editSyncFolder", QLineEdit),
             ("comboSyncRecent", QComboBox),
             ("btnSyncRefresh", QPushButton),

@@ -461,14 +461,21 @@ def app_stylesheet(palette: Palette | None = None) -> str:
     }}
     /* Refresh is secondary to browse — shorter label + slightly tighter pad */
     QPushButton#btnSyncRefresh,
-    QPushButton#btnSyncHistory {{
+    QPushButton#btnSyncHistory,
+    QPushButton#btnCloneHistory {{
         min-width: 96px;
         padding: 6px 12px;
         color: {TEXT_FAINT};
     }}
     QPushButton#btnSyncRefresh:hover,
-    QPushButton#btnSyncHistory:hover {{
+    QPushButton#btnSyncHistory:hover,
+    QPushButton#btnCloneHistory:hover {{
         color: {TEXT_SECONDARY};
+    }}
+    /* 받기 primary row: history is secondary to 저장소 받기 */
+    QPushButton#btnCloneHistory {{
+        min-height: 36px;
+        padding: 8px 16px;
     }}
 
     /* Primary actions */
