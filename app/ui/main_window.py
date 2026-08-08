@@ -4,12 +4,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import (
+    QEvent,
+    QFile,
+    QObject,
+    Qt,
+    QStringListModel,
+    QThread,
+    QTimer,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QCompleter,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -224,7 +235,10 @@ class MainController(QObject):
         # --- publish ---
         self.editFolder = window.findChild(QLineEdit, "editFolder")
         self.btnBrowseFolder = window.findChild(QPushButton, "btnBrowseFolder")
-        self.comboRecent = window.findChild(QComboBox, "comboRecent")
+        self._recentModelPublish = QStringListModel(self)
+        self._recentCompleterPublish = self._install_recent_completer(
+            self.editFolder, self._recentModelPublish, self._on_recent_picked
+        )
         self.editRepoName = window.findChild(QLineEdit, "editRepoName")
         self.radioPublic = window.findChild(QRadioButton, "radioPublic")
         self.radioPrivate = window.findChild(QRadioButton, "radioPrivate")
@@ -278,7 +292,10 @@ class MainController(QObject):
 
         # --- sync ---
         self.editSyncFolder = window.findChild(QLineEdit, "editSyncFolder")
-        self.comboSyncRecent = window.findChild(QComboBox, "comboSyncRecent")
+        self._recentModelSync = QStringListModel(self)
+        self._recentCompleterSync = self._install_recent_completer(
+            self.editSyncFolder, self._recentModelSync, self._on_sync_recent_picked
+        )
         self.btnSyncBrowse = window.findChild(QPushButton, "btnSyncBrowse")
         self.btnSyncRefresh = window.findChild(QPushButton, "btnSyncRefresh")
         self.btnSyncHistory = window.findChild(QPushButton, "btnSyncHistory")
@@ -534,7 +551,6 @@ class MainController(QObject):
         for w in (
             self.btnPublish,
             self.btnBrowseFolder,
-            self.comboRecent,
             self.editFolder,
             self.editRepoName,
             self.comboPublishBranch,
@@ -589,7 +605,6 @@ class MainController(QObject):
             self.btnSyncPush,
             self.btnSyncAbort,
             self.editSyncFolder,
-            self.comboSyncRecent,
             self.editSyncMessage,
             self.checkSyncHideEmail,
             self.checkSyncAllowSecrets,
@@ -628,6 +643,11 @@ class MainController(QObject):
             # Maximize / restore: keep device-code dim covering full client area
             if self._device_overlay is not None:
                 self._device_overlay.sync_geometry()
+        elif obj in (self.editFolder, self.editSyncFolder) and et in (
+            QEvent.Type.FocusIn,
+            QEvent.Type.MouseButtonPress,
+        ):
+            self._show_recent_dropdown(obj)
         return False
 
     def _shutdown_workers(self) -> None:
@@ -739,8 +759,6 @@ class MainController(QObject):
             self.btnHelpOnboarding.clicked.connect(self.on_help_onboarding)
         if self.editFolder:
             self.editFolder.editingFinished.connect(self._maybe_fill_repo_name)
-        if self.comboRecent:
-            self.comboRecent.activated.connect(self._on_recent_activated)
 
         if self.btnCloneBrowseParent:
             self.btnCloneBrowseParent.clicked.connect(self.on_clone_browse_parent)
@@ -772,8 +790,6 @@ class MainController(QObject):
                 self._on_sync_folder_editing_finished
             )
             self.editSyncFolder.textChanged.connect(self._on_sync_folder_text_changed)
-        if self.comboSyncRecent is not None:
-            self.comboSyncRecent.activated.connect(self._on_sync_recent_activated)
         if self.btnSyncPull:
             self.btnSyncPull.clicked.connect(lambda: self.on_sync_action("pull"))
         if self.btnSyncPush:
@@ -804,17 +820,10 @@ class MainController(QObject):
         return (self.comboPublishBranch.currentText() or "").strip() or "main"
 
     def _reload_recent_combo(self) -> None:
+        """Refresh both folder fields' recent-folder completer popups."""
         items = load_recent_folders()
-        for combo in (self.comboRecent, self.comboSyncRecent):
-            if combo is None:
-                continue
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItem("(최근 폴더 선택)")
-            for p in items:
-                combo.addItem(p)
-            combo.setCurrentIndex(0)
-            combo.blockSignals(False)
+        self._recentModelPublish.setStringList(items)
+        self._recentModelSync.setStringList(items)
 
     def _on_color_scheme_changed(self, *_args) -> None:
         """OS theme changed — main.py already reapplied QSS; refresh inline styles."""
@@ -911,22 +920,39 @@ class MainController(QObject):
             self.editRepoName.setText(new_base)
             self._publish_folder_for_repo_name = folder
 
-    @Slot(int)
-    def _on_recent_activated(self, index: int) -> None:
-        if not self.comboRecent or index <= 0:
-            return
-        path = self.comboRecent.itemText(index)
-        if self.editFolder:
-            _set_folder_path(self.editFolder, path)
-            self._log(f"최근 폴더: {path}")
-            self._maybe_fill_repo_name()
+    def _install_recent_completer(
+        self, edit: QLineEdit | None, model: QStringListModel, on_pick
+    ) -> QCompleter | None:
+        """Attach a recent-folder dropdown to `edit` that shows the full list
+        on focus/click (not prefix-filtered), regardless of current text."""
+        if edit is None:
+            return None
+        completer = QCompleter(model, self)
+        completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.activated[str].connect(on_pick)
+        edit.setCompleter(completer)
+        edit.installEventFilter(self)
+        return completer
 
-    @Slot(int)
-    def _on_sync_recent_activated(self, index: int) -> None:
-        if not self.comboSyncRecent or index <= 0:
+    def _show_recent_dropdown(self, edit: QLineEdit) -> None:
+        completer = edit.completer()
+        if completer is None:
             return
-        path = self.comboSyncRecent.itemText(index)
-        if not path:
+        completer.setCompletionPrefix("")
+        completer.complete()
+
+    @Slot(str)
+    def _on_recent_picked(self, path: str) -> None:
+        if not path or not self.editFolder:
+            return
+        _set_folder_path(self.editFolder, path)
+        self._log(f"최근 폴더: {path}")
+        self._maybe_fill_repo_name()
+
+    @Slot(str)
+    def _on_sync_recent_picked(self, path: str) -> None:
+        if not path or self.editSyncFolder is None:
             return
         _set_folder_path(self.editSyncFolder, path)
         remember_folder(path)

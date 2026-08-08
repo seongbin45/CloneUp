@@ -211,36 +211,6 @@
          </layout>
         </item>
         <item>
-         <layout class="QHBoxLayout" name="recentLayout">
-          <property name="spacing">
-           <number>10</number>
-          </property>
-          <item>
-           <widget class="QLabel" name="labelRecent">
-            <property name="text">
-             <string>최근 폴더</string>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QComboBox" name="comboRecent">
-            <property name="editable">
-             <bool>false</bool>
-            </property>
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item>
          <layout class="QHBoxLayout" name="repoLayout">
           <property name="spacing">
            <number>10</number>
@@ -790,39 +760,6 @@
             </property>
             <property name="toolTip">
              <string>지난 커밋을 읽기 전용으로 봅니다. 작업 중인 파일은 바뀌지 않습니다.</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </item>
-        <item>
-         <layout class="QHBoxLayout" name="syncRecentLayout">
-          <property name="spacing">
-           <number>10</number>
-          </property>
-          <item>
-           <widget class="QLabel" name="labelSyncRecent">
-            <property name="text">
-             <string>최근 폴더</string>
-            </property>
-            <property name="alignment">
-             <set>Qt::AlignmentFlag::AlignRight|Qt::AlignmentFlag::AlignVCenter</set>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QComboBox" name="comboSyncRecent">
-            <property name="editable">
-             <bool>false</bool>
-            </property>
-            <property name="sizePolicy">
-             <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
-              <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
-             </sizepolicy>
-            </property>
-            <property name="toolTip">
-             <string>최근에 쓴 폴더를 고르면 바로 상태를 읽습니다.</string>
             </property>
            </widget>
           </item>

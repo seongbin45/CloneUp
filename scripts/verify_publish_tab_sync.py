@@ -99,7 +99,6 @@ def main() -> int:
     names = {
         "editFolder": QLineEdit,
         "btnBrowseFolder": QPushButton,
-        "comboRecent": QComboBox,
         "editRepoName": QLineEdit,
         "radioPublic": QRadioButton,
         "radioPrivate": QRadioButton,
@@ -125,7 +124,6 @@ def main() -> int:
     combo_br = widgets["comboPublishBranch"]
     chk_hide = widgets["checkHideEmail"]
     chk_allow = widgets["checkAllowSecrets"]
-    combo_recent = widgets["comboRecent"]
     btn_publish = widgets["btnPublish"]
 
     try:
@@ -270,21 +268,21 @@ def main() -> int:
         else:
             fail("P7", "브랜치", repr(combo_br.currentText() if combo_br else None))
 
-        # ----- P8 recent combo -----
-        OUT.append("\n## P8 최근 폴더 콤보")
+        # ----- P8 recent folder completer -----
+        OUT.append("\n## P8 최근 폴더 드롭다운(QCompleter)")
         fake = str(Path.home() / "CloneUpPublishTabRecentFake")
         remember_folder(fake)
         ctrl._apply_settings_store_to_tabs("recent")
-        items = [combo_recent.itemText(i) for i in range(combo_recent.count())] if combo_recent else []
+        items = ctrl._recentModelPublish.stringList()
         if fake in items:
-            ok("P8", "recent → comboRecent", fake)
+            ok("P8", "recent → 최근 폴더 드롭다운", fake)
         else:
             fail("P8", "recent", str(items))
         clear_recent_folders()
         ctrl._apply_settings_store_to_tabs("recent")
-        items2 = [combo_recent.itemText(i) for i in range(combo_recent.count())] if combo_recent else []
+        items2 = ctrl._recentModelPublish.stringList()
         if fake not in items2:
-            ok("P8", "목록 비우기 → 콤보에서 제거")
+            ok("P8", "목록 비우기 → 드롭다운에서 제거")
         else:
             fail("P8", "비우기", str(items2))
 

@@ -11,7 +11,7 @@ Steps:
   S3  올리기 기본값 · 기본 브랜치 → comboPublishBranch
   S4  안전 · 이메일 숨기기 → checkHideEmail + checkSyncHideEmail
   S5  안전 · 이메일 변경이 커밋 메시지를 덮지 않음 (회귀)
-  S6  최근 폴더 비우기 → comboRecent + comboSyncRecent
+  S6  최근 폴더 비우기 → 만들기/동기화 최근 폴더 드롭다운(QCompleter)
   S7  비밀·개인정보 점검 OFF → _effective_allow_secrets
   S8  설정 저장값이 만들기 탭 위젯과 일치 (S1–S3 재확인)
   S9  동기화 탭 이메일 체크 = 만들기 탭 이메일 체크
@@ -103,8 +103,6 @@ def main() -> int:
     combo_br = w("comboPublishBranch", QComboBox)
     chk_hide = w("checkHideEmail", QCheckBox)
     chk_sync_hide = w("checkSyncHideEmail", QCheckBox)
-    combo_recent = w("comboRecent", QComboBox)
-    combo_sync_recent = w("comboSyncRecent", QComboBox)
 
     for label, obj in [
         ("radioPrivate", radio_priv),
@@ -113,8 +111,6 @@ def main() -> int:
         ("comboPublishBranch", combo_br),
         ("checkHideEmail", chk_hide),
         ("checkSyncHideEmail", chk_sync_hide),
-        ("comboRecent", combo_recent),
-        ("comboSyncRecent", combo_sync_recent),
     ]:
         if obj is None:
             fail("0", f"위젯 {label}", "없음")
@@ -216,37 +212,28 @@ def main() -> int:
             )
 
         # ----- S6 recent clear -----
-        RESULTS.append("\n## S6 최근 폴더 → 만들기/동기화 콤보")
+        RESULTS.append("\n## S6 최근 폴더 → 만들기/동기화 드롭다운(QCompleter)")
         fake = str(Path.home() / "CloneUpCrossVerifyFake")
         remember_folder(fake)
         ctrl._apply_settings_store_to_tabs("recent")
-        texts_p = [
-            combo_recent.itemText(i) for i in range(combo_recent.count())
-        ] if combo_recent else []
-        texts_s = [
-            combo_sync_recent.itemText(i) for i in range(combo_sync_recent.count())
-        ] if combo_sync_recent else []
+        texts_p = ctrl._recentModelPublish.stringList()
+        texts_s = ctrl._recentModelSync.stringList()
         if fake in texts_p and fake in texts_s:
-            ok("S6", "remember_folder → 양 콤보 반영")
+            ok("S6", "remember_folder → 양쪽 드롭다운 반영")
         else:
             fail("S6", "remember 반영", f"pub={texts_p} sync={texts_s}")
         clear_recent_folders()
         ctrl._apply_settings_store_to_tabs("recent")
-        texts_p2 = [
-            combo_recent.itemText(i) for i in range(combo_recent.count())
-        ] if combo_recent else []
-        texts_s2 = [
-            combo_sync_recent.itemText(i) for i in range(combo_sync_recent.count())
-        ] if combo_sync_recent else []
-        # only placeholder
+        texts_p2 = ctrl._recentModelPublish.stringList()
+        texts_s2 = ctrl._recentModelSync.stringList()
         if fake not in texts_p2 and fake not in texts_s2:
-            ok("S6", "목록 비우기 → 양 콤보에서 제거")
+            ok("S6", "목록 비우기 → 양쪽 드롭다운에서 제거")
         else:
             fail("S6", "비우기", f"pub={texts_p2} sync={texts_s2}")
         if texts_p2 == texts_s2:
-            ok("S6", "만들기 콤보 == 동기화 콤보")
+            ok("S6", "만들기 드롭다운 == 동기화 드롭다운")
         else:
-            fail("S6", "콤보 불일치", f"{texts_p2} vs {texts_s2}")
+            fail("S6", "드롭다운 불일치", f"{texts_p2} vs {texts_s2}")
 
         # ----- S7 secret scan effective allow -----
         RESULTS.append("\n## S7 비밀·개인정보 점검 → 올리기/동기화 유효 허용")
