@@ -49,7 +49,6 @@ from app.ui.login_dialog import (
 )
 from app.ui.publish_worker import LoginWorker, PatLoginWorker, PublishWorker
 from app.ui.commit_history_dialog import (
-    CommitHistoryDialog,
     show_commit_history,
     show_remote_commit_history,
 )
@@ -59,7 +58,6 @@ from app.ui.tip_card import install_tip_card
 from app.util.next_action import format_next_step_line
 from app.ui.onboarding_dialog import show_onboarding
 from app.ui.settings_store import (
-    load_advanced_commit_history_enabled,
     load_hide_real_email,
     load_last_commit_message,
     load_last_private,
@@ -199,8 +197,6 @@ class MainController(QObject):
 
         # --- shared ---
         self.tabWidget = window.findChild(QTabWidget, "tabWidget")
-        self._advanced_history_panel: CommitHistoryDialog | None = None
-        self._advanced_history_tab_index: int | None = None
         self.labelStatusGit = window.findChild(QLabel, "labelStatusGit")
         self.textLog = window.findChild(QPlainTextEdit, "textLog")
         self.btnCancel = window.findChild(QPushButton, "btnCancel")
@@ -326,7 +322,6 @@ class MainController(QObject):
         self._install_tab_tip_cards()
         self._wire()
         self._load_prefs()
-        self._apply_advanced_history_tab_visibility()
         self._refresh_status_bar()
         self._log("CloneUp — 만들고 올리기 / 받기 / 동기화 탭 사용 가능")
         # Apply 받기 URL mode (list vs plain input) after paint
@@ -423,53 +418,7 @@ class MainController(QObject):
         if w in ("all", "folders", "recent"):
             self._reload_recent_combo()
 
-        if w in ("all", "advanced_history"):
-            self._apply_advanced_history_tab_visibility()
-
         # secret_scan: no tab widget; read live via load_secret_pii_scan_enabled()
-
-    def _apply_advanced_history_tab_visibility(self) -> None:
-        """
-        Settings > 고급 > 고급 커밋내역 탭 gates this tab (off by default).
-
-        The panel itself is created once and kept alive so switching the
-        toggle on/off doesn't lose the loaded commit list — only the tab's
-        visibility changes.
-        """
-        if self.tabWidget is None:
-            return
-        enabled = load_advanced_commit_history_enabled()
-
-        if self._advanced_history_panel is None:
-            if not enabled:
-                return  # do not build it until first actually needed
-            panel = CommitHistoryDialog(self.window, embedded=True)
-            panel.set_folder(self._sync_folder_if_git_repo())
-            idx = self.tabWidget.addTab(panel, "고급 커밋내역")
-            self._advanced_history_panel = panel
-            self._advanced_history_tab_index = idx
-            return
-
-        if self._advanced_history_tab_index is not None:
-            self.tabWidget.setTabVisible(self._advanced_history_tab_index, enabled)
-
-    def _sync_advanced_history_folder(self, folder: str) -> None:
-        """Keep the 고급 커밋내역 tab (if built) pointed at the 동기화 폴더."""
-        if self._advanced_history_panel is not None:
-            self._advanced_history_panel.set_folder(folder)
-
-    def _sync_folder_if_git_repo(self) -> str:
-        """동기화 탭 folder field, but only if it already looks like a git repo."""
-        folder = _folder_path(self.editSyncFolder)
-        if not folder:
-            return ""
-        try:
-            p = Path(folder).expanduser()
-            if not p.is_dir() or not (p / ".git").is_dir():
-                return ""
-        except OSError:
-            return ""
-        return folder
 
     def _log_token_age_hint(self) -> None:
         """Soft reminder: PAT may expire; we only know connect age on this PC."""
@@ -2195,7 +2144,6 @@ class MainController(QObject):
         folder = _folder_path(self.editSyncFolder)
         if not folder:
             self._clear_sync_status_labels()
-            self._sync_advanced_history_folder("")
             return
         try:
             p = Path(folder).expanduser()
@@ -2210,11 +2158,9 @@ class MainController(QObject):
                 self._add_sync_chip("○  Git 폴더 아님", "muted")
                 if self.labelSyncStatus is not None:
                     self.labelSyncStatus.hide()
-                self._sync_advanced_history_folder("")
                 return
         except OSError:
             return
-        self._sync_advanced_history_folder(folder)
         self.on_sync_refresh(quiet=True)
 
     @Slot()

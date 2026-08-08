@@ -1,6 +1,6 @@
 """Settings dialog — desin/CloneUp 설정.dc.html (+ Settings Dark.dc.html).
 
-Sidebar tabs: 계정 · 올리기 기본값 · 안전 · 최근 폴더 · 고급 · 정보.
+Sidebar tabs: 계정 · 올리기 기본값 · 안전 · 최근 폴더 · 정보.
 Prefs save immediately (footer: 바꾸면 바로 저장됩니다).
 Colors follow active_palette() (OS light/dark).
 """
@@ -41,7 +41,6 @@ from app.git.runner import require_git
 from app.paths import app_root
 from app.ui.settings_store import (
     clear_recent_folders,
-    load_advanced_commit_history_enabled,
     load_hide_real_email,
     load_last_commit_message,
     load_last_github_login,
@@ -49,7 +48,6 @@ from app.ui.settings_store import (
     load_last_publish_branch,
     load_recent_folders,
     load_secret_pii_scan_enabled,
-    save_advanced_commit_history_enabled,
     save_hide_real_email,
     save_last_commit_message,
     save_last_private,
@@ -58,7 +56,7 @@ from app.ui.settings_store import (
 )
 from app.ui.theme import Palette, active_palette
 
-_NAV = ("계정", "올리기 기본값", "안전", "최근 폴더", "고급", "정보")
+_NAV = ("계정", "올리기 기본값", "안전", "최근 폴더", "정보")
 
 # Exact phrase required to disable secret/PII scan (user must type it).
 SECRET_SCAN_OFF_PHRASE = "나는 위의 안내, 경고 사항을 모두 읽고 이해했습니다"
@@ -217,7 +215,6 @@ class SettingsDialog(QDialog):
         self._hide_email = load_hide_real_email()
         self._secret_scan = load_secret_pii_scan_enabled()
         self._secret_scan_block = False  # ignore toggle while reverting UI
-        self._advanced_history = load_advanced_commit_history_enabled()
         p = active_palette()
 
         self.setWindowTitle("설정")
@@ -270,14 +267,12 @@ class SettingsDialog(QDialog):
         self._page_defaults = self._build_defaults(p)
         self._page_safety = self._build_safety(p)
         self._page_folders = self._build_folders(p)
-        self._page_advanced = self._build_advanced(p)
         self._page_about = self._build_about(p)
         for page in (
             self._page_account,
             self._page_defaults,
             self._page_safety,
             self._page_folders,
-            self._page_advanced,
             self._page_about,
         ):
             self._stack.addWidget(page)
@@ -626,32 +621,6 @@ class SettingsDialog(QDialog):
         lay.addLayout(row)
         return w
 
-    def _build_advanced(self, p: Palette) -> QWidget:
-        w, lay = self._page_shell()
-        lay.addWidget(
-            self._heading(
-                "고급",
-                "평소에는 필요 없는, 상급자용 기능입니다.",
-            )
-        )
-
-        self._sw_advanced_history = _ToggleSwitch(checked=self._advanced_history)
-        self._sw_advanced_history.toggled.connect(self._on_advanced_history_toggled)
-        lay.addWidget(
-            self._safety_toggle_card(
-                switch=self._sw_advanced_history,
-                title="고급 커밋내역 탭",
-                body=(
-                    "창 위쪽에 「고급 커밋내역」 탭을 추가합니다. "
-                    "동기화 탭에서 고른 폴더의 예전 커밋을 보고, "
-                    "필요하면 그 시점으로 되돌려 다시 GitHub에 올릴 수 있습니다. "
-                    "되돌리기 전에는 항상 백업 브랜치를 먼저 만듭니다."
-                ),
-            )
-        )
-        lay.addStretch(1)
-        return w
-
     def _build_about(self, p: Palette) -> QWidget:
         w, lay = self._page_shell()
         lay.addWidget(
@@ -838,13 +807,6 @@ class SettingsDialog(QDialog):
         self._secret_scan = False
         save_secret_pii_scan_enabled(False)
         self._notify_prefs("secret_scan")
-
-    # ----- advanced -----
-    @Slot(bool)
-    def _on_advanced_history_toggled(self, checked: bool) -> None:
-        self._advanced_history = bool(checked)
-        save_advanced_commit_history_enabled(self._advanced_history)
-        self._notify_prefs("advanced_history")
 
     # ----- folders -----
     def _refresh_folders(self) -> None:

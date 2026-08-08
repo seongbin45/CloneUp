@@ -102,22 +102,6 @@ def save_secret_pii_scan_enabled(enabled: bool) -> None:
     _settings().setValue("secret_pii_scan_enabled", bool(enabled))
 
 
-def load_advanced_commit_history_enabled() -> bool:
-    """
-    Default False (opt-in): show the 고급 커밋내역 tab.
-
-    That tab can revert the current 동기화 folder to a past commit — more
-    power than beginners need day to day, so it stays behind this switch.
-    """
-    return bool(
-        _settings().value("advanced_commit_history_enabled", False, type=bool)
-    )
-
-
-def save_advanced_commit_history_enabled(enabled: bool) -> None:
-    _settings().setValue("advanced_commit_history_enabled", bool(enabled))
-
-
 def load_last_publish_branch() -> str:
     """Default branch for first publish (usually main)."""
     val = _settings().value("last_publish_branch", "main")
