@@ -1,7 +1,8 @@
-"""Settings dialog — desin/CloneUp 설정.dc.html.
+"""Settings dialog — desin/CloneUp 설정.dc.html (+ Settings Dark.dc.html).
 
 Sidebar tabs: 계정 · 올리기 기본값 · 안전 · 최근 폴더 · 정보.
 Prefs save immediately (footer: 바꾸면 바로 저장됩니다).
+Colors follow active_palette() (OS light/dark).
 """
 
 from __future__ import annotations
@@ -52,6 +53,21 @@ from app.ui.settings_store import (
 from app.ui.theme import Palette, active_palette
 
 _NAV = ("계정", "올리기 기본값", "안전", "최근 폴더", "정보")
+
+
+def _warn_soft_bg(p: Palette) -> str:
+    """Amber panel fill — light mock #fbf6ee, dark Settings mock #2e2a1e."""
+    return "#2e2a1e" if p.name == "dark" else "#fbf6ee"
+
+
+def _danger_label(p: Palette) -> str:
+    """Logout outline button text — dark mock #d98d88."""
+    return "#d98d88" if p.name == "dark" else "#9a4a45"
+
+
+def _danger_hover_bg(p: Palette) -> str:
+    """Logout outline hover — dark mock #33241f."""
+    return "#33241f" if p.name == "dark" else "#f7efee"
 
 
 class _ToggleSwitch(QWidget):
@@ -714,16 +730,19 @@ class SettingsDialog(QDialog):
                 f"border: 1px solid {p.border_input}; background: {p.bg_window}; "
                 f"font-size: 13px; color: {p.text};}}"
             )
+            # Dark Settings mock: public selected bg #2e2a1e + warn border
             self._btn_pub.setStyleSheet(
                 f"QPushButton#setChoiceCard {{"
                 f"text-align: left; padding: 11px 13px; border-radius: 6px; "
-                f"border: 1px solid {p.warn_border}; background: {p.bg_hint}; "
+                f"border: 1px solid {p.warn_border}; background: {_warn_soft_bg(p)}; "
                 f"font-size: 13px; color: {p.text};}}"
             )
             self._vis_note.setText(
                 "올리는 순간 인터넷에 공개되고, 지워도 완전히 거두기 어렵습니다."
             )
-            self._vis_note.setStyleSheet(f"color: {p.warn_text}; font-size: 11.5px;")
+            self._vis_note.setStyleSheet(
+                f"color: {p.warn_text}; font-size: 11.5px;"
+            )
 
     @Slot()
     def _save_commit_message(self) -> None:
@@ -843,6 +862,12 @@ class SettingsDialog(QDialog):
     # ----- style -----
     @staticmethod
     def _dialog_qss(p: Palette) -> str:
+        """QSS from light 설정 + dark Settings Dark mocks (palette-driven)."""
+        warn_bg = _warn_soft_bg(p)
+        danger_fg = _danger_label(p)
+        danger_hover = _danger_hover_bg(p)
+        # Title bar label: dark mock #eae5d9 (near text)
+        title_fg = "#eae5d9" if p.name == "dark" else p.text
         return f"""
         QDialog {{
             background: {p.bg_window};
@@ -861,7 +886,7 @@ class SettingsDialog(QDialog):
         QLabel#setTitle {{
             font-size: 13px;
             font-weight: 600;
-            color: {p.text};
+            color: {title_fg};
         }}
         QFrame#setNav {{
             background: {p.bg_bar};
@@ -912,7 +937,7 @@ class SettingsDialog(QDialog):
             color: {p.text_secondary};
         }}
         QLabel#setWarnBanner {{
-            background: #fbf6ee;
+            background: {warn_bg};
             border-left: 3px solid {p.warn_border};
             border-radius: 0 6px 6px 0;
             padding: 13px 15px;
@@ -935,6 +960,7 @@ class SettingsDialog(QDialog):
             font-size: 13px;
             color: {p.text};
             min-height: 20px;
+            selection-background-color: {p.primary};
         }}
         QFrame#setFactRow {{
             background: {p.bg_muted};
@@ -959,7 +985,7 @@ class SettingsDialog(QDialog):
         }}
         QPushButton#setSecondary {{
             background: {p.bg_window};
-            color: {p.text};
+            color: {title_fg};
             border: 1px solid {p.border_outline};
             border-radius: 5px;
             padding: 6px 14px;
@@ -971,7 +997,7 @@ class SettingsDialog(QDialog):
         }}
         QPushButton#setDangerOutline {{
             background: {p.bg_window};
-            color: #9a4a45;
+            color: {danger_fg};
             border: 1px solid {p.border_outline};
             border-radius: 5px;
             padding: 6px 14px;
@@ -979,7 +1005,7 @@ class SettingsDialog(QDialog):
             min-height: 20px;
         }}
         QPushButton#setDangerOutline:hover {{
-            background: #f7efee;
+            background: {danger_hover};
         }}
         """
 

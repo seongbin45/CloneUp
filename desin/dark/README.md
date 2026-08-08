@@ -3,11 +3,13 @@
 | 파일 | 내용 |
 |------|------|
 | `CloneUp Window Dark.dc.html` | 다크 팔레트 메인 창 목업 |
+| [`../CloneUp Settings Dark.dc.html`](../CloneUp%20Settings%20Dark.dc.html) | 다크 **설정** 팝업 목업 |
 
 ## 코드 연결
 
 - 토큰: `app/ui/theme.py` 의 `DARK`  
-- OS 다크 감지 후 QSS 적용: `main.py` → `apply_system_theme`
+- OS 다크 감지 후 QSS 적용: `main.py` → `apply_system_theme`  
+- 설정 팝업: `app/ui/settings_dialog.py` (`active_palette()` + 다크 시안 보정)
 
 ## 초심자
 
