@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal, Slot
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QGuiApplication, QKeyEvent, QKeySequence, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -502,13 +502,19 @@ class CommitHistoryDialog(QDialog):
         self._selected: CommitInfo | None = None
         self._worker: QThread | None = None
         self._exhausted = False
+        self._fullscreen_applied = False
         p = active_palette()
 
         self.setWindowTitle("커밋 내역")
         self.setModal(True)
         self.setMinimumSize(880, 560)
         self.resize(980, 640)
+        # Own top-level window (not a child tool dialog) so F11 fullscreen
+        # covers the whole monitor, taskbar included — same as 첫 실행 안내.
+        self.setWindowFlag(Qt.WindowType.Window, True)
         self.setStyleSheet(self._dialog_qss(p))
+        # F11 works even if focus is on a child control (list, buttons, …)
+        QShortcut(QKeySequence(Qt.Key.Key_F11), self, activated=self._toggle_fullscreen)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -525,9 +531,12 @@ class CommitHistoryDialog(QDialog):
         proj = QLabel(self._project_name)
         proj.setObjectName("histProject")
         proj.setFont(self._mono_font(proj.font()))
+        self._fs_hint = QLabel("전체 화면 · Esc 닫기 · F11 창 모드")
+        self._fs_hint.setObjectName("histMeta")
         bar_l.addWidget(title)
         bar_l.addWidget(proj)
         bar_l.addStretch(1)
+        bar_l.addWidget(self._fs_hint)
         root.addWidget(bar)
 
         # banner — read-only for remote, "지워지지 않습니다" once revert exists
@@ -895,6 +904,67 @@ class CommitHistoryDialog(QDialog):
     def closeEvent(self, event) -> None:  # noqa: N802
         self._stop_worker()
         super().closeEvent(event)
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        # F11-style: cover the whole monitor (taskbar hidden), by default.
+        if not self._fullscreen_applied:
+            self._fullscreen_applied = True
+            self._enter_fullscreen()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Escape:
+            self.reject()
+            event.accept()
+            return
+        # F11 handled by QShortcut (_toggle_fullscreen)
+        super().keyPressEvent(event)
+
+    @Slot()
+    def _toggle_fullscreen(self) -> None:
+        """F11: leave true-fullscreen (taskbar back) ↔ windowed dialog."""
+        if self.isFullScreen():
+            self._leave_fullscreen()
+        else:
+            self._enter_fullscreen()
+
+    def _enter_fullscreen(self) -> None:
+        """True fullscreen like browser F11 (covers taskbar)."""
+        # Frameless only while fullscreen — avoid broken chrome on showNormal
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.show()  # required after changing window flags
+        self.showFullScreen()
+        self.raise_()
+        self.activateWindow()
+        self._fs_hint.setText("전체 화면 · Esc 닫기 · F11 창 모드")
+
+    def _leave_fullscreen(self) -> None:
+        """
+        Exit fullscreen into a normal, movable window on the usable desktop
+        (taskbar visible again). showNormal() alone with Frameless often
+        leaves a zero-size or off-screen window on Windows.
+        """
+        # 1) Clear fullscreen state first
+        self.setWindowState(Qt.WindowState.WindowNoState)
+        # 2) Restore title bar so the window can be moved/closed normally
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, False)
+        self.setWindowFlag(Qt.WindowType.Window, True)
+        self.show()  # re-apply flags
+        # 3) Explicit geometry on availableGeometry (excludes taskbar)
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is not None:
+            ag = screen.availableGeometry()
+            w = min(980, max(880, ag.width() - 80))
+            h = min(720, max(560, ag.height() - 80))
+            x = ag.x() + max(0, (ag.width() - w) // 2)
+            y = ag.y() + max(0, (ag.height() - h) // 2)
+            self.setGeometry(x, y, w, h)
+        else:
+            self.resize(980, 640)
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self._fs_hint.setText("창 모드 · Esc 닫기 · F11 전체 화면")
 
     def _set_busy(self, busy: bool) -> None:
         self._btn_refresh.setEnabled(not busy)
