@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.git.publish import preview_commit_email
-from app.git.runner import GitError, require_git
+from app.git.runner import GitError, require_git, run_git
 from app.git.safety import (
     find_secret_candidates,
     format_content_secret_list,
@@ -2213,12 +2213,38 @@ class MainController(QObject):
             return
         self._open_commit_history(_folder_path(self.editSyncFolder))
 
+    @staticmethod
+    def _local_clone_for_url(target: Path, owner: str, repo: str) -> str | None:
+        """
+        If *target* is already a local clone of owner/repo, return its path
+        (so 커밋 내역 opens in local/되돌리기-capable mode instead of the
+        read-only-only GitHub API view) — else None.
+        """
+        try:
+            if not target.is_dir() or not (target / ".git").is_dir():
+                return None
+            r = run_git(["remote", "get-url", "origin"], cwd=str(target), check=False)
+            if r.returncode != 0:
+                return None
+            origin = (r.stdout or "").strip()
+            if not origin:
+                return None
+            n2 = normalize_github_clone_url(origin)
+        except (GitError, UrlError, OSError):
+            return None
+        if n2.owner.lower() == owner.lower() and n2.repo.lower() == repo.lower():
+            return str(target)
+        return None
+
     @Slot()
     def on_clone_history(self) -> None:
-        """Open remote commit history for the GitHub URL on the 받기 tab.
+        """Open commit history for the GitHub URL on the 받기 tab.
 
-        Public repos work without login. Private needs a stored token.
-        (동기화 탭 커밋 내역은 로컬 폴더 기준.)
+        Already cloned to the folder this tab targets? Open that local
+        folder instead — same 읽기 전용/되돌리기 popup as 동기화 탭, gated
+        by the same Settings > 안전 switch. Not cloned yet (or a different
+        repo sits there)? Fall back to the read-only GitHub API view; public
+        repos work without login, private needs a stored token.
         """
         if self._busy():
             return
@@ -2237,6 +2263,17 @@ class MainController(QObject):
         except UrlError as e:
             QMessageBox.warning(self.window, "커밋 내역", str(e))
             return
+
+        parent = (self.editCloneParent.text() if self.editCloneParent else "") or ""
+        dirname = (self.editCloneDirName.text() if self.editCloneDirName else "") or ""
+        if parent.strip():
+            target = Path(parent).expanduser() / (dirname.strip() or n.repo)
+            local = self._local_clone_for_url(target, n.owner, n.repo)
+            if local:
+                self._log(f"커밋 내역 열기(이미 받은 로컬 폴더): {local}")
+                show_commit_history(self.window, local)
+                return
+
         # Optional token: public OK without; private needs connect
         token = load_token()
         self._log(f"커밋 내역 열기(GitHub): {n.display_url}")
