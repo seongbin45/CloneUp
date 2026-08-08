@@ -60,3 +60,15 @@
 - Desktop 튜토리얼 저장소가 아니라 **방금 내 폴더/주소** 기준
 
 각 층 후: 앱 기동 → 탭 전환 → 가독성 확인 → 커밋.
+
+## 키보드 단축키 — F11 전체화면
+
+| 창 | 구현 위치 | 방식 |
+|----|-----------|------|
+| 메인 창 (만들고 올리기 / 받기 / 동기화 3탭) | `app/ui/main_window.py` `MainController._toggle_fullscreen` | 이미 최상위 `QMainWindow` → `showFullScreen()` / `showNormal()`만으로 전-후 geometry가 정확히 복원됨. Frameless 플래그 조작 불필요 |
+| 커밋 내역 팝업 | `app/ui/commit_history_dialog.py` | `QDialog`라서 `Qt.WindowType.Window` 강제 지정 + fullscreen 전환 시 `FramelessWindowHint` on/off 필요 (Windows에서 `showNormal()` 단독 시 창이 사라지거나 크기 0이 되는 문제 회피). 열리면 기본으로 전체화면 진입 |
+| 첫 실행 안내 (온보딩) | `app/ui/onboarding_dialog.py` | 위와 동일한 이유로 Frameless 토글 방식. 열리면 기본으로 전체화면 진입 |
+
+공통: 포커스가 어떤 자식 위젯에 있어도 F11이 먹도록 `keyPressEvent` 오버라이드 대신 `QShortcut(QKeySequence(Qt.Key.Key_F11), <window>, activated=...)`을 씁니다.
+
+메인 창은 다이얼로그 두 개와 달리 **처음 열릴 때 자동으로 전체화면 진입하지 않습니다** — 일반 데스크톱 앱 기대와 다르면 오히려 방해가 되므로, F11을 눌러야만 토글됩니다. 안내 문구(`Esc 닫기 · F11 …`)도 다이얼로그의 인-윈도우 타이틀 바에만 있고 메인 창에는 넣지 않았습니다 — OS 타이틀 바만 있고 넣을 자리가 마땅치 않기 때문. (Orca computer-use의 `press-key`는 F11을 지원하지 않아 실제 사용자 입력 재현이 필요하면 PowerShell `SendKeys` 등으로 우회해서 검증했습니다.)

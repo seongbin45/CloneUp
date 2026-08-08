@@ -15,7 +15,13 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
+from PySide6.QtGui import (
+    QColor,
+    QKeySequence,
+    QShortcut,
+    QTextCharFormat,
+    QTextCursor,
+)
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -295,6 +301,12 @@ class MainController(QObject):
         # After popup Logout, worker cancel should not look like a failed login
         self._expect_logout_ack = False
         self.window.installEventFilter(self)
+        # F11: toggle fullscreen from any of the 3 tabs (만들고 올리기/받기/동기화).
+        # QShortcut (not a keyPressEvent override) so it fires no matter which
+        # child control has focus — see docs/UX_GUIDANCE.md "키보드 단축키".
+        QShortcut(
+            QKeySequence(Qt.Key.Key_F11), self.window, activated=self._toggle_fullscreen
+        )
 
         # --- shared ---
         self.tabWidget = window.findChild(QTabWidget, "tabWidget")
@@ -964,6 +976,17 @@ class MainController(QObject):
             self._recentPopupPublish.set_items(items)
         if self._recentPopupSync is not None:
             self._recentPopupSync.set_items(items)
+
+    @Slot()
+    def _toggle_fullscreen(self) -> None:
+        """F11: plain top-level QMainWindow, so showNormal() restores the
+        exact pre-fullscreen geometry itself — no Frameless-flag dance
+        needed here (that workaround is only for the Dialog-flagged popups
+        in commit_history_dialog.py / onboarding_dialog.py)."""
+        if self.window.isFullScreen():
+            self.window.showNormal()
+        else:
+            self.window.showFullScreen()
 
     def _on_color_scheme_changed(self, *_args) -> None:
         """OS theme changed — main.py already reapplied QSS; refresh inline styles."""
