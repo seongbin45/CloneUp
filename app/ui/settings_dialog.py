@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QFont, QMouseEvent
+from PySide6.QtCore import QRectF, Qt, Signal, Slot
+from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -54,27 +54,27 @@ from app.ui.theme import Palette, active_palette
 _NAV = ("계정", "올리기 기본값", "안전", "최근 폴더", "정보")
 
 
-class _ToggleSwitch(QFrame):
-    """Track + knob toggle matching desin 설정 (40×23, knob 19)."""
+class _ToggleSwitch(QWidget):
+    """Pill track + round knob (시안 40×23, knob 19, radius 12 / 50%).
+
+    Drawn with QPainter so Windows does not ignore border-radius on QFrame.
+    """
 
     toggled = Signal(bool)
+
+    # Design tokens from desin/CloneUp 설정.dc.html
+    _W = 40
+    _H = 23
+    _KNOB = 19
+    _PAD = 2
 
     def __init__(self, checked: bool = True, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._on = bool(checked)
-        self.setObjectName("setSwitchTrack")
-        self.setFixedSize(40, 23)
+        self.setFixedSize(self._W, self._H)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-
-        self._lay = QHBoxLayout(self)
-        self._lay.setContentsMargins(2, 2, 2, 2)
-        self._lay.setSpacing(0)
-        self._knob = QFrame()
-        self._knob.setObjectName("setSwitchKnob")
-        self._knob.setFixedSize(19, 19)
-        self._knob.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self._paint()
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
 
     def isChecked(self) -> bool:
         return self._on
@@ -82,10 +82,10 @@ class _ToggleSwitch(QFrame):
     def setChecked(self, checked: bool, *, emit: bool = True) -> None:
         on = bool(checked)
         if self._on == on:
-            self._paint()
+            self.update()
             return
         self._on = on
-        self._paint()
+        self.update()
         if emit:
             self.toggled.emit(self._on)
 
@@ -103,27 +103,26 @@ class _ToggleSwitch(QFrame):
             return
         super().keyPressEvent(event)
 
-    def _paint(self) -> None:
-        p = active_palette()
-        track = p.primary if self._on else p.border_input
-        # Design: track #1f6f5c / #cdc8bf, knob #fbfaf8, justify flex-end/start
-        self.setStyleSheet(
-            f"QFrame#setSwitchTrack {{"
-            f"background: {track}; border: none; border-radius: 12px;}}"
-            f"QFrame#setSwitchKnob {{"
-            f"background: {p.bg_window}; border: none; border-radius: 9px;}}"
-        )
-        while self._lay.count():
-            item = self._lay.takeAt(0)
-            # keep knob; discard stretch spacers
-            if item is not None and item.widget() is self._knob:
-                pass
-        if self._on:
-            self._lay.addStretch(1)
-            self._lay.addWidget(self._knob, 0, Qt.AlignmentFlag.AlignVCenter)
-        else:
-            self._lay.addWidget(self._knob, 0, Qt.AlignmentFlag.AlignVCenter)
-            self._lay.addStretch(1)
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
+        del event
+        pal = active_palette()
+        track = QColor(pal.primary if self._on else pal.border_input)
+        knob = QColor(pal.bg_window)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        # Capsule track (height 23 → radius 11.5 ≈ design border-radius: 12)
+        painter.setBrush(track)
+        painter.drawRoundedRect(QRectF(0, 0, self._W, self._H), self._H / 2, self._H / 2)
+
+        # Round knob, inset 2px, left or right
+        ky = float(self._PAD)
+        kx = float(self._W - self._PAD - self._KNOB) if self._on else float(self._PAD)
+        painter.setBrush(knob)
+        painter.drawEllipse(QRectF(kx, ky, self._KNOB, self._KNOB))
+        painter.end()
 
 
 def _mono(base: QFont) -> QFont:
