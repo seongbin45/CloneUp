@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #e8e6e1; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 44px; display: flex; justify-content: flex-start; align-items: flex-start; overflow-x: auto;">
+  <div style="width: 880px; flex-shrink: 0; margin: 0 auto; background: #fbfaf8; border: 1px solid #c9c5bd; border-radius: 10px; box-shadow: 0 18px 48px rgba(40,36,30,.18); overflow: hidden; display: flex; flex-direction: column;">
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+      <div style="display: flex; gap: 7px;">
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+      </div>
+      <div style="font-size: 13px; font-weight: 600; color: #3d382f;">설정</div>
+    </div>
+
+    <div style="display: flex; min-height: 520px;">
+
+      <div style="width: 168px; flex-shrink: 0; background: #f2efe9; border-right: 1px solid #ddd8d0; padding: 14px 0; display: flex; flex-direction: column; gap: 2px;">
+        <sc-for list="{{ navs }}" as="n" hint-placeholder-count="4">
+          <div onClick="{{ n.go }}" style="padding: 10px 18px; font-size: 13px; cursor: pointer; border-left: 3px solid {{ n.bar }}; color: {{ n.fg }}; font-weight: {{ n.weight }}; background: {{ n.bg }};" style-hover="background: #e9e5dd;">{{ n.label }}</div>
+        </sc-for>
+      </div>
+
+      <div style="flex: 1; min-width: 0; padding: 26px 30px; display: flex; flex-direction: column; gap: 24px;">
+
+        <sc-if value="{{ isAccount }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: 22px;">
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <div style="font-size: 16px; font-weight: 600; color: #232019;">계정</div>
+              <div style="font-size: 12.5px; color: #6d675c; line-height: 1.6;">GitHub 연결 상태입니다.</div>
+            </div>
+            <div style="padding: 16px 18px; background: #f2efe9; border: 1px solid #ddd8d0; border-radius: 8px; display: flex; align-items: center; gap: 14px;">
+              <div style="width: 9px; height: 9px; border-radius: 50%; background: #1f6f5c; flex-shrink: 0;"></div>
+              <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0;">
+                <div style="font-size: 14px; font-weight: 500; color: #232019;">seong 으로 로그인됨</div>
+                <div style="font-size: 12px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">권한 repo · 개인 액세스 토큰</div>
+              </div>
+              <div style="margin-left: auto; display: flex; gap: 8px; flex-shrink: 0;">
+                <div style="height: 32px; padding: 0 14px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer;" style-hover="background: #f4f1e8;">다시 로그인</div>
+                <div style="height: 32px; padding: 0 14px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #9a4a45; cursor: pointer;" style-hover="background: #f7efee;">로그아웃</div>
+              </div>
+            </div>
+            <div style="padding: 13px 15px; background: #f4f1e8; border-left: 3px solid #1f6f5c; border-radius: 0 6px 6px 0; font-size: 12.5px; color: #4a453b; line-height: 1.65;">로그아웃하면 이 컴퓨터에 저장된 토큰이 지워집니다. GitHub 쪽 승인까지 없애려면 GitHub 설정에서 따로 해제해야 합니다.</div>
+            <div style="display: flex; flex-direction: column; gap: 9px;">
+              <div style="font-size: 13px; font-weight: 600; color: #4a453b;">토큰이 저장된 곳</div>
+              <div style="padding: 12px 15px; background: #fff; border: 1px solid #e6e1d8; border-radius: 6px; font-size: 12.5px; color: #4a453b; line-height: 1.65;">Windows 자격 증명 관리자의 <span style="font-family: 'IBM Plex Mono', monospace; color: #232019;">CloneUp</span> 항목. 저장소 폴더나 로그에는 남지 않습니다.</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isDefaults }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 22px;">
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <div style="font-size: 16px; font-weight: 600; color: #232019;">올리기 기본값</div>
+              <div style="font-size: 12.5px; color: #6d675c; line-height: 1.6;">새로 올릴 때 미리 채워둘 값입니다. 그때그때 바꿀 수 있습니다.</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 18px;">
+              <div style="display: flex; align-items: flex-start; gap: 18px;">
+                <div style="width: 148px; flex-shrink: 0; padding-top: 6px; font-size: 13px; color: #4a453b;">공개 범위</div>
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 7px;">
+                  <div style="display: flex; gap: 8px;">
+                    <div onClick="{{ setPrivate }}" style="flex: 1; padding: 11px 13px; border-radius: 6px; cursor: pointer; border: 1px solid {{ privBorder }}; background: {{ privBg }};">
+                      <div style="font-size: 13px; font-weight: 600; color: #232019;">비공개</div>
+                      <div style="font-size: 11.5px; color: #6d675c; margin-top: 3px;">나만 볼 수 있음</div>
+                    </div>
+                    <div onClick="{{ setPublic }}" style="flex: 1; padding: 11px 13px; border-radius: 6px; cursor: pointer; border: 1px solid {{ pubBorder }}; background: {{ pubBg }};">
+                      <div style="font-size: 13px; font-weight: 600; color: #232019;">공개</div>
+                      <div style="font-size: 11.5px; color: #6d675c; margin-top: 3px;">누구나 볼 수 있음</div>
+                    </div>
+                  </div>
+                  <div style="font-size: 11.5px; color: {{ visNoteColor }}; line-height: 1.6;">{{ visNote }}</div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 18px;">
+                <div style="width: 148px; flex-shrink: 0; font-size: 13px; color: #4a453b;">첫 커밋 메시지</div>
+                <div style="flex: 1; height: 34px; padding: 0 12px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24;">첫 업로드</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 18px;">
+                <div style="width: 148px; flex-shrink: 0; font-size: 13px; color: #4a453b;">기본 브랜치 이름</div>
+                <div style="flex: 1; height: 34px; padding: 0 12px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">main</div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSafety }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 22px;">
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <div style="font-size: 16px; font-weight: 600; color: #232019;">안전</div>
+              <div style="font-size: 12.5px; color: #6d675c; line-height: 1.6;">실수로 무언가를 공개하지 않도록 돕는 설정입니다.</div>
+            </div>
+            <sc-for list="{{ toggles }}" as="t" hint-placeholder-count="1">
+              <div style="display: flex; align-items: flex-start; gap: 14px; padding: 15px 17px; background: #f2efe9; border: 1px solid #ddd8d0; border-radius: 8px;">
+                <div onClick="{{ t.toggle }}" style="width: 40px; height: 23px; flex-shrink: 0; border-radius: 12px; cursor: pointer; padding: 2px; display: flex; justify-content: {{ t.knobSide }}; background: {{ t.track }};">
+                  <div style="width: 19px; height: 19px; border-radius: 50%; background: #fbfaf8;"></div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+                  <div style="font-size: 13.5px; font-weight: 600; color: #232019;">{{ t.title }}</div>
+                  <div style="font-size: 12.5px; color: #4a453b; line-height: 1.65;">{{ t.body }}</div>
+                </div>
+              </div>
+            </sc-for>
+            <div style="display: flex; flex-direction: column; gap: 9px;">
+              <div style="font-size: 13px; font-weight: 600; color: #4a453b;">비밀 파일 점검</div>
+              <div style="padding: 13px 15px; background: #fff; border: 1px solid #e6e1d8; border-radius: 6px; font-size: 12.5px; color: #4a453b; line-height: 1.65;">항상 켜져 있습니다. 올리기 전에 비밀번호가 들어 있을 만한 파일 이름을 찾아 알려드립니다.</div>
+              <div style="padding: 13px 15px; background: #fbf6ee; border-left: 3px solid #c4a94e; border-radius: 0 6px 6px 0; font-size: 12.5px; color: #4a453b; line-height: 1.65;">파일 이름만 봅니다. 파일 안에 적어둔 비밀번호는 찾지 못하니 마지막 확인은 직접 해주세요. 경고를 무시하고 진행하는 것은 그때그때 올리기 화면에서만 고를 수 있습니다.</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isFolders }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 22px;">
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <div style="font-size: 16px; font-weight: 600; color: #232019;">최근 폴더</div>
+              <div style="font-size: 12.5px; color: #6d675c; line-height: 1.6;">폴더 고르는 칸에 나오는 목록입니다. 최대 12개까지 기억합니다.</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <sc-for list="{{ recents }}" as="r" hint-placeholder-count="4">
+                <div style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: #fff; border: 1px solid #e6e1d8; border-radius: 6px;">
+                  <span style="font-size: 12.5px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.path }}</span>
+                  <span style="margin-left: auto; font-size: 11.5px; color: #6d675c; flex-shrink: 0;">{{ r.when }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <div style="height: 34px; padding: 0 16px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer;" style-hover="background: #f4f1e8;">목록 비우기</div>
+              <div style="font-size: 11.5px; color: #6d675c; line-height: 1.6;">목록만 지웁니다. 폴더와 파일은 그대로 있습니다.</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isAbout }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 22px;">
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <div style="font-size: 16px; font-weight: 600; color: #232019;">정보</div>
+              <div style="font-size: 12.5px; color: #6d675c; line-height: 1.6;">이 앱과 연결된 프로그램들입니다.</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <sc-for list="{{ facts }}" as="f" hint-placeholder-count="4">
+                <div style="display: flex; justify-content: space-between; gap: 16px; padding: 11px 15px; background: #f2efe9; border-radius: 6px;">
+                  <span style="font-size: 12.5px; color: #6d675c;">{{ f.key }}</span>
+                  <span style="font-size: 12.5px; color: #232019; font-family: 'IBM Plex Mono', monospace; text-align: right;">{{ f.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <div style="height: 34px; padding: 0 16px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer;" style-hover="background: #f4f1e8;">시작 안내 다시 보기</div>
+              <div style="height: 34px; padding: 0 16px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer;" style-hover="background: #f4f1e8;">이용약관</div>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 20px; border-top: 1px solid #e6e1d8; background: #f2efe9;">
+      <div style="font-size: 11.5px; color: #6d675c;">바꾸면 바로 저장됩니다.</div>
+      <div style="height: 32px; padding: 0 18px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer; flex-shrink: 0;" style-hover="background: #f4f1e8;">닫기</div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:968,&quot;height&quot;:700}}">
+class Component extends DCLogic {
+  state = { tab: 0, private: true, hideEmail: true };
+
+  renderVals() {
+    const tabs = ["계정", "올리기 기본값", "안전", "최근 폴더", "정보"];
+    const i = this.state.tab;
+    const priv = this.state.private;
+
+    const mk = (on) => ({ track: on ? "#1f6f5c" : "#cdc8bf", knobSide: on ? "flex-end" : "flex-start" });
+    const email = mk(this.state.hideEmail);
+
+    return {
+      navs: tabs.map((label, n) => ({
+        label,
+        bg: n === i ? "#fbfaf8" : "transparent",
+        fg: n === i ? "#1f6f5c" : "#4a453b",
+        bar: n === i ? "#1f6f5c" : "transparent",
+        weight: n === i ? "600" : "400",
+        go: () => this.setState({ tab: n }),
+      })),
+      isAccount: i === 0,
+      isDefaults: i === 1,
+      isSafety: i === 2,
+      isFolders: i === 3,
+      isAbout: i === 4,
+
+      privBg: priv ? "#f2efe9" : "#fbfaf8",
+      privBorder: priv ? "#1f6f5c" : "#cdc8bf",
+      pubBg: priv ? "#fbfaf8" : "#fbf6ee",
+      pubBorder: priv ? "#cdc8bf" : "#c4a94e",
+      visNote: priv
+        ? "권장. 나중에 공개로 바꿀 수 있습니다."
+        : "올리는 순간 인터넷에 공개되고, 지워도 완전히 거두기 어렵습니다.",
+      visNoteColor: priv ? "#6d675c" : "#8a6d12",
+      setPrivate: () => this.setState({ private: true }),
+      setPublic: () => this.setState({ private: false }),
+
+      toggles: [
+        { title: "커밋에 실제 이메일 숨기기", body: "GitHub가 주는 대체 주소를 씁니다. 컴퓨터에 이미 Git 이메일을 설정해 두었다면 그 값이 우선합니다.", track: email.track, knobSide: email.knobSide, toggle: () => this.setState({ hideEmail: !this.state.hideEmail }) },
+      ],
+
+      recents: [
+        { path: "C:\\Users\\seong\\Desktop\\my-project", when: "오늘" },
+        { path: "C:\\Users\\seong\\Documents\\codyssey", when: "어제" },
+        { path: "C:\\Users\\seong\\Desktop\\practice", when: "3일 전" },
+        { path: "D:\\work\\portfolio-site", when: "지난주" },
+      ],
+
+      facts: [
+        { key: "클론업", value: "1.0.0" },
+        { key: "Git", value: "2.45.1" },
+        { key: "설정 저장 위치", value: "레지스트리 CloneUp" },
+        { key: "통신 대상", value: "github.com · api.github.com" },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
