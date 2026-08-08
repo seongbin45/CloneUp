@@ -58,6 +58,7 @@ class _ToggleSwitch(QWidget):
     """Pill track + round knob (시안 40×23, knob 19, radius 12 / 50%).
 
     Drawn with QPainter so Windows does not ignore border-radius on QFrame.
+    ``locked=True``: always shown on, ignores clicks (policy: always-on safety).
     """
 
     toggled = Signal(bool)
@@ -68,18 +69,40 @@ class _ToggleSwitch(QWidget):
     _KNOB = 19
     _PAD = 2
 
-    def __init__(self, checked: bool = True, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        checked: bool = True,
+        parent: QWidget | None = None,
+        *,
+        locked: bool = False,
+    ) -> None:
         super().__init__(parent)
-        self._on = bool(checked)
+        self._locked = bool(locked)
+        # Locked switches are always on (safety features users cannot disable)
+        self._on = True if self._locked else bool(checked)
         self.setFixedSize(self._W, self._H)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        if self._locked:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            self.setToolTip("CloneUp에서는 항상 켜 둡니다. 끌 수 없습니다.")
+        else:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
 
     def isChecked(self) -> bool:
         return self._on
 
+    def isLocked(self) -> bool:
+        return self._locked
+
     def setChecked(self, checked: bool, *, emit: bool = True) -> None:
+        if self._locked:
+            # Policy: cannot turn off
+            if not self._on:
+                self._on = True
+                self.update()
+            return
         on = bool(checked)
         if self._on == on:
             self.update()
@@ -91,12 +114,18 @@ class _ToggleSwitch(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
+            if self._locked:
+                event.accept()
+                return
             self.setChecked(not self._on)
             event.accept()
             return
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
+        if self._locked:
+            super().keyPressEvent(event)
+            return
         if event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.setChecked(not self._on)
             event.accept()
@@ -108,12 +137,15 @@ class _ToggleSwitch(QWidget):
         pal = active_palette()
         track = QColor(pal.primary if self._on else pal.border_input)
         knob = QColor(pal.bg_window)
+        # Locked: same on look (policy always-on), slightly softer so it reads “fixed”
+        if self._locked and self._on:
+            track.setAlpha(230)
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setPen(Qt.PenStyle.NoPen)
 
-        # Capsule track (height 23 → radius 11.5 ≈ design border-radius: 12)
+        # Capsule track (height 23 → radius = half height)
         painter.setBrush(track)
         painter.drawRoundedRect(QRectF(0, 0, self._W, self._H), self._H / 2, self._H / 2)
 
@@ -436,7 +468,7 @@ class SettingsDialog(QDialog):
         return w
 
     def _build_safety(self, p: Palette) -> QWidget:
-        # Design: column gap 22 between heading / toggle card / secret block
+        # Design: column gap 22; secret/PII shown as always-on switch card
         w, lay = self._page_shell()
         lay.addWidget(
             self._heading(
@@ -445,58 +477,76 @@ class SettingsDialog(QDialog):
             )
         )
 
-        toggle_row = QFrame()
-        toggle_row.setObjectName("setCard")
-        tr = QHBoxLayout(toggle_row)
-        # design padding: 15px 17px
-        tr.setContentsMargins(17, 15, 17, 15)
-        tr.setSpacing(14)
+        # --- interactive: hide real email ---
+        lay.addWidget(
+            self._safety_toggle_card(
+                switch=self._make_hide_email_switch(),
+                title="커밋에 실제 이메일 숨기기",
+                body=(
+                    "GitHub가 주는 대체 주소를 씁니다. "
+                    "컴퓨터에 이미 Git 이메일을 설정해 두었다면 그 값이 우선합니다."
+                ),
+            )
+        )
 
+        # --- locked on: secret file + PII scan (cannot disable in CloneUp) ---
+        self._sw_secret_scan = _ToggleSwitch(checked=True, locked=True)
+        lay.addWidget(
+            self._safety_toggle_card(
+                switch=self._sw_secret_scan,
+                title="비밀·개인정보 점검",
+                body=(
+                    "항상 켜져 있습니다. 끌 수 없습니다. "
+                    "올리기·동기화 전에 비밀번호·키가 들어 있을 만한 파일 이름과 "
+                    "개인정보 후보를 찾아 알려드립니다."
+                ),
+            )
+        )
+
+        warn = QLabel(
+            "파일 이름(과 일부 내용 검사) 범위에는 한계가 있습니다. "
+            "파일 안에 적어둔 비밀번호를 모두 찾지는 못하니 마지막 확인은 직접 해주세요. "
+            "경고를 무시하고 진행하는 것은 그때그때 올리기·동기화 화면에서만 고를 수 있습니다."
+        )
+        warn.setObjectName("setWarnBanner")
+        warn.setWordWrap(True)
+        lay.addWidget(warn)
+        lay.addStretch(1)
+        return w
+
+    def _make_hide_email_switch(self) -> _ToggleSwitch:
         self._sw_hide_email = _ToggleSwitch(checked=self._hide_email)
         self._sw_hide_email.toggled.connect(self._on_hide_email_toggled)
+        return self._sw_hide_email
 
+    def _safety_toggle_card(
+        self,
+        *,
+        switch: _ToggleSwitch,
+        title: str,
+        body: str,
+    ) -> QFrame:
+        """One design toggle row: switch + title/body (시안 안전 카드)."""
+        card = QFrame()
+        card.setObjectName("setCard")
+        tr = QHBoxLayout(card)
+        tr.setContentsMargins(17, 15, 17, 15)
+        tr.setSpacing(14)
         text_col = QVBoxLayout()
         text_col.setContentsMargins(0, 0, 0, 0)
         text_col.setSpacing(4)
-        tt = QLabel("커밋에 실제 이메일 숨기기")
+        tt = QLabel(title)
         tt.setObjectName("setCardTitle")
-        tb = QLabel(
-            "GitHub가 주는 대체 주소를 씁니다. "
-            "컴퓨터에 이미 Git 이메일을 설정해 두었다면 그 값이 우선합니다."
-        )
+        tb = QLabel(body)
         tb.setObjectName("setBody")
         tb.setWordWrap(True)
         text_col.addWidget(tt)
         text_col.addWidget(tb)
-        tr.addWidget(self._sw_hide_email, 0, Qt.AlignmentFlag.AlignTop)
+        tr.addWidget(switch, 0, Qt.AlignmentFlag.AlignTop)
         tr.addLayout(text_col, 1)
-        lay.addWidget(toggle_row)
-
-        # design: column gap 9 for 비밀 파일 점검 block
-        secret = QVBoxLayout()
-        secret.setContentsMargins(0, 0, 0, 0)
-        secret.setSpacing(9)
-        sec = QLabel("비밀 파일 점검")
-        sec.setObjectName("setSection")
-        secret.addWidget(sec)
-        always = QLabel(
-            "항상 켜져 있습니다. 올리기 전에 비밀번호가 들어 있을 만한 "
-            "파일 이름을 찾아 알려드립니다."
-        )
-        always.setObjectName("setInfoBox")
-        always.setWordWrap(True)
-        secret.addWidget(always)
-        warn = QLabel(
-            "파일 이름만 봅니다. 파일 안에 적어둔 비밀번호는 찾지 못하니 "
-            "마지막 확인은 직접 해주세요. 경고를 무시하고 진행하는 것은 "
-            "그때그때 올리기 화면에서만 고를 수 있습니다."
-        )
-        warn.setObjectName("setWarnBanner")
-        warn.setWordWrap(True)
-        secret.addWidget(warn)
-        lay.addLayout(secret)
-        lay.addStretch(1)
-        return w
+        if switch.isLocked():
+            card.setToolTip("이 점검은 CloneUp에서 항상 켜져 있습니다.")
+        return card
 
     def _build_folders(self, p: Palette) -> QWidget:
         w, lay = self._page_shell()
