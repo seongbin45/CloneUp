@@ -9,6 +9,7 @@ Windows용 **GitHub 도우미** 데스크톱 앱입니다.
 | 실행 (개발) | `.\.venv\Scripts\python.exe main.py` |
 | 설치 파일 빌드 | `powershell -File scripts\build_installer.ps1` |
 | GitHub | https://github.com/seongbin45/CloneUp |
+| 라이선스 | [Apache License 2.0](LICENSE) |
 | 초심자 안내 4층 | [docs/UX_GUIDANCE.md](docs/UX_GUIDANCE.md) |
 | 패키징 | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | Git 없을 때 | [docs/GIT_BOOTSTRAP.md](docs/GIT_BOOTSTRAP.md) |
