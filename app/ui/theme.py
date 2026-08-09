@@ -261,7 +261,81 @@ def apply_system_theme(app=None) -> Palette:
     apply_palette(palette)
     if app is not None:
         app.setStyleSheet(app_stylesheet(palette))
+        install_native_titlebar_theming(app)
     return palette
+
+
+def _set_titlebar_dark_win32(hwnd: int, dark: bool) -> None:
+    """
+    Windows 10 (2004+) / 11: match the OS-drawn title bar to our theme.
+
+    Qt paints window *content* through our QSS, but the title bar/frame is
+    drawn by the OS compositor (DWM) and is untouched by any stylesheet —
+    without this, every window/dialog keeps a light titlebar even when the
+    rest of it is dark. No-op on non-Windows; silently does nothing on
+    Windows builds too old to support the attribute.
+    """
+    import sys
+
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        value = ctypes.c_int(1 if dark else 0)
+        dwmapi = ctypes.windll.dwmapi  # type: ignore[attr-defined]
+        # 20 = DWMWA_USE_IMMERSIVE_DARK_MODE (Windows 10 20H1+ / 11).
+        # 19 = same attribute's earlier number on some pre-20H1 builds.
+        for attr in (20, 19):
+            dwmapi.DwmSetWindowAttribute(
+                ctypes.c_void_p(hwnd), attr, ctypes.byref(value), ctypes.sizeof(value)
+            )
+    except Exception:
+        pass
+
+
+def sync_titlebar_theme(widget) -> None:
+    """Match one top-level widget's native title bar to the active palette."""
+    try:
+        hwnd = int(widget.winId())
+    except Exception:
+        return
+    _set_titlebar_dark_win32(hwnd, _active.name == "dark")
+
+
+_titlebar_themer = None  # keep alive — installEventFilter doesn't own it
+
+
+def install_native_titlebar_theming(app) -> None:
+    """
+    Keep every top-level window/dialog's native title bar in sync with the
+    active palette: re-syncs all windows already open right now, and
+    installs a one-time app-wide filter so any window shown later (a new
+    dialog, a reopened one, …) gets synced the moment it appears. Idempotent
+    and safe to call again on every theme change — call via apply_system_theme.
+    """
+    global _titlebar_themer
+    from PySide6.QtCore import QEvent, QObject
+    from PySide6.QtWidgets import QWidget
+
+    if _titlebar_themer is None:
+
+        class _TitleBarThemer(QObject):
+            def eventFilter(self, obj, event):  # noqa: N802
+                if (
+                    event.type() == QEvent.Type.Show
+                    and isinstance(obj, QWidget)
+                    and obj.isWindow()
+                ):
+                    sync_titlebar_theme(obj)
+                return False
+
+        _titlebar_themer = _TitleBarThemer(app)
+        app.installEventFilter(_titlebar_themer)
+
+    for w in app.topLevelWidgets():
+        if w.isWindow():
+            sync_titlebar_theme(w)
 
 
 # Initialize module-level aliases (light default until apply_system_theme)
