@@ -9,6 +9,20 @@ from __future__ import annotations
 import re
 
 
+def is_missing_workflow_scope_error(message: str) -> bool:
+    """
+    True when a push was rejected because the repo has .github/workflows/*
+    files and the PAT lacks `workflow` (on top of `repo`). Reactive-only
+    signal — checked after a real push fails, never used to ask for the
+    scope up front (most repos don't need it).
+    """
+    msg = (message or "").strip()
+    low = msg.lower()
+    return "without `workflow` scope" in msg or (
+        "personal access token" in low and "workflow" in low and "scope" in low
+    )
+
+
 def next_step_for_error(message: str) -> str | None:
     """
     Return a plain-language next action, or None if no mapping.
@@ -130,17 +144,14 @@ def next_step_for_error(message: str) -> str | None:
         return "먼저 「받아오기」로 GitHub의 최신 내용을 받은 뒤 다시 보내세요."
 
     # PAT lacks `workflow` scope — blocks pushing .github/workflows/*.yml.
-    # This app only ever requests `repo` (see PAT_CREATE_URL in
-    # login_dialog.py) — asking users to add `workflow` on top of that
-    # would be requesting a broader scope than the app needs, which is
-    # against GitHub's API terms. So: name the real limitation instead of
-    # routing around it.
-    if "without `workflow` scope" in msg or (
-        "personal access token" in low and "workflow" in low and "scope" in low
-    ):
+    # Reactive only: main_window.py shows a dedicated dialog (see
+    # is_missing_workflow_scope_error / show_missing_workflow_scope_help)
+    # offering a new key with `workflow` added, since this repo specifically
+    # needs it — the default connect flow still only ever asks for `repo`.
+    if is_missing_workflow_scope_error(msg):
         return (
-            "이 앱의 GitHub 키로는 워크플로 파일(.github/workflows/…)을 바꿀 수 없습니다. "
-            "그 파일은 GitHub 웹사이트에서 직접 고치거나, 이번에는 커밋에서 빼고 다시 시도하세요."
+            "workflow 권한을 추가한 새 키를 만드세요. "
+            "안내 창의 「새 키 만들기」→ 복사 → 다시 연결."
         )
 
     # Send/receive failed (Korean lead sentences)

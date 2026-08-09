@@ -3,17 +3,19 @@ Regression: push/pull failure dialogs showed "인터넷과 연결을 확인하�
 non-fast-forward rejections and missing-`workflow`-scope rejections, neither
 of which is actually a connectivity problem.
 
-non-fast-forward's real fix is "pull first". The workflow-scope case is
-different: this app only ever requests `repo` scope, and asking users to
-widen their PAT beyond what the app needs would be requesting a broader
-scope than necessary — against GitHub's API terms — so the guidance there
-names the real limitation (can't touch .github/workflows/* files) instead
-of suggesting a new/broader token.
+non-fast-forward's real fix is "pull first". The workflow-scope case: this
+app's default connect flow only ever asks for `repo` (most repos don't have
+.github/workflows/*, so requesting `workflow` up front would be asking for
+more than needed). But when a push actually fails for that specific reason,
+the repo has proven it needs the scope — so the guidance here points at a
+dedicated reactive flow (see login_dialog.show_missing_workflow_scope_help)
+that creates a new key with `workflow` added, rather than telling the user
+to route around it.
 """
 
 from __future__ import annotations
 
-from app.util.next_action import next_step_for_error
+from app.util.next_action import is_missing_workflow_scope_error, next_step_for_error
 
 _NON_FAST_FORWARD = (
     "GitHub로 보내기에 실패했습니다.\n\n(참고)\n"
@@ -45,17 +47,21 @@ def test_non_fast_forward_suggests_pull_first() -> None:
     assert "인터넷" not in hint
 
 
-def test_missing_workflow_scope_names_the_limitation_not_a_new_token() -> None:
-    """Must NOT tell the user to add `workflow` scope — this app only ever
-    requests `repo` (PAT_CREATE_URL), and asking for a broader scope than
-    the app needs is against GitHub's API terms. The honest fix is to name
-    the limitation (can't touch workflow files) rather than route around it."""
+def test_missing_workflow_scope_is_detected() -> None:
+    assert is_missing_workflow_scope_error(_WORKFLOW_SCOPE)
+    assert not is_missing_workflow_scope_error(_NON_FAST_FORWARD)
+    assert not is_missing_workflow_scope_error("some unrelated failure")
+
+
+def test_missing_workflow_scope_points_at_a_new_key() -> None:
+    """Reactive-only: this repo has just proven it needs `workflow` on top
+    of `repo`, so — unlike the default connect flow — it's fine to point at
+    a new key with that scope added."""
     hint = next_step_for_error(_WORKFLOW_SCOPE)
     assert hint is not None
-    assert "워크플로" in hint
+    assert "workflow" in hint
+    assert "새 키" in hint
     assert "인터넷" not in hint
-    assert "새 키" not in hint
-    assert "workflow」 권한" not in hint
 
 
 def test_generic_send_failure_still_falls_back() -> None:

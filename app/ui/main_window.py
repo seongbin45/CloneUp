@@ -64,6 +64,7 @@ from app.ui.login_dialog import (
     ConnectGitHubWizard,
     parse_scopes_from_missing_repo_message,
     show_missing_repo_help,
+    show_missing_workflow_scope_help,
 )
 from app.ui.publish_worker import LoginWorker, PatLoginWorker, PublishWorker
 from app.ui.commit_history_dialog import (
@@ -73,7 +74,7 @@ from app.ui.commit_history_dialog import (
 from app.ui.settings_dialog import show_settings
 from app.ui.success_dialog import show_clone_success, show_publish_success
 from app.ui.tip_card import install_tip_card
-from app.util.next_action import format_next_step_line
+from app.util.next_action import format_next_step_line, is_missing_workflow_scope_error
 from app.ui.onboarding_dialog import show_onboarding
 from app.ui.settings_store import (
     load_hide_real_email,
@@ -1320,6 +1321,15 @@ class MainController(QObject):
             if show_missing_repo_help(
                 self.window, current_scopes=scopes, offer_reconnect=True
             ):
+                self.on_login()
+            return
+
+        # Push rejected: repo has .github/workflows/* but the PAT lacks
+        # `workflow`. Reactive-only dedicated help (see next_action.py) —
+        # this repo has just proven it needs the scope, unlike the default
+        # connect flow which stays `repo`-only.
+        if is_missing_workflow_scope_error(message) and not self._busy():
+            if show_missing_workflow_scope_help(self.window, offer_reconnect=True):
                 self.on_login()
             return
 

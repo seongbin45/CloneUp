@@ -29,6 +29,16 @@ PAT_CREATE_URL = (
 )
 PAT_LIST_URL = "https://github.com/settings/tokens"
 
+# Only used by show_missing_workflow_scope_help below — a *reactive* dialog
+# shown after a push actually fails for lacking `workflow`. Never used by
+# the default connect wizard (_page_make_key), which stays `repo`-only:
+# most repos don't have .github/workflows/*, so asking for this up front
+# would be requesting a broader scope than the app needs.
+WORKFLOW_PAT_CREATE_URL = (
+    "https://github.com/settings/tokens/new"
+    "?scopes=repo,workflow&description=CloneUp"
+)
+
 
 def show_missing_repo_help(
     parent: QWidget | None,
@@ -129,6 +139,101 @@ def parse_scopes_from_missing_repo_message(message: str) -> str:
         if line.startswith("이 키에 있던 권한:"):
             return line.split(":", 1)[-1].strip()
     return ""
+
+
+def show_missing_workflow_scope_help(
+    parent: QWidget | None,
+    *,
+    offer_reconnect: bool = True,
+) -> bool:
+    """
+    Short, scannable dialog for a push that failed because the repo has
+    .github/workflows/*.yml files and the PAT lacks `workflow` on top of
+    `repo`. Reactive only — shown after a real push failure proves this
+    specific repo needs the scope, never suggested up front (most repos
+    don't have workflow files, so the default connect flow stays `repo`-only).
+
+    Returns True if user chose to open the connect wizard again.
+    """
+    p = active_palette()
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("워크플로 파일 권한")
+    dlg.setModal(True)
+    dlg.setMinimumWidth(400)
+    dlg.setMaximumWidth(440)
+    dlg.setStyleSheet(_dialog_style(p))
+
+    title = QLabel("워크플로 파일이 있어 권한이 하나 더 필요해요")
+    title.setObjectName("wizTitle")
+    title.setWordWrap(True)
+
+    why = QLabel(
+        "이 폴더에 .github/workflows 파일이 있습니다. "
+        "이 파일을 바꾸려면 「repo」 말고 「workflow」 권한도 있어야 합니다."
+    )
+    why.setObjectName("wizLead")
+    why.setWordWrap(True)
+
+    steps = QLabel(
+        "1. 아래에서 새 키 만들기 (repo · workflow 미리 체크됨)\n"
+        "2. 만료 90일 권장\n"
+        "3. 생성 → 복사 → 다시 연결"
+    )
+    steps.setObjectName("wizBox")
+    steps.setWordWrap(True)
+
+    detail = _DetailToggle(
+        "예전 키에는 권한을 나중에 붙일 수 없습니다. 새 키를 만드세요.\n"
+        "워크플로 파일이 없는 저장소라면 이 권한은 필요 없습니다 — "
+        "그래서 기본 연결 화면에서는 요청하지 않습니다."
+    )
+
+    btn_create = QPushButton("1. 새 키 만들기")
+    btn_create.setObjectName("btnPrimary")
+    btn_create.setDefault(True)
+    btn_create.clicked.connect(
+        lambda: QDesktopServices.openUrl(QUrl(WORKFLOW_PAT_CREATE_URL))
+    )
+
+    reconnect = {"go": False}
+
+    def _reconnect() -> None:
+        reconnect["go"] = True
+        dlg.accept()
+
+    btn_again = QPushButton("3. 다시 연결")
+    btn_again.setObjectName("btnPrimary")
+    if offer_reconnect:
+        btn_again.clicked.connect(_reconnect)
+    else:
+        btn_again.hide()
+
+    btn_close = QPushButton("닫기")
+    btn_close.setObjectName("btnGhost")
+    btn_close.clicked.connect(dlg.reject)
+
+    actions = QHBoxLayout()
+    actions.setSpacing(8)
+    actions.addWidget(btn_create, 1)
+    if offer_reconnect:
+        actions.addWidget(btn_again, 1)
+
+    bottom = QHBoxLayout()
+    bottom.addWidget(btn_close)
+    bottom.addStretch(1)
+
+    lay = QVBoxLayout(dlg)
+    lay.setContentsMargins(16, 14, 16, 12)
+    lay.setSpacing(8)
+    lay.addWidget(title)
+    lay.addWidget(why)
+    lay.addWidget(steps)
+    lay.addLayout(actions)
+    lay.addWidget(detail)
+    lay.addLayout(bottom)
+
+    dlg.exec()
+    return bool(reconnect["go"])
 
 
 def _dialog_style(p: Palette) -> str:
