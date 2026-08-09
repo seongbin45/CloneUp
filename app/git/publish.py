@@ -349,8 +349,10 @@ def publish_local_to_existing_remote(
             # surface friendly text without token
             detail = mask_secrets_in_text(str(e))
             raise PublishError(
-                "GitHub로 보내기에 실패했습니다.\n"
-                "인터넷과 「GitHub: 연결」을 확인한 뒤 다시 올려 보세요."
+                "GitHub로 보내기에 실패했습니다."
+                # No generic "check internet" guess here — the UI layer
+                # (app/util/next_action.py) derives a "다음: …" line from
+                # the git detail below, which is often more specific.
                 + (f"\n\n(참고)\n{detail[:500]}" if detail else "")
             ) from e
     finally:

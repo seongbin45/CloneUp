@@ -121,6 +121,28 @@ def next_step_for_error(message: str) -> str | None:
     if "staging" in low or "staged" in low or "스테이징" in msg or "올릴 파일이 없" in msg:
         return "폴더에 파일을 넣었는지, 무시 목록에 전부 들어가지 않았는지 확인하세요."
 
+    # Push rejected — local branch is behind remote (needs a pull first).
+    # Checked before the generic "보내기에 실패" fallback below, since git's
+    # raw stderr (always non-fast-forward here) gets embedded in the message.
+    if "non-fast-forward" in low or (
+        "rejected" in low and "behind" in low and ("remote" in low or "받아오기" in msg)
+    ):
+        return "먼저 「받아오기」로 GitHub의 최신 내용을 받은 뒤 다시 보내세요."
+
+    # PAT lacks `workflow` scope — blocks pushing .github/workflows/*.yml.
+    # This app only ever requests `repo` (see PAT_CREATE_URL in
+    # login_dialog.py) — asking users to add `workflow` on top of that
+    # would be requesting a broader scope than the app needs, which is
+    # against GitHub's API terms. So: name the real limitation instead of
+    # routing around it.
+    if "without `workflow` scope" in msg or (
+        "personal access token" in low and "workflow" in low and "scope" in low
+    ):
+        return (
+            "이 앱의 GitHub 키로는 워크플로 파일(.github/workflows/…)을 바꿀 수 없습니다. "
+            "그 파일은 GitHub 웹사이트에서 직접 고치거나, 이번에는 커밋에서 빼고 다시 시도하세요."
+        )
+
     # Send/receive failed (Korean lead sentences)
     if "보내기에 실패" in msg or "받아오기에 실패" in msg:
         return "인터넷과 「GitHub: 연결」을 확인한 뒤 다시 시도하세요."

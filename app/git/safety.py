@@ -134,8 +134,14 @@ _CONTENT_SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("aws_access_key", re.compile(r"\b(AKIA[0-9A-Z]{16})\b")),
     (
         "private_key",
+        # Requires a matching END line, not just the header — a README
+        # explaining PEM format (or showing the header as an example) would
+        # otherwise hard-block forever, since this kind has no allow_secrets
+        # bypass. A real leaked key always has both BEGIN and END.
         re.compile(
             r"-----BEGIN (?:RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY-----"
+            r"[\s\S]*?"
+            r"-----END (?:RSA |OPENSSH |EC |DSA |ENCRYPTED )?PRIVATE KEY-----"
         ),
     ),
     ("slack_token", re.compile(r"\b(xox[baprs]-[A-Za-z0-9-]{10,})\b")),

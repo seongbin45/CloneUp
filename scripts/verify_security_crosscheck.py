@@ -193,13 +193,25 @@ def main() -> int:
     (td / "ok.txt").write_text("hello\n", encoding="utf-8")
     (td / "tok.txt").write_text("ghp_" + ("e" * 36) + "\n", encoding="utf-8")
     (td / "pem.txt").write_text(
-        "-----BEGIN RSA PRIVATE KEY-----\nabc\n", encoding="utf-8"
+        "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\n",
+        encoding="utf-8",
+    )
+    # Regression: README merely mentioning the PEM header (e.g. explaining
+    # key format) must NOT hard-block — only a real BEGIN...END block should.
+    (td / "README.md").write_text(
+        "Example: -----BEGIN RSA PRIVATE KEY----- is the header line.\n",
+        encoding="utf-8",
     )
     (td / ".env").write_text("K=1\n", encoding="utf-8")
     hits = scan_secret_in_contents(td)
     kinds = {h.kind for h in hits}
     check("F1 content github_token", "github_token" in kinds, str(kinds))
     check("F2 content private_key", "private_key" in kinds, str(kinds))
+    check(
+        "F2b header-only mention (no END) is not flagged",
+        not any(h.path == "README.md" for h in hits),
+        str([h.path for h in hits if h.kind == "private_key"]),
+    )
     check(
         "F3 content samples masked",
         all("ghp_eeee" not in h.sample for h in hits),

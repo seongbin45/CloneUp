@@ -241,8 +241,10 @@ def pull_repo(folder: Path, *, token: str | None = None) -> str:
                     + _git_detail(out)
                 )
             raise SyncError(
-                "GitHub에서 받아오기에 실패했습니다.\n"
-                "인터넷과 「GitHub: 연결」을 확인한 뒤 다시 시도하세요."
+                "GitHub에서 받아오기에 실패했습니다."
+                # No generic "check internet" guess here — the UI layer
+                # (app/util/next_action.py) derives a "다음: …" line from
+                # the git detail below, which is often more specific.
                 + _git_detail(out)
             )
         if out and ("Already up to date" in out or "이미 업데이트" in out):
@@ -345,8 +347,8 @@ def commit_and_push(
         out = ((r.stdout or "") + "\n" + (r.stderr or "")).strip()
         if r.returncode != 0:
             raise SyncError(
-                "GitHub로 보내기에 실패했습니다.\n"
-                "인터넷과 「GitHub: 연결」을 확인한 뒤 다시 시도하세요."
+                "GitHub로 보내기에 실패했습니다."
+                # See note above — next_action.py supplies the "다음: …" line.
                 + _git_detail(out)
             )
         return "GitHub로 보내기가 끝났습니다."
