@@ -63,12 +63,12 @@ _STEPS: tuple[_Step, ...] = (
     _Step(
         "cost",
         "무엇이 대가를 치르는지 먼저 보세요",
-        "대부분의 동작은 잃는 것이 없습니다. 조심할 것은 둘뿐입니다.",
+        "대부분의 동작은 잃는 것이 없습니다. 조심할 것은 하나뿐입니다.",
     ),
     _Step(
         "undo",
-        "되돌리는 방법은 두 가지입니다",
-        "이름은 비슷하지만 대가가 전혀 다릅니다.",
+        "되돌리기를 누르면 무슨 일이 생기나요",
+        "예전 내용을 되살린 새 커밋이 하나 더 쌓일 뿐입니다.",
     ),
     _Step(
         "safety",
@@ -87,16 +87,10 @@ _COST_ROWS: tuple[tuple[str, str, str, bool], ...] = (
         True,
     ),
     (
-        "기록 남기고 되돌리기",
+        "되돌리기",
         "예전 내용이 돌아옵니다",
         "기록이 한 줄 길어집니다",
         False,
-    ),
-    (
-        "기록 지우고 되돌리기",
-        "기록이 깔끔해집니다",
-        "남의 사본이 어긋나고, 되돌릴 수 없습니다",
-        True,
     ),
 )
 
@@ -609,7 +603,7 @@ class OnboardingDialog(QDialog):
         grid.setColumnStretch(2, 20)
         lay.addLayout(grid)
         foot = QLabel(
-            "대가를 치르는 것은 굵게 표시된 둘뿐입니다. 나머지는 마음 놓고 하셔도 됩니다."
+            "대가를 치르는 것은 굵게 표시된 하나뿐입니다. 나머지는 마음 놓고 하셔도 됩니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
@@ -618,23 +612,23 @@ class OnboardingDialog(QDialog):
         return w
 
     def _page_undo(self, p: Palette) -> QWidget:
+        """
+        되돌리기는 한 가지 방법뿐입니다 — 기록을 지우는 방식(강제 push)은
+        남의 사본을 깨뜨릴 수 있는 유일한 동작이라 이 앱에서 제외했습니다.
+        이전엔 두 방법을 나란히 비교했지만, 없는 기능을 가르치는 셈이라
+        하나로 정리했습니다.
+        """
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(18)
-        row = QHBoxLayout()
-        row.setSpacing(18)
-        # recommended
-        a = QFrame()
-        a.setObjectName("obCard")
-        al = QVBoxLayout(a)
-        al.setContentsMargins(20, 22, 20, 22)
-        al.setSpacing(11)
-        t1 = QLabel("기본 · 권장")
-        t1.setStyleSheet(
-            f"font-size: 11.5px; font-weight: 600; color: {p.primary};"
-        )
-        h1 = QLabel("기록을 남기고 되돌리기")
+
+        card = QFrame()
+        card.setObjectName("obCard")
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(20, 22, 20, 22)
+        cl.setSpacing(11)
+        h1 = QLabel("기록을 남기고 되돌립니다")
         h1.setStyleSheet(
             f"font-size: 15px; font-weight: 600; color: {p.text};"
         )
@@ -650,47 +644,13 @@ class OnboardingDialog(QDialog):
             f"font-size: 12.5px; color: {p.text_secondary}; "
             f"padding-top: 11px; border-top: 1px solid {p.border_soft};"
         )
-        al.addWidget(t1)
-        al.addWidget(h1)
-        al.addWidget(b1)
-        al.addStretch(1)
-        al.addWidget(f1)
-        # advanced
-        b = QFrame()
-        b.setObjectName("obWarnCard")
-        bl = QVBoxLayout(b)
-        bl.setContentsMargins(20, 22, 20, 22)
-        bl.setSpacing(11)
-        t2 = QLabel("고급 · 주의")
-        t2.setStyleSheet(
-            f"font-size: 11.5px; font-weight: 600; color: {p.warn_text};"
-        )
-        h2 = QLabel("기록까지 지우고 되돌리기")
-        h2.setStyleSheet(
-            f"font-size: 15px; font-weight: 600; color: {p.text};"
-        )
-        h2.setWordWrap(True)
-        b2 = QLabel(
-            "커밋을 아예 없앱니다. 이미 올린 커밋이라면 "
-            "그 사본을 받아 간 사람의 폴더가 어긋납니다."
-        )
-        b2.setWordWrap(True)
-        b2.setObjectName("obBody")
-        f2 = QLabel("대가: 되돌릴 수 없습니다")
-        f2.setStyleSheet(
-            f"font-size: 12.5px; font-weight: 600; color: {p.warn_text}; "
-            f"padding-top: 11px; border-top: 1px solid {p.warn_border};"
-        )
-        bl.addWidget(t2)
-        bl.addWidget(h2)
-        bl.addWidget(b2)
-        bl.addStretch(1)
-        bl.addWidget(f2)
-        row.addWidget(a, 1)
-        row.addWidget(b, 1)
-        lay.addLayout(row)
+        cl.addWidget(h1)
+        cl.addWidget(b1)
+        cl.addWidget(f1)
+        lay.addWidget(card)
+
         foot = QLabel(
-            "어느 쪽을 고르든, 실행 직전에 무엇이 바뀌는지 파일 목록으로 먼저 보여드립니다."
+            "실행 직전에 무엇이 바뀌는지 파일 목록으로 먼저 보여드립니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
@@ -801,7 +761,6 @@ class OnboardingDialog(QDialog):
 
     @staticmethod
     def _qss(p: Palette) -> str:
-        warn_bg = "#fbf6ee" if p.name == "light" else p.bg_hint
         return f"""
         QDialog {{
             background: {p.bg_app};
@@ -859,12 +818,6 @@ class OnboardingDialog(QDialog):
         QFrame#obCard {{
             background: {p.bg_muted};
             border: 1px solid {p.border_soft};
-            border-radius: 8px;
-        }}
-        QFrame#obWarnCard {{
-            background: {warn_bg};
-            border: 1px solid {p.warn_border};
-            border-left: 4px solid {p.warn_dot};
             border-radius: 8px;
         }}
         QPushButton#obPrimary {{

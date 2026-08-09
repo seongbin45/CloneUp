@@ -311,6 +311,8 @@ class ConnectGitHubWizard(QDialog):
         detail = _DetailToggle(
             "키 = 비밀번호 대용 출입증. 채팅·캡처에 올리지 마세요.\n"
             "이 컴퓨터에만 저장됩니다. 만료되면 새 키가 필요합니다.\n"
+            "저장소(repo) 권한은 이 앱에서 쓴 폴더뿐 아니라, 내 GitHub의 "
+            "모든 저장소(비공개 포함)를 읽고 쓸 수 있는 넓은 권한입니다.\n"
             "GitHub 영문 화면 단어: Expiration · repo · Generate · Copy."
         )
 
