@@ -741,20 +741,23 @@ class OnboardingDialog(QDialog):
                 f"background: {p.primary_hover}; border: none; "
                 f"border-top-left-radius: 7px; border-bottom-left-radius: 7px;"
             )
-            inner.setStyleSheet("background: transparent;")
+            inner.setStyleSheet("background: transparent; border: none;")
             badge.setText(badge_text)
             badge.setStyleSheet(
                 f"font-size: 11px; font-weight: 600; color: {badge_fg}; "
-                f"background: {badge_bg}; padding: 4px 10px; border-radius: 4px;"
+                f"background: {badge_bg}; padding: 4px 10px; border-radius: 4px; "
+                f"border: none;"
             )
+            # ✓ only: small filled chip. Body/meta: fill only, no stroke.
             pick.setText("✓")
             pick.setStyleSheet(
-                f"font-size: 15px; font-weight: 700; color: {on}; "
-                f"background: transparent;"
+                f"font-size: 14px; font-weight: 700; color: {p.primary}; "
+                f"background: {on}; padding: 2px 0; border-radius: 4px; "
+                f"border: none;"
             )
             title.setStyleSheet(
                 f"font-size: 16px; font-weight: 600; color: {on}; "
-                f"background: transparent;"
+                f"background: transparent; border: none;"
             )
             body_panel.setStyleSheet(
                 f"QFrame#obHmBodyPanel {{ background: {panel}; "
@@ -762,14 +765,15 @@ class OnboardingDialog(QDialog):
             )
             body.setStyleSheet(
                 f"font-size: 12.5px; color: {on_body}; line-height: 1.45; "
-                f"background: transparent;"
+                f"background: transparent; border: none;"
             )
             meta_panel.setStyleSheet(
                 f"QFrame#obHmMetaPanel {{ background: {panel_meta}; "
                 f"border: none; border-radius: 6px; }}"
             )
             meta.setStyleSheet(
-                f"font-size: 12.5px; color: {on_meta}; background: transparent;"
+                f"font-size: 12.5px; color: {on_meta}; "
+                f"background: transparent; border: none;"
             )
         else:
             card.setStyleSheet(
@@ -780,34 +784,38 @@ class OnboardingDialog(QDialog):
                 f"background: {p.border_divider}; border: none; "
                 f"border-top-left-radius: 7px; border-bottom-left-radius: 7px;"
             )
-            inner.setStyleSheet("background: transparent;")
+            inner.setStyleSheet("background: transparent; border: none;")
             badge.setText(badge_text)
             badge.setStyleSheet(
                 f"font-size: 11px; font-weight: 600; color: {p.text_muted}; "
-                f"background: {p.bg_muted}; padding: 4px 10px; border-radius: 4px;"
+                f"background: {p.bg_muted}; padding: 4px 10px; border-radius: 4px; "
+                f"border: none;"
             )
             pick.setText("")
             pick.setStyleSheet(
-                f"font-size: 15px; color: {p.text_faint}; background: transparent;"
+                f"font-size: 15px; color: {p.text_faint}; "
+                f"background: transparent; border: none;"
             )
             title.setStyleSheet(
                 f"font-size: 16px; font-weight: 600; color: {p.text}; "
-                f"background: transparent;"
+                f"background: transparent; border: none;"
             )
+            # Same fill structure as selected, but no outline strokes
             body_panel.setStyleSheet(
                 f"QFrame#obHmBodyPanel {{ background: {p.bg_muted}; "
-                f"border: 1px solid {p.border_soft}; border-radius: 6px; }}"
+                f"border: none; border-radius: 6px; }}"
             )
             body.setStyleSheet(
                 f"font-size: 12.5px; color: {p.text_secondary}; line-height: 1.45; "
-                f"background: transparent;"
+                f"background: transparent; border: none;"
             )
             meta_panel.setStyleSheet(
                 f"QFrame#obHmMetaPanel {{ background: {p.bg_hint}; "
-                f"border: 1px solid {p.border_soft}; border-radius: 6px; }}"
+                f"border: none; border-radius: 6px; }}"
             )
             meta.setStyleSheet(
-                f"font-size: 12.5px; color: {p.text_muted}; background: transparent;"
+                f"font-size: 12.5px; color: {p.text_muted}; "
+                f"background: transparent; border: none;"
             )
 
     def _page_cost(self, p: Palette) -> QWidget:
