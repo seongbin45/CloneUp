@@ -225,8 +225,10 @@ class SettingsDialog(QDialog):
 
         self.setWindowTitle("설정")
         self.setModal(True)
-        self.setMinimumSize(820, 540)
-        self.resize(880, 620)
+        # Wide enough for account card: meta + 「다시 로그인」「로그아웃」「권한 다시 확인」
+        # in one horizontal row (do not stack buttons).
+        self.setMinimumSize(960, 560)
+        self.resize(1020, 660)
         self.setStyleSheet(self._dialog_qss(p))
 
         root = QVBoxLayout(self)
@@ -408,13 +410,29 @@ class SettingsDialog(QDialog):
             "세분 키: 목록이 안 와 「권한 확인 불가」로 남을 수 있습니다."
         )
         self._btn_refresh_scopes.clicked.connect(self._do_refresh_scopes)
+        # Keep a single horizontal row — wider dialog fits full labels.
+        # Minimum size policy so Qt does not clip 「권한 다시 확인」.
+        btn_policy = QSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
+        )
+        for b in (
+            self._btn_relogin,
+            self._btn_logout,
+            self._btn_connect,
+            self._btn_refresh_scopes,
+        ):
+            b.setSizePolicy(btn_policy)
+            b.setMinimumWidth(0)  # allow style padding; sizeHint drives width
+        self._acct_title.setWordWrap(True)
+        self._acct_meta.setWordWrap(True)
         btns = QHBoxLayout()
         btns.setSpacing(8)
-        btns.addWidget(self._btn_relogin)
-        btns.addWidget(self._btn_logout)
-        btns.addWidget(self._btn_connect)
-        btns.addWidget(self._btn_refresh_scopes)
-        card_l.addLayout(btns)
+        btns.setContentsMargins(0, 0, 0, 0)
+        btns.addWidget(self._btn_relogin, 0)
+        btns.addWidget(self._btn_logout, 0)
+        btns.addWidget(self._btn_connect, 0)
+        btns.addWidget(self._btn_refresh_scopes, 0)
+        card_l.addLayout(btns, 0)
         lay.addWidget(self._acct_card)
 
         hint = QLabel(
