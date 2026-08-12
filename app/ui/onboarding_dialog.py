@@ -670,6 +670,19 @@ class OnboardingDialog(QDialog):
         )
 
     @staticmethod
+    def _history_mode_selected_fill(p: Palette) -> tuple[str, str]:
+        """
+        Soft brand fill when a history-mode card is selected.
+
+        Border-only selection was easy to miss next to two equal cards.
+        Soft wash (not solid primary) keeps body text readable.
+        Returns ``(background, meta_divider)``.
+        """
+        if getattr(p, "name", "light") == "dark":
+            return "#1a332c", "#2d5248"
+        return "#e8f3ef", "#b7d4c8"
+
+    @staticmethod
     def _style_history_mode_card(
         parts: dict, p: Palette, *, selected: bool
     ) -> None:
@@ -681,8 +694,9 @@ class OnboardingDialog(QDialog):
         badge_text = parts["badge_text"]
 
         if selected:
+            fill, meta_line = OnboardingDialog._history_mode_selected_fill(p)
             card.setStyleSheet(
-                f"QFrame {{ background: {p.bg_muted}; "
+                f"QFrame {{ background: {fill}; "
                 f"border: 2px solid {p.primary}; border-radius: 8px; }}"
             )
             badge.setText(badge_text)
@@ -698,11 +712,11 @@ class OnboardingDialog(QDialog):
             )
             meta.setStyleSheet(
                 f"font-size: 12.5px; color: {p.text_secondary}; "
-                f"padding-top: 12px; border-top: 1px solid {p.border_soft};"
+                f"padding-top: 12px; border-top: 1px solid {meta_line};"
             )
         else:
             card.setStyleSheet(
-                f"QFrame {{ background: {p.bg_muted}; "
+                f"QFrame {{ background: {p.bg_window}; "
                 f"border: 1px solid {p.border_soft}; border-radius: 8px; }}"
             )
             badge.setText(badge_text)
