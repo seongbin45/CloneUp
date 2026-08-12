@@ -56,9 +56,10 @@ from app.ui.settings_store import (
     save_last_publish_branch,
     save_secret_pii_scan_enabled,
 )
+from app.ui.git_terms_ko import GLOSSARY_ENTRIES
 from app.ui.theme import Palette, active_palette
 
-_NAV = ("계정", "올리기 기본값", "안전", "최근 폴더", "정보")
+_NAV = ("계정", "올리기 기본값", "안전", "최근 폴더", "용어 안내", "정보")
 
 # Exact phrase required to disable secret/PII scan (user must type it).
 SECRET_SCAN_OFF_PHRASE = "나는 위의 안내, 경고 사항을 모두 읽고 이해했습니다"
@@ -270,12 +271,14 @@ class SettingsDialog(QDialog):
         self._page_defaults = self._build_defaults(p)
         self._page_safety = self._build_safety(p)
         self._page_folders = self._build_folders(p)
+        self._page_terms = self._build_terms(p)
         self._page_about = self._build_about(p)
         for page in (
             self._page_account,
             self._page_defaults,
             self._page_safety,
             self._page_folders,
+            self._page_terms,
             self._page_about,
         ):
             self._stack.addWidget(page)
@@ -639,6 +642,62 @@ class SettingsDialog(QDialog):
         row.addWidget(self._btn_clear_recent)
         row.addWidget(note, 1)
         lay.addLayout(row)
+        return w
+
+    def _build_terms(self, p: Palette) -> QWidget:
+        """Read-only beginner glossary — product UI words kept as-is."""
+        w, lay = self._page_shell()
+        lay.setSpacing(14)
+        lay.addWidget(
+            self._heading(
+                "용어 안내",
+                "클론업 화면에 나오는 말을 쉽게 풀어 둡니다. "
+                "버튼·탭 이름은 바꾸지 않습니다. 시작 안내(도움말)와 같은 감각입니다.",
+            )
+        )
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setObjectName("setScroll")
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        host = QWidget()
+        host_l = QVBoxLayout(host)
+        host_l.setContentsMargins(0, 0, 0, 0)
+        host_l.setSpacing(10)
+
+        for term, one_line, detail in GLOSSARY_ENTRIES:
+            card = QFrame()
+            card.setObjectName("setCard")
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(15, 13, 15, 13)
+            cl.setSpacing(6)
+            t = QLabel(term)
+            t.setObjectName("setCardTitle")
+            one = QLabel(one_line)
+            one.setObjectName("setBody")
+            one.setWordWrap(True)
+            one.setStyleSheet(
+                f"font-size: 13px; font-weight: 500; color: {p.text};"
+            )
+            d = QLabel(detail)
+            d.setObjectName("setMeta")
+            d.setWordWrap(True)
+            d.setStyleSheet(f"font-size: 12px; color: {p.text_muted};")
+            cl.addWidget(t)
+            cl.addWidget(one)
+            cl.addWidget(d)
+            host_l.addWidget(card)
+
+        hint = QLabel(
+            "혼자 쓸 때도 어제 나에게 남기는 기록입니다. "
+            "협업은 그다음 이야기입니다."
+        )
+        hint.setObjectName("setMeta")
+        hint.setWordWrap(True)
+        host_l.addWidget(hint)
+        host_l.addStretch(1)
+        scroll.setWidget(host)
+        lay.addWidget(scroll, 1)
         return w
 
     def _build_about(self, p: Palette) -> QWidget:

@@ -250,10 +250,10 @@ def main() -> int:
         apply_palette(pal)
         try:
             dlg = SettingsDialog(None)
-            if dlg._stack.count() != 5:
+            if dlg._stack.count() != 6:
                 fail(f"설정 tabs {label}", f"count={dlg._stack.count()}")
             else:
-                ok(f"설정 5탭 {label}")
+                ok(f"설정 6탭 {label}")
             # safety tab switch exists
             if hasattr(dlg, "_sw_secret_scan") and hasattr(dlg, "_sw_hide_email"):
                 ok(f"설정 안전 스위치 {label}")

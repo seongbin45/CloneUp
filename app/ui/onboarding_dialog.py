@@ -377,14 +377,16 @@ class OnboardingDialog(QDialog):
                 lines=[
                     ("GitHub", "obMuted"),
                     ("seong/my-project", "obMono"),
-                    ("보관되고, 다른 곳에서 받을 수 있는 사본", "obBody"),
+                    ("집 밖 두 번째 서랍 — 보관·다른 곳에서 이어 쓰기", "obBody"),
                 ],
             ),
             1,
         )
         lay.addLayout(row)
         foot = QLabel(
-            "둘은 자동으로 맞춰지지 않습니다. 이 앱의 모든 버튼은 결국 이 화살표 둘 중 하나입니다."
+            "둘은 자동으로 맞춰지지 않습니다. "
+            "만들고 올리기·받기·동기화 버튼은 결국 이 화살표(올리기 / 받아오기) 둘 중 하나입니다. "
+            "서랍이 두 개여야 PC가 바뀌어도 기록을 이어 갈 수 있습니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
@@ -455,8 +457,9 @@ class OnboardingDialog(QDialog):
                 cl.setAlignment(line, Qt.AlignmentFlag.AlignVCenter)
         lay.addWidget(card)
         foot = QLabel(
-            "점 하나가 커밋 하나입니다. 커밋할 때마다 그 순간의 폴더 전체가 통째로 "
-            "저장되고, 언제든 그 점으로 돌아갈 수 있습니다. 자주 할수록 돌아갈 곳이 많아집니다."
+            "점 하나가 커밋 하나입니다. 잘 되는 순간을 사진(세이브)으로 남기지 않으면, "
+            "망가진 뒤에는 ‘어제 저녁 버전이 나았다’는 기억만 남습니다. "
+            "커밋할 때마다 그 순간의 폴더 전체가 통째로 남고, 자주 할수록 돌아갈 곳이 많아집니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
@@ -471,26 +474,27 @@ class OnboardingDialog(QDialog):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(14)
 
+        # Product words kept; metaphors only in body/why lines.
         rows: tuple[tuple[str, str, str], ...] = (
             (
                 "1 · 커밋",
-                "지금 폴더 상태를 한 점으로 남깁니다.",
-                "왜: 나중에 이 자리로 돌아올 수 있습니다.",
+                "지금 폴더 상태를 한 점(세이브·사진)으로 남깁니다.",
+                "왜: 나중에 이 자리로 돌아올 수 있습니다. 혼자여도 ‘어제 나’에게 남기는 기록입니다.",
             ),
             (
                 "2 · 만들고 올리기 / 올리고 보내기",
-                "그 기록을 GitHub에도 맞춥니다.",
-                "왜: 백업·공유·다른 PC에서 이어 쓰기.",
+                "그 기록을 GitHub(두 번째 서랍)에도 맞춥니다.",
+                "왜: 백업·공유·다른 PC에서 이어 쓰기. 파일을 지우는 이사가 아닙니다.",
             ),
             (
                 "3 · 받아오기",
                 "GitHub에 더 새 기록이 있으면 내 폴더로 가져옵니다.",
-                "왜: 혼자 쓰든 이어서 쓰든, 원격과 어긋나지 않게.",
+                "왜: 집 노트와 학교 노트를 맞추듯, 어느 쪽이 앞섰는지 보고 가져옵니다.",
             ),
             (
                 "4 · 다시 고치기",
-                "파일을 수정한 뒤 1번으로 돌아갑니다.",
-                "이 한 바퀴가 Git을 쓰는 이유의 전부입니다.",
+                "파일을 수정한 뒤 1번(커밋)으로 돌아갑니다.",
+                "이 한 바퀴가 Git을 쓰는 이유의 전부입니다. 클론업 탭은 이 루프를 나눈 것입니다.",
             ),
         )
         for title, body, why in rows:
@@ -517,9 +521,10 @@ class OnboardingDialog(QDialog):
             lay.addWidget(card)
 
         foot = QLabel(
-            "클론업 탭 이름만 보면 복잡해 보이지만, 하는 일은 위 루프입니다. "
-            "「충돌 취소」는 3번에서 겹쳤을 때 합치기 시도를 포기하는 비상 버튼이고, "
-            "「커밋 내역」은 1번으로 쌓인 점으로 돌아가 보는 도구입니다."
+            "「충돌」은 같은 줄을 양쪽에서 고쳐 자동으로 합치지 못해 멈춘 상태입니다. "
+            "「충돌 취소」는 그 합치기 시도를 포기하는 비상 버튼이고, "
+            "「커밋 내역」은 쌓인 점으로 돌아가 보거나(설정에 따라) 되돌리는 도구입니다. "
+            "둘은 다릅니다. 설정 > 용어 안내에서도 같은 설명을 볼 수 있습니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)

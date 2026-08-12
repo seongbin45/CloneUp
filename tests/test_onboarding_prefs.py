@@ -53,6 +53,23 @@ def test_onboarding_steps_count() -> None:
     ]
 
 
+def test_glossary_has_core_product_words() -> None:
+    """용어 안내 keeps real CloneUp labels (no renaming)."""
+    from app.ui.git_terms_ko import GLOSSARY_ENTRIES
+
+    terms = {t for t, _a, _b in GLOSSARY_ENTRIES}
+    for need in (
+        "커밋",
+        "만들고 올리기",
+        "받기",
+        "동기화",
+        "충돌 취소",
+        "커밋 내역",
+    ):
+        assert need in terms
+    assert len(GLOSSARY_ENTRIES) >= 8
+
+
 def test_history_revert_enabled_default_off() -> None:
     s = _settings()
     key = "history_revert_enabled"
