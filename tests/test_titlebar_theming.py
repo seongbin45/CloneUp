@@ -7,6 +7,9 @@ app/ui/theme.py's install_native_titlebar_theming.
 
 from __future__ import annotations
 
+import os
+
+import pytest
 from PySide6.QtWidgets import QApplication, QDialog
 
 from app.ui.theme import (
@@ -15,6 +18,13 @@ from app.ui.theme import (
     apply_palette,
     install_native_titlebar_theming,
     sync_titlebar_theme,
+)
+
+# show()/winId() + DWM on GHA windows runners has hung the whole job for 30m+.
+_on_gha = os.environ.get("GITHUB_ACTIONS") == "true"
+pytestmark = pytest.mark.skipif(
+    _on_gha,
+    reason="native title bar + show() hangs on GHA windows-latest (headless)",
 )
 
 

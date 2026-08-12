@@ -35,8 +35,12 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Pytest (P0/P1/P2 security)
-        # -o faulthandler_timeout: dump stacks if a test freezes
-        run: python -m pytest tests/ -v --tb=short -o faulthandler_timeout=60
+        # --timeout: fail a single stuck test instead of burning the job for hours
+        # faulthandler_timeout: dump stacks if a test freezes past that
+        run: >
+          python -m pytest tests/ -v --tb=short
+          --timeout=45 --timeout-method=thread
+          -o faulthandler_timeout=60
 
       - name: Git terms glossary lint
         run: python scripts/lint_git_terms.py app/ui/git_terms_ko.py
