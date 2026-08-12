@@ -9,6 +9,7 @@
 | [REFERENCES.md](REFERENCES.md) | **외부 기술 문서·유사 제품·내부 상태** 한눈에 (개발 시작 전 참고) |
 | [UI_SMOKE_CHECK.md](UI_SMOKE_CHECK.md) | **메뉴·버튼 오류 점검** 방법 + 최근 결과 (오프스크린 드라이버) |
 | [UX_GUIDANCE.md](UX_GUIDANCE.md) | 초심자 안내 4층 (팁 카드, G3 확인, 「다음:」) |
+| [GIT_FOR_BEGINNERS.md](GIT_FOR_BEGINNERS.md) | **Git을 초심자에게 와닿게** 설명하는 원칙 (제품 단어 유지) |
 | [DIFFERENTIATION.md](DIFFERENTIATION.md) | GitHub Desktop·Bitbucket 대비 **차별 가치**와 로드맵 |
 | [ORG_OAUTH_APP.md](ORG_OAUTH_APP.md) | **Org OAuth App 운영** 초보 체크리스트 (client_id 이전) |
 | [RELEASE_0.1.6.md](RELEASE_0.1.6.md) | **0.1.6** 사용자·배포 노트 (현재) |

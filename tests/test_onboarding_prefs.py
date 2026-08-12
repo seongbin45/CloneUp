@@ -59,15 +59,17 @@ def test_glossary_has_core_product_words() -> None:
 
     terms = {t for t, _a, _b in GLOSSARY_ENTRIES}
     for need in (
+        "왜 쓰나요?",
         "커밋",
         "만들고 올리기",
         "받기",
         "동기화",
         "충돌 취소",
         "커밋 내역",
+        "공개 / 비공개",
     ):
         assert need in terms
-    assert len(GLOSSARY_ENTRIES) >= 8
+    assert len(GLOSSARY_ENTRIES) >= 10
 
 
 def test_history_revert_enabled_default_off() -> None:
