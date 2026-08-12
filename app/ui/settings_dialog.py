@@ -10,8 +10,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtCore import QRectF, Qt, Signal, Slot
-from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPaintEvent
+from PySide6.QtCore import QRectF, QUrl, Qt, Signal, Slot
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -41,6 +41,7 @@ from app.auth.token_store import (
 )
 from app.git.runner import require_git
 from app.paths import app_root
+from app.ui.login_dialog import PAT_LIST_URL
 from app.ui.settings_store import (
     USER_GLOSSARY_DETAIL_MAX,
     USER_GLOSSARY_LINE_MAX,
@@ -410,13 +411,20 @@ class SettingsDialog(QDialog):
         self._btn_refresh_scopes = QPushButton("권한 다시 확인")
         self._btn_refresh_scopes.setObjectName("setSecondary")
         self._btn_refresh_scopes.setToolTip(
-            "GitHub에 물어 이 컴퓨터에 저장된 권한 목록을 맞춥니다.\n"
+            "지금 이 앱에 연결된 키의 권한만 GitHub에 물어 맞춥니다.\n"
             "classic 키: 웹에서 scope를 바꾼 뒤 이 버튼을 누르세요.\n"
-            "세분 키: 목록이 안 와 「권한 확인 불가」로 남을 수 있습니다."
+            "발급한 키 전체 목록은 「키 목록」에서 봅니다."
         )
         self._btn_refresh_scopes.clicked.connect(self._do_refresh_scopes)
-        # Keep a single horizontal row — wider dialog fits full labels.
-        # Minimum size policy so Qt does not clip 「권한 다시 확인」.
+        self._btn_pat_list = QPushButton("키 목록")
+        self._btn_pat_list.setObjectName("setSecondary")
+        self._btn_pat_list.setToolTip(
+            "브라우저에서 GitHub에 발급한 개인 액세스 토큰 목록을 엽니다.\n"
+            "classic / 세분 키를 확인하고 권한을 고칠 수 있습니다.\n"
+            "(키 문자열 자체는 보안상 다시 볼 수 없습니다.)"
+        )
+        self._btn_pat_list.clicked.connect(self._open_github_pat_list)
+        # Keep horizontal actions; wider dialog fits labels.
         btn_policy = QSizePolicy(
             QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
         )
@@ -425,18 +433,20 @@ class SettingsDialog(QDialog):
             self._btn_logout,
             self._btn_connect,
             self._btn_refresh_scopes,
+            self._btn_pat_list,
         ):
             b.setSizePolicy(btn_policy)
-            b.setMinimumWidth(0)  # allow style padding; sizeHint drives width
+            b.setMinimumWidth(0)
         self._acct_title.setWordWrap(True)
         self._acct_meta.setWordWrap(True)
-        # Logged-in order: 다시 로그인 → 권한 다시 확인 → 로그아웃
-        # (connect replaces the group when logged out)
+        # Logged-in: 다시 로그인 · 권한 다시 확인 · 키 목록 · 로그아웃
+        # Logged-out: GitHub 연결 · 키 목록
         btns = QHBoxLayout()
         btns.setSpacing(8)
         btns.setContentsMargins(0, 0, 0, 0)
         btns.addWidget(self._btn_relogin, 0)
         btns.addWidget(self._btn_refresh_scopes, 0)
+        btns.addWidget(self._btn_pat_list, 0)
         btns.addWidget(self._btn_logout, 0)
         btns.addWidget(self._btn_connect, 0)
         card_l.addLayout(btns, 0)
@@ -445,9 +455,9 @@ class SettingsDialog(QDialog):
         hint = QLabel(
             "로그아웃하면 이 컴퓨터에 저장된 토큰이 지워집니다. "
             "GitHub 쪽 승인까지 없애려면 GitHub 설정에서 따로 해제해야 합니다.\n"
-            "표시되는 「권한」은 이 PC에 저장된 값이며, 설정 열 때·「권한 다시 확인」·"
-            "올리기/동기화 때 GitHub와 맞춥니다. "
-            "classic 키는 웹에서 권한을 바꾼 뒤 「권한 다시 확인」을 누르면 됩니다."
+            "계정 카드의 「권한」은 지금 연결된 키 하나분입니다. "
+            "발급한 키 전체는 「키 목록」에서 봅니다. "
+            "웹에서 권한을 바꾼 뒤에는 「권한 다시 확인」을 누르세요."
         )
         hint.setObjectName("setBanner")
         hint.setWordWrap(True)
@@ -1012,6 +1022,7 @@ class SettingsDialog(QDialog):
             self._btn_logout.show()
             self._btn_connect.hide()
             self._btn_refresh_scopes.show()
+            self._btn_pat_list.show()
         else:
             self._acct_dot.setStyleSheet(f"color: {p.text_disabled}; font-size: 10px;")
             self._acct_title.setText("GitHub에 연결되지 않음")
@@ -1020,6 +1031,13 @@ class SettingsDialog(QDialog):
             self._btn_logout.hide()
             self._btn_connect.show()
             self._btn_refresh_scopes.hide()
+            # Key list is on GitHub account — useful even before CloneUp login.
+            self._btn_pat_list.show()
+
+    @Slot()
+    def _open_github_pat_list(self) -> None:
+        """Open GitHub's PAT list page (full key inventory lives only there)."""
+        QDesktopServices.openUrl(QUrl(PAT_LIST_URL))
 
     @Slot()
     def _do_relogin(self) -> None:
