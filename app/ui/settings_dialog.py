@@ -425,13 +425,15 @@ class SettingsDialog(QDialog):
             b.setMinimumWidth(0)  # allow style padding; sizeHint drives width
         self._acct_title.setWordWrap(True)
         self._acct_meta.setWordWrap(True)
+        # Logged-in order: 다시 로그인 → 권한 다시 확인 → 로그아웃
+        # (connect replaces the group when logged out)
         btns = QHBoxLayout()
         btns.setSpacing(8)
         btns.setContentsMargins(0, 0, 0, 0)
         btns.addWidget(self._btn_relogin, 0)
+        btns.addWidget(self._btn_refresh_scopes, 0)
         btns.addWidget(self._btn_logout, 0)
         btns.addWidget(self._btn_connect, 0)
-        btns.addWidget(self._btn_refresh_scopes, 0)
         card_l.addLayout(btns, 0)
         lay.addWidget(self._acct_card)
 
