@@ -142,7 +142,7 @@ def save_onboarding_done(done: bool = True) -> None:
 
 # ----- user glossary (설정 → 용어 안내) -----
 # Built-in GLOSSARY_ENTRIES stay in code; these are user-added extras only.
-USER_GLOSSARY_MAX = 40
+# No practical count cap — terms are short and local-only. Field lengths only.
 USER_GLOSSARY_TERM_MAX = 40
 USER_GLOSSARY_LINE_MAX = 80
 USER_GLOSSARY_DETAIL_MAX = 400
@@ -182,8 +182,6 @@ def load_user_glossary() -> list[tuple[str, str, str]]:
                 detail[:USER_GLOSSARY_DETAIL_MAX],
             )
         )
-        if len(out) >= USER_GLOSSARY_MAX:
-            break
     return out
 
 
@@ -197,14 +195,12 @@ def save_user_glossary(entries: list[tuple[str, str, str]]) -> None:
         if not t or not o:
             continue
         cleaned.append([t, o, d])
-        if len(cleaned) >= USER_GLOSSARY_MAX:
-            break
     _settings().setValue("user_glossary_entries", cleaned)
 
 
 def add_user_glossary_entry(term: str, one_line: str, detail: str = "") -> bool:
     """
-    Append one user term. Returns False if full, empty, or duplicate term name
+    Append one user term. Returns False if empty or duplicate term name
     (case-insensitive, against existing user entries only).
     """
     t = (term or "").strip()[:USER_GLOSSARY_TERM_MAX]
@@ -213,8 +209,6 @@ def add_user_glossary_entry(term: str, one_line: str, detail: str = "") -> bool:
     if not t or not o:
         return False
     cur = load_user_glossary()
-    if len(cur) >= USER_GLOSSARY_MAX:
-        return False
     low = t.casefold()
     if any(x[0].casefold() == low for x in cur):
         return False

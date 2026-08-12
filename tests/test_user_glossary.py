@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from app.ui.settings_store import (
-    USER_GLOSSARY_MAX,
     add_user_glossary_entry,
     load_user_glossary,
     remove_user_glossary_entry,
@@ -51,16 +50,18 @@ def test_user_glossary_empty_rejected() -> None:
             s.setValue(key, prev)
 
 
-def test_user_glossary_max_cap() -> None:
+def test_user_glossary_no_count_cap() -> None:
+    """Count is unlimited; only empty/duplicate names fail."""
     s = _settings()
     key = "user_glossary_entries"
     prev = s.value(key)
     try:
         s.remove(key)
-        bulk = [(f"t{i}", f"요약 {i}", "") for i in range(USER_GLOSSARY_MAX)]
+        bulk = [(f"t{i}", f"요약 {i}", "") for i in range(50)]
         save_user_glossary(bulk)
-        assert len(load_user_glossary()) == USER_GLOSSARY_MAX
-        assert not add_user_glossary_entry("extra", "더 이상 안 됨")
+        assert len(load_user_glossary()) == 50
+        assert add_user_glossary_entry("extra", "더 추가 가능")
+        assert len(load_user_glossary()) == 51
     finally:
         if prev is None:
             s.remove(key)

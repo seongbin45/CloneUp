@@ -44,7 +44,6 @@ from app.paths import app_root
 from app.ui.settings_store import (
     USER_GLOSSARY_DETAIL_MAX,
     USER_GLOSSARY_LINE_MAX,
-    USER_GLOSSARY_MAX,
     USER_GLOSSARY_TERM_MAX,
     add_user_glossary_entry,
     clear_recent_folders,
@@ -706,8 +705,7 @@ class SettingsDialog(QDialog):
         self._btn_add_term.setObjectName("setSecondary")
         self._btn_add_term.setFixedSize(36, 36)
         self._btn_add_term.setToolTip(
-            "용어 추가\n"
-            f"이 컴퓨터에만 저장됩니다 (최대 {USER_GLOSSARY_MAX}개)."
+            "용어 추가\n이 컴퓨터에만 저장됩니다."
         )
         self._btn_add_term.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_add_term.clicked.connect(self._on_add_glossary_term)
@@ -827,8 +825,7 @@ class SettingsDialog(QDialog):
         # Count line only when the user has registered at least one term.
         if n_user > 0:
             hint = QLabel(
-                f"내 용어 {n_user}/{USER_GLOSSARY_MAX}개 · "
-                "이 컴퓨터에만 저장됩니다."
+                f"내 용어 {n_user}개 · 이 컴퓨터에만 저장됩니다."
             )
             hint.setObjectName("setMeta")
             hint.setWordWrap(True)
@@ -836,7 +833,7 @@ class SettingsDialog(QDialog):
         lay.addStretch(1)
 
         if hasattr(self, "_btn_add_term") and self._btn_add_term is not None:
-            self._btn_add_term.setEnabled(n_user < USER_GLOSSARY_MAX)
+            self._btn_add_term.setEnabled(True)
 
     @Slot()
     def _on_add_glossary_term(self) -> None:
@@ -908,8 +905,8 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "추가하지 못함",
-                "이름이 비었거나, 이미 같은 이름이 있거나, "
-                f"최대 {USER_GLOSSARY_MAX}개에 도달했습니다.",
+                "이름이 비었거나, 이미 같은 이름이 있습니다.\n"
+                "다른 이름으로 다시 적어 주세요.",
             )
             return
         self._rebuild_terms_list()
