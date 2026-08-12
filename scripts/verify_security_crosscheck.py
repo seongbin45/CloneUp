@@ -38,11 +38,14 @@ def main() -> int:
 
     # --- imports (fail loud) ---
     import app.config as cfg
-    from app.auth.session import AuthError, login_device_flow
+    from app.auth import session as auth_session
+    from app.auth.session import AuthError, ensure_valid_token, login_device_flow
     from app.auth.token_store import (
         SCOPE_UNKNOWN,
         has_scope,
         is_scope_unknown,
+        normalize_scope_string,
+        parse_oauth_scopes,
         scopes_known,
     )
     from app.config import get_github_client_id, is_device_flow_allowed
@@ -91,6 +94,35 @@ def main() -> int:
             # pure logic: has_scope reads keyring; unit-test marker path
             False
         ),
+    )
+    # Comma-separated X-OAuth-Scopes (GitHub docs: "repo, user")
+    comma_parts = parse_oauth_scopes("gist, read:org, repo, workflow")
+    check(
+        "A9 comma X-OAuth-Scopes parse keeps repo",
+        "repo" in comma_parts and "read:org" in comma_parts,
+        str(comma_parts),
+    )
+    check(
+        "A10 normalize_scope_string spaces",
+        normalize_scope_string("repo, user") == "repo user",
+        normalize_scope_string("repo, user"),
+    )
+    # ensure_valid_token: live GET /user before classic scope gate
+    src_ensure = inspect.getsource(ensure_valid_token)
+    pos_api = src_ensure.find("get_authenticated_user")
+    pos_gate = src_ensure.find("scopes_known()")
+    check(
+        "A11 ensure_valid_token API before scope gate",
+        pos_api >= 0 and pos_gate > pos_api,
+        f"api@{pos_api} gate@{pos_gate}",
+    )
+    check(
+        "A12 refresh_scopes_from_github exported",
+        callable(getattr(auth_session, "refresh_scopes_from_github", None)),
+    )
+    check(
+        "A13 apply_oauth_scopes_from_user exported",
+        callable(getattr(auth_session, "apply_oauth_scopes_from_user", None)),
     )
 
     # ========== B. Log masking ==========

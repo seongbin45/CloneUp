@@ -169,19 +169,25 @@ def apply_oauth_scopes_from_user(token: str, user: dict) -> str:
         return SCOPE_UNKNOWN
     return (current or "").strip()
 
-def refresh_scopes_from_github() -> tuple[str | None, dict | None]:
+def refresh_scopes_from_github(
+    *,
+    timeout: float = 12,
+) -> tuple[str | None, dict | None]:
     """
     Live-refresh stored scopes via GET /user (for Settings display).
 
     Returns ``(scope_now, user_json)`` or ``(None, None)`` if no token /
     network/API failure (caller keeps showing last keyring value).
     On 401, deletes the token and returns ``(None, None)``.
+
+    Uses a shorter HTTP timeout than publish/sync so opening Settings does
+    not block the UI for a full 30s on a dead network.
     """
     token = load_token()
     if not token:
         return None, None
     try:
-        user = get_authenticated_user(token)
+        user = get_authenticated_user(token, timeout=timeout)
     except GitHubAPIError as e:
         if e.status == 401:
             print("권한 새로고침: 토큰 무효(401) → keyring 삭제")
@@ -189,7 +195,7 @@ def refresh_scopes_from_github() -> tuple[str | None, dict | None]:
             return None, None
         print(f"권한 새로고침 실패: {e}")
         return load_scope(), None
-    except Exception as e:  # network etc.
+    except Exception as e:  # network / timeout etc.
         print(f"권한 새로고침 실패: {e}")
         return load_scope(), None
 

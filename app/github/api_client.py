@@ -53,17 +53,24 @@ def _raise_for_status(resp: requests.Response) -> None:
     raise GitHubAPIError(resp.status_code, text, body=body)
 
 
-def get_authenticated_user(access_token: str) -> dict[str, Any]:
+def get_authenticated_user(
+    access_token: str,
+    *,
+    timeout: float = 30,
+) -> dict[str, Any]:
     """
     GET /user.
 
-    Also attaches `_oauth_scopes` from the X-OAuth-Scopes response header when
+    Also attaches ``_oauth_scopes`` from the X-OAuth-Scopes response header when
     present, so callers can persist granted scopes without re-login.
+
+    ``timeout`` is seconds for the HTTP call (Settings live refresh uses a
+    shorter value so a dead network does not freeze the UI for 30s).
     """
     resp = requests.get(
         f"{API_BASE}/user",
         headers=_auth_headers(access_token),
-        timeout=30,
+        timeout=timeout,
     )
     _raise_for_status(resp)
     data = resp.json()

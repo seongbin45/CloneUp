@@ -497,6 +497,9 @@ class MainController(QObject):
             on_prefs_changed=self._on_settings_prefs_changed,
             on_open_onboarding=self.on_help_onboarding,
         )
+        # Settings may live-refresh scopes or clear a 401 token; status row
+        # only reads keyring — re-paint after the dialog closes.
+        self._refresh_status_bar()
 
     def _on_settings_prefs_changed(self, what: str = "all") -> None:
         """

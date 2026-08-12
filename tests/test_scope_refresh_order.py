@@ -6,7 +6,8 @@ so Settings never saw GitHub's real scopes.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -101,3 +102,57 @@ def test_normalize_matches_github_docs_example() -> None:
     assert normalize_scope_string("gist, read:org, repo, workflow") == (
         "gist read:org repo workflow"
     )
+
+
+def test_refresh_scopes_401_clears_token() -> None:
+    from app.auth.session import refresh_scopes_from_github
+    from app.github.api_client import GitHubAPIError
+
+    with (
+        patch("app.auth.session.load_token", return_value="ghp_dead_token_xxxxx"),
+        patch(
+            "app.auth.session.get_authenticated_user",
+            side_effect=GitHubAPIError(401, "bad credentials"),
+        ),
+        patch("app.auth.session.delete_token") as delete,
+    ):
+        scope, user = refresh_scopes_from_github()
+    assert scope is None and user is None
+    delete.assert_called_once()
+
+
+def test_refresh_scopes_network_keeps_keyring() -> None:
+    from app.auth.session import refresh_scopes_from_github
+
+    with (
+        patch("app.auth.session.load_token", return_value="ghp_ok_token_xxxxx"),
+        patch(
+            "app.auth.session.get_authenticated_user",
+            side_effect=OSError("network down"),
+        ),
+        patch("app.auth.session.delete_token") as delete,
+        patch("app.auth.session.load_scope", return_value="repo"),
+    ):
+        scope, user = refresh_scopes_from_github()
+    assert scope == "repo"
+    assert user is None
+    delete.assert_not_called()
+
+
+def test_main_settings_menu_refreshes_status_after_close() -> None:
+    """Regression: settings may clear token (401) — status row must re-read keyring."""
+    src = (
+        Path(__file__).resolve().parents[1]
+        / "app"
+        / "ui"
+        / "main_window.py"
+    )
+    text = src.read_text(encoding="utf-8")
+    # Find on_settings_menu and require refresh after show_settings
+    start = text.find("def on_settings_menu")
+    assert start >= 0
+    chunk = text[start : start + 900]
+    assert "show_settings(" in chunk
+    assert "_refresh_status_bar()" in chunk
+    # refresh must appear after show_settings call site
+    assert chunk.find("_refresh_status_bar()") > chunk.find("show_settings(")
