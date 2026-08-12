@@ -32,6 +32,9 @@ jobs:
       - name: Pytest (P0/P1/P2 security)
         run: python -m pytest tests/ -v --tb=short
 
+      - name: Git terms glossary lint
+        run: python scripts/lint_git_terms.py app/ui/git_terms_ko.py
+
       - name: Security crosscheck
         run: python scripts/verify_security_crosscheck.py
 

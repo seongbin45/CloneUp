@@ -168,3 +168,21 @@ checkout 다의성·reflog·force push는 사실로만, 짧게 또는 범위 밖
 
 자리 비유 → P1–P4. 그래프 비유 → G1–G4.  
 검수 시 해당 유형 필수에 **직접 대입**. 형식만 채운 “전부 통과”는 의심.
+
+---
+
+## 9. 기계 검사 (`scripts/lint_git_terms.py`)
+
+**의미 타당성(비유가 시험에 통과하는지)은 스크립트가 판정하지 않는다.**  
+사람이 `METAPHORS` 레지스트리에 판정·근거를 적고, 도구는 **선언 일관성**과 텍스트 규칙을 본다.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\lint_git_terms.py app\ui\git_terms_ko.py
+```
+
+| 도구가 함 | 도구가 안 함 |
+|-----------|----------------|
+| 금지 어휘·부정형 시드, 메타 누수, 길이, 병기, UI 단어 | 비유가 “진짜로” 맞는 의미 판단 |
+| 필수 실패인데 사용 중(MT006), 미검증(MT004) | 의도적 완곡 우회(“보관본” 등) 전부 차단 |
+
+ERROR가 있으면 커밋·CI 실패. CI: `.github/workflows/ci.yml`.
