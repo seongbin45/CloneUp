@@ -600,26 +600,39 @@ class OnboardingDialog(QDialog):
         body: str,
         meta: str,
     ) -> dict:
-        """Selectable card matching undo/safety density (badge · title · body · meta)."""
+        """
+        Selectable card — same density as undo/safety, selection language from
+        시안 (warm paper + left primary bar), not a cool mint wash.
+        """
         card = _SelectableCard()
         card.setCursor(Qt.CursorShape.PointingHandCursor)
-        card.setMinimumHeight(200)
+        card.setMinimumHeight(204)
         card.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        lay = QVBoxLayout(card)
-        lay.setContentsMargins(20, 20, 20, 18)
+        outer = QHBoxLayout(card)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # Fixed-width accent rail — selected fills primary, idle stays quiet
+        rail = QFrame()
+        rail.setObjectName("obHmRail")
+        rail.setFixedWidth(4)
+        outer.addWidget(rail)
+
+        inner = QWidget()
+        lay = QVBoxLayout(inner)
+        lay.setContentsMargins(18, 20, 18, 18)
         lay.setSpacing(0)
 
         head = QHBoxLayout()
-        head.setSpacing(8)
+        head.setSpacing(10)
         badge_lab = QLabel(badge)
         badge_lab.setObjectName("obHmBadge")
         pick_lab = QLabel()
         pick_lab.setObjectName("obHmPick")
-        pick_lab.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
+        pick_lab.setFixedWidth(18)
+        pick_lab.setAlignment(Qt.AlignmentFlag.AlignCenter)
         head.addWidget(badge_lab, 0)
         head.addStretch(1)
         head.addWidget(pick_lab, 0)
@@ -633,7 +646,7 @@ class OnboardingDialog(QDialog):
         lay.addSpacing(8)
 
         body_lab = QLabel(body)
-        body_lab.setObjectName("obBody")
+        body_lab.setObjectName("obHmBody")
         body_lab.setWordWrap(True)
         lay.addWidget(body_lab)
         lay.addStretch(1)
@@ -644,15 +657,17 @@ class OnboardingDialog(QDialog):
         meta_lab.setWordWrap(True)
         lay.addWidget(meta_lab)
 
-        # Stash static labels for style refresh (badge text is fixed)
+        outer.addWidget(inner, 1)
+
         return {
             "card": card,
+            "rail": rail,
             "badge": badge_lab,
             "badge_text": badge,
             "pick": pick_lab,
             "title": title_lab,
+            "body": body_lab,
             "meta": meta_lab,
-            "p_seed": p,
         }
 
     def _set_history_mode(self, enabled: bool) -> None:
@@ -670,63 +685,67 @@ class OnboardingDialog(QDialog):
         )
 
     @staticmethod
-    def _history_mode_selected_fill(p: Palette) -> tuple[str, str]:
-        """
-        Soft brand fill when a history-mode card is selected.
-
-        Border-only selection was easy to miss next to two equal cards.
-        Soft wash (not solid primary) keeps body text readable.
-        Returns ``(background, meta_divider)``.
-        """
-        if getattr(p, "name", "light") == "dark":
-            return "#1a332c", "#2d5248"
-        return "#e8f3ef", "#b7d4c8"
-
-    @staticmethod
     def _style_history_mode_card(
         parts: dict, p: Palette, *, selected: bool
     ) -> None:
         card: _SelectableCard = parts["card"]
+        rail: QFrame = parts["rail"]
         badge: QLabel = parts["badge"]
         pick: QLabel = parts["pick"]
         title: QLabel = parts["title"]
+        body: QLabel = parts["body"]
         meta: QLabel = parts["meta"]
         badge_text = parts["badge_text"]
 
+        # Warm paper family only (bg_hint / bg_muted) — no cool mint hex.
+        # 시안 커밋 내역 banner: warm fill + primary left edge.
         if selected:
-            fill, meta_line = OnboardingDialog._history_mode_selected_fill(p)
             card.setStyleSheet(
-                f"QFrame {{ background: {fill}; "
-                f"border: 2px solid {p.primary}; border-radius: 8px; }}"
+                f"QFrame {{ background: {p.bg_hint}; "
+                f"border: 1px solid {p.primary}; border-radius: 8px; }}"
+            )
+            rail.setStyleSheet(
+                f"background: {p.primary}; border: none; "
+                f"border-top-left-radius: 7px; border-bottom-left-radius: 7px;"
             )
             badge.setText(badge_text)
             badge.setStyleSheet(
-                f"font-size: 11.5px; font-weight: 600; color: {p.primary};"
+                f"font-size: 11px; font-weight: 600; color: {p.text_on_primary}; "
+                f"background: {p.primary}; padding: 3px 9px; border-radius: 4px;"
             )
-            pick.setText("✓ 선택됨")
-            pick.setStyleSheet(
-                f"font-size: 12px; font-weight: 600; color: {p.primary};"
-            )
+            pick.setText("●")
+            pick.setStyleSheet(f"font-size: 13px; color: {p.primary};")
             title.setStyleSheet(
                 f"font-size: 16px; font-weight: 600; color: {p.text};"
             )
+            body.setStyleSheet(
+                f"font-size: 12.5px; color: {p.text_secondary}; line-height: 1.45;"
+            )
             meta.setStyleSheet(
                 f"font-size: 12.5px; color: {p.text_secondary}; "
-                f"padding-top: 12px; border-top: 1px solid {meta_line};"
+                f"padding-top: 12px; border-top: 1px solid {p.border_soft};"
             )
         else:
             card.setStyleSheet(
                 f"QFrame {{ background: {p.bg_window}; "
                 f"border: 1px solid {p.border_soft}; border-radius: 8px; }}"
             )
+            rail.setStyleSheet(
+                f"background: {p.border_divider}; border: none; "
+                f"border-top-left-radius: 7px; border-bottom-left-radius: 7px;"
+            )
             badge.setText(badge_text)
             badge.setStyleSheet(
-                f"font-size: 11.5px; font-weight: 600; color: {p.text_muted};"
+                f"font-size: 11px; font-weight: 600; color: {p.text_muted}; "
+                f"background: {p.bg_muted}; padding: 3px 9px; border-radius: 4px;"
             )
-            pick.setText("클릭해서 고르기")
-            pick.setStyleSheet(f"font-size: 12px; color: {p.text_faint};")
+            pick.setText("○")
+            pick.setStyleSheet(f"font-size: 13px; color: {p.border_outline};")
             title.setStyleSheet(
                 f"font-size: 16px; font-weight: 600; color: {p.text};"
+            )
+            body.setStyleSheet(
+                f"font-size: 12.5px; color: {p.text_secondary}; line-height: 1.45;"
             )
             meta.setStyleSheet(
                 f"font-size: 12.5px; color: {p.text_muted}; "
