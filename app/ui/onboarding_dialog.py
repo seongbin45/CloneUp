@@ -697,33 +697,51 @@ class OnboardingDialog(QDialog):
         meta: QLabel = parts["meta"]
         badge_text = parts["badge_text"]
 
-        # Warm paper family only (bg_hint / bg_muted) — no cool mint hex.
-        # 시안 커밋 내역 banner: warm fill + primary left edge.
+        # Selected: solid brand fill + ✓ + type that contrasts on primary
+        # (light: near-white on deep teal; dark: deep ink on bright teal).
+        # Unselected: warm paper card, quiet chrome.
         if selected:
+            on = p.text_on_primary
+            if getattr(p, "name", "light") == "dark":
+                # Primary is bright — ink-on-bright (not white-on-bright)
+                on_body = "#14352b"
+                on_meta = "#1a4034"
+                on_line = "rgba(15, 35, 28, 0.28)"
+                badge_fg, badge_bg = p.primary_soft, on
+            else:
+                # Primary is deep — near-white type on brand fill
+                on_body = "#e8f4ef"
+                on_meta = "#d2eae0"
+                on_line = "rgba(255, 255, 255, 0.30)"
+                badge_fg, badge_bg = p.primary, on
+
             card.setStyleSheet(
-                f"QFrame {{ background: {p.bg_hint}; "
-                f"border: 1px solid {p.primary}; border-radius: 8px; }}"
+                f"QFrame {{ background: {p.primary}; "
+                f"border: 1px solid {p.primary_hover}; border-radius: 8px; }}"
             )
             rail.setStyleSheet(
-                f"background: {p.primary}; border: none; "
+                f"background: {p.primary_hover}; border: none; "
                 f"border-top-left-radius: 7px; border-bottom-left-radius: 7px;"
             )
             badge.setText(badge_text)
             badge.setStyleSheet(
-                f"font-size: 11px; font-weight: 600; color: {p.text_on_primary}; "
-                f"background: {p.primary}; padding: 3px 9px; border-radius: 4px;"
+                f"font-size: 11px; font-weight: 600; color: {badge_fg}; "
+                f"background: {badge_bg}; padding: 3px 9px; border-radius: 4px;"
             )
-            pick.setText("●")
-            pick.setStyleSheet(f"font-size: 13px; color: {p.primary};")
+            pick.setText("✓")
+            pick.setFixedWidth(22)
+            pick.setStyleSheet(
+                f"font-size: 15px; font-weight: 700; color: {on};"
+            )
             title.setStyleSheet(
-                f"font-size: 16px; font-weight: 600; color: {p.text};"
+                f"font-size: 16px; font-weight: 600; color: {on};"
             )
             body.setStyleSheet(
-                f"font-size: 12.5px; color: {p.text_secondary}; line-height: 1.45;"
+                f"font-size: 12.5px; color: {on_body}; line-height: 1.45;"
             )
             meta.setStyleSheet(
-                f"font-size: 12.5px; color: {p.text_secondary}; "
-                f"padding-top: 12px; border-top: 1px solid {p.border_soft};"
+                f"font-size: 12.5px; color: {on_meta}; "
+                f"padding-top: 12px; border-top: 1px solid {on_line};"
             )
         else:
             card.setStyleSheet(
@@ -739,8 +757,9 @@ class OnboardingDialog(QDialog):
                 f"font-size: 11px; font-weight: 600; color: {p.text_muted}; "
                 f"background: {p.bg_muted}; padding: 3px 9px; border-radius: 4px;"
             )
-            pick.setText("○")
-            pick.setStyleSheet(f"font-size: 13px; color: {p.border_outline};")
+            pick.setText("")
+            pick.setFixedWidth(22)
+            pick.setStyleSheet(f"font-size: 15px; color: {p.text_faint};")
             title.setStyleSheet(
                 f"font-size: 16px; font-weight: 600; color: {p.text};"
             )
