@@ -1,6 +1,8 @@
 # GUI 스모크 체크리스트 (push 직전)
 
-pytest는 GUI·실제 GitHub를 보증하지 않습니다. **본인 PC**에서 실행.
+pytest · lint · “종료 코드 0”은 **이 표를 채우지 않습니다.**  
+아래 네 칸은 **본인 PC에서 `main.py` + 실제 GitHub 키**로 돌린 수기만 유효합니다.  
+에이전트가 칸을 대신 채웠다면 무효로 보고 다시 하십시오.
 
 **결과와 무관하게 push 하십시오.** main ≠ Setup 릴리스.  
 실패 시: 아래 메모에 붙이고 `git push origin main` 한 뒤 수정.

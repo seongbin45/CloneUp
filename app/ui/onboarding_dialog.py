@@ -56,7 +56,9 @@ _STEPS: tuple[_Step, ...] = (
     _Step(
         "commits",
         "커밋은 내 서고에 남기는 기록입니다",
-        "책상 위 원고를 봉인해 꽂습니다(commit). 아직 출판사(GitHub)로 push한 것은 아닙니다.",
+        "책상 위 원고를 봉인해 꽂습니다(commit). "
+        "서고는 아직 내 컴퓨터 안입니다. "
+        "아직 출판사(GitHub)로 push한 것은 아닙니다.",
     ),
     _Step(
         "loop",
