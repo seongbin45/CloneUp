@@ -12,10 +12,15 @@ on:
 jobs:
   test:
     runs-on: windows-latest
+    # Prevent hung GUI/Qt tests from burning the free-minute pool for hours
+    timeout-minutes: 15
     env:
       # Avoid UnicodeEncodeError when scripts print Korean on cp1252 consoles
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
+      # Headless runner: without this, QApplication (titlebar / clone-history
+      # tests) can block forever waiting for a display — CI looked "stuck".
+      QT_QPA_PLATFORM: "offscreen"
     steps:
       - uses: actions/checkout@v4
 
@@ -30,7 +35,8 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Pytest (P0/P1/P2 security)
-        run: python -m pytest tests/ -v --tb=short
+        # -o faulthandler_timeout: dump stacks if a test freezes
+        run: python -m pytest tests/ -v --tb=short -o faulthandler_timeout=60
 
       - name: Git terms glossary lint
         run: python scripts/lint_git_terms.py app/ui/git_terms_ko.py
