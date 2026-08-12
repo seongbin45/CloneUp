@@ -217,6 +217,43 @@ def _delete_key(username: str) -> None:
         pass
 
 
+def parse_oauth_scopes(raw: str | None) -> list[str]:
+    """
+    Parse GitHub scope strings from ``X-OAuth-Scopes`` or keyring storage.
+
+    GitHub documents comma-separated values (optional spaces), e.g.
+    ``repo, user`` or ``gist, read:org, repo, workflow``. Some paths use
+    spaces only. Accept both; never split on ``:`` (scopes like ``read:org``).
+    """
+    if raw is None:
+        return []
+    text = str(raw).strip()
+    if not text:
+        return []
+    out: list[str] = []
+    for chunk in text.replace(",", " ").split():
+        s = chunk.strip()
+        if s:
+            out.append(s)
+    return out
+
+
+def normalize_scope_string(raw: str | None) -> str:
+    """
+    Canonical space-separated scope list (order preserved, first wins on dupes).
+
+    Use before saving so ``has_scope`` and UI never see trailing commas on names.
+    """
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for s in parse_oauth_scopes(raw):
+        if s in seen:
+            continue
+        seen.add(s)
+        ordered.append(s)
+    return " ".join(ordered)
+
+
 def is_scope_unknown(scope: str | None = None) -> bool:
     """
     True when we do not know classic OAuth scopes for this token.
@@ -240,14 +277,14 @@ def has_scope(required: str) -> bool:
     """
     Return True if the stored grant appears to include `required`.
 
-    GitHub returns space-separated scopes.
+    GitHub may return comma- or space-separated scopes in X-OAuth-Scopes.
     Unknown/missing stored scope → False (do not claim a permission we cannot prove).
     Callers that only need "token exists" should use ``scopes_known()`` / skip this gate.
     """
     granted = load_scope()
     if granted is None or is_scope_unknown(granted):
         return False
-    parts = set(granted.split())
+    parts = set(parse_oauth_scopes(granted))
     if required in parts:
         return True
     # repo implies public_repo for our purposes

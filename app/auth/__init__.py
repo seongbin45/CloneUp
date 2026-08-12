@@ -16,6 +16,8 @@ from .token_store import (
     load_connected_at,
     load_scope,
     load_token,
+    normalize_scope_string,
+    parse_oauth_scopes,
     save_token,
     token_age_info,
 )
@@ -36,6 +38,8 @@ __all__ = [
     "load_token",
     "login_device_flow",
     "login_with_pat",
+    "normalize_scope_string",
+    "parse_oauth_scopes",
     "run_device_flow",
     "save_token",
     "token_age_info",

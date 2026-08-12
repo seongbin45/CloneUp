@@ -12,6 +12,8 @@ from app.auth.token_store import (
     load_auth_kind,
     load_scope,
     load_token,
+    normalize_scope_string,
+    parse_oauth_scopes,
     save_token,
     scopes_known,
 )
@@ -52,12 +54,13 @@ def format_missing_repo_scope_error(current_scopes: str) -> str:
         "지금 붙여 넣은 키에는 그 권한이 없습니다.\n"
         "\n"
         "차근차근 다시 만들기\n"
-        "1) 「새 키 만들기」로 GitHub 페이지를 엽니다\n"
+        "1) 「새 키 만들기」로 GitHub 페이지를 엽니다 (Tokens classic)\n"
         "2) Expiration(만료일) — 90일 또는 없음 권장\n"
-        "3) 권한 목록에서 repo 앞에 체크 ✓\n"
+        "3) Select scopes에서 「repo」(Full control of private repositories)만 ✓\n"
+        "   · 하위 줄(repo:status, public_repo …)만 켜면 부족합니다\n"
         "4) Generate token(토큰 생성) 누르기\n"
         "5) 초록색으로 보이는 긴 키 전체를 복사\n"
-        "6) 「GitHub: 로그인」에서 그 새 키를 붙여 넣기\n"
+        "6) 「GitHub: 연결」에서 그 새 키를 붙여 넣기\n"
         "\n"
         f"이 키에 있던 권한: {scopes}\n"
         "※ 예전 키는 권한을 나중에 추가할 수 없습니다. 새 키를 만드세요."
@@ -142,14 +145,17 @@ def login_with_pat(token: str) -> tuple[str, dict]:
             ) from e
         raise AuthError(f"GitHub 확인 실패: {e}") from e
 
+    # GitHub X-OAuth-Scopes is often comma-separated: "repo, workflow"
+    # (docs + live API). Space-only split misreads "repo," as the name.
     header_scopes = (user.get("_oauth_scopes") or "").strip()
     want = get_github_scopes()
     needed = [s for s in want.split() if s]
 
     if header_scopes:
-        parts = set(header_scopes.split())
+        parts = set(parse_oauth_scopes(header_scopes))
+        display = normalize_scope_string(header_scopes) or header_scopes
         if "repo" in needed and "repo" not in parts:
-            raise AuthError(format_missing_repo_scope_error(header_scopes))
+            raise AuthError(format_missing_repo_scope_error(display))
         if needed and "repo" not in parts:
             missing = [
                 s
@@ -157,8 +163,8 @@ def login_with_pat(token: str) -> tuple[str, dict]:
                 if s not in parts and not (s == "public_repo" and "repo" in parts)
             ]
             if missing:
-                raise AuthError(format_missing_repo_scope_error(header_scopes))
-        store_scope = header_scopes
+                raise AuthError(format_missing_repo_scope_error(display))
+        store_scope = normalize_scope_string(header_scopes)
     else:
         # Fine-grained PAT often omits X-OAuth-Scopes — never invent "repo" (M3).
         print(
@@ -242,12 +248,13 @@ def ensure_valid_token(
         header_stripped = (header_scopes or "").strip()
         current = load_scope()
         if header_stripped:
-            if current != header_stripped:
-                save_token(token, header_stripped)
-                print(f"  scope from X-OAuth-Scopes: {header_stripped!r}")
+            normalized = normalize_scope_string(header_stripped)
+            if current != normalized:
+                save_token(token, normalized)
+                print(f"  scope from X-OAuth-Scopes: {normalized!r}")
             if needed and not all(has_scope(s) for s in needed):
                 raise AuthError(
-                    format_missing_repo_scope_error(header_stripped)
+                    format_missing_repo_scope_error(normalized or header_stripped)
                 )
         elif current is None or (current or "").strip() == "":
             # Empty header + no stored scope → mark unknown (not invent repo)

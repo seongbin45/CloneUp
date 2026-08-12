@@ -69,9 +69,10 @@ def show_missing_repo_help(
     why.setWordWrap(True)
 
     steps = QLabel(
-        "1. 아래에서 새 키 만들기\n"
-        "2. 저장소(repo) 체크 ✓  ·  만료 90일 권장\n"
-        "3. 생성 → 복사 → 다시 연결"
+        "1. 아래에서 새 키 만들기 (Tokens classic)\n"
+        "2. 「repo」 한 줄만 체크 ✓  (Full control of private repositories)\n"
+        "   · repo:status / public_repo 등 하위 줄만 켜면 부족합니다\n"
+        "3. 만료 90일 권장 · Generate → 복사 → 다시 연결"
     )
     steps.setObjectName("wizBox")
     steps.setWordWrap(True)
@@ -79,6 +80,8 @@ def show_missing_repo_help(
     scopes = (current_scopes or "").strip()
     detail_bits = [
         "예전 키에는 권한을 나중에 붙일 수 없습니다. 새 키를 만드세요.",
+        "Select scopes 목록이 길어도 CloneUp은 「repo」만 필요합니다 "
+        "(workflow 파일이 있을 때만 별도 안내로 workflow를 추가합니다).",
     ]
     if scopes and scopes not in ("(없음)",):
         detail_bits.append(f"이 키에 있던 권한: {scopes}")
@@ -405,10 +408,11 @@ class ConnectGitHubWizard(QDialog):
         lead.setWordWrap(True)
 
         box = QLabel(
-            "· 저장소 권한(repo) 켜기  (비공개 올리기용)\n"
+            "· Select scopes → 「repo」 한 줄만 체크 (Full control…)\n"
+            "  (repo:status / public_repo 만 켜면 부족합니다)\n"
             "· 가능하면 세분 키: 해당 저장소만 · Contents 읽기/쓰기\n"
             "· 만료일: 90일 또는 없음 권장\n"
-            "· 생성 후 초록 키 전체 복사"
+            "· Generate token 후 초록 키 전체 복사"
         )
         box.setObjectName("wizBox")
         box.setWordWrap(True)
@@ -418,7 +422,8 @@ class ConnectGitHubWizard(QDialog):
             "이 컴퓨터에만 저장됩니다. 만료되면 새 키가 필요합니다.\n"
             "저장소(repo) 권한은 이 앱에서 쓴 폴더뿐 아니라, 내 GitHub의 "
             "모든 저장소(비공개 포함)를 읽고 쓸 수 있는 넓은 권한입니다.\n"
-            "GitHub 영문 화면 단어: Expiration · repo · Generate · Copy."
+            "권한 목록이 길어 보여도 CloneUp 기본은 「repo」만 필요합니다.\n"
+            "GitHub 영문: Tokens (classic) · Expiration · repo · Generate · Copy."
         )
 
         btn_open = QPushButton("브라우저에서 만들기")
