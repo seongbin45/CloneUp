@@ -63,8 +63,9 @@ _STEPS: tuple[_Step, ...] = (
     ),
     _Step(
         "history_mode",
-        "커밋 내역을 어떻게 쓸지 골라 보세요",
-        "나중에 설정 > 안전에서 언제든 바꿀 수 있습니다.",
+        "커밋 내역은 어떻게 쓸까요?",
+        "목록을 보기만 할지, 예전 시점으로 되돌릴 수 있게 할지를 고릅니다. "
+        "기본은 확인만 하는 쪽입니다.",
     ),
     _Step(
         "cost",
@@ -534,9 +535,11 @@ class OnboardingDialog(QDialog):
 
     def _page_history_mode(self, p: Palette) -> QWidget:
         """
-        시안: CloneUp 커밋 내역.dc.읽기전용.html / .지워지지않습니다.html — the
-        user picks between the two here (and can change it later in
-        Settings > 안전). Clicking a card saves immediately.
+        시안: 커밋 내역 읽기전용 / 지워지지않습니다 — 두 모드를 고르는 단계.
+
+        Other onboarding pages use badge · title · body · footer-meta cards
+        (folders / undo / safety). This page used a thin click-to-select
+        pair that felt sparse; keep the same choice, match that density.
         """
         w = QWidget()
         lay = QVBoxLayout(w)
@@ -545,29 +548,41 @@ class OnboardingDialog(QDialog):
 
         row = QHBoxLayout()
         row.setSpacing(18)
-        self._readonly_card, self._readonly_tag = self._history_mode_card(
+        self._hm_readonly = self._history_mode_card(
             p,
+            badge="기본 · 권장",
             title="읽기 전용",
             body=(
                 "지난 시점의 내용을 확인만 합니다. "
-                "이 화면에서는 무엇을 눌러도 파일이 바뀌지 않습니다."
+                "이 창에서는 무엇을 눌러도 파일이 바뀌지 않습니다."
             ),
+            meta="목록 보기 · 파일은 그대로",
         )
-        self._readonly_card.clicked.connect(lambda: self._set_history_mode(False))
-        self._revert_card, self._revert_tag = self._history_mode_card(
+        self._hm_readonly["card"].clicked.connect(
+            lambda: self._set_history_mode(False)
+        )
+        self._hm_revert = self._history_mode_card(
             p,
-            title="지워지지 않습니다",
+            badge="선택",
+            title="되돌리기 허용",
             body=(
-                "예전 내용을 되살린 새 커밋을 쌓을 수 있습니다. "
-                "지금까지의 기록은 그대로 남고, 되돌린 뒤에 다시 되돌릴 수 있습니다."
+                "「이 시점으로 되돌리기」로 예전 내용을 되살린 "
+                "새 커밋을 하나 더 쌓을 수 있습니다. "
+                "지금까지의 기록은 그대로 남습니다."
             ),
+            meta="기록은 지워지지 않습니다 · 설정 > 안전에서 변경",
         )
-        self._revert_card.clicked.connect(lambda: self._set_history_mode(True))
-        row.addWidget(self._readonly_card, 1)
-        row.addWidget(self._revert_card, 1)
+        self._hm_revert["card"].clicked.connect(
+            lambda: self._set_history_mode(True)
+        )
+        row.addWidget(self._hm_readonly["card"], 1)
+        row.addWidget(self._hm_revert["card"], 1)
         lay.addLayout(row)
 
-        foot = QLabel("클릭해서 고르세요. 설정 > 안전에서 언제든 바꿀 수 있습니다.")
+        foot = QLabel(
+            "카드를 눌러 고르면 바로 저장됩니다. "
+            "설정 > 안전 > 「커밋 내역에서 되돌리기 허용」에서도 바꿀 수 있습니다."
+        )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
         lay.addWidget(foot)
@@ -578,24 +593,67 @@ class OnboardingDialog(QDialog):
 
     @staticmethod
     def _history_mode_card(
-        p: Palette, *, title: str, body: str
-    ) -> tuple[_SelectableCard, QLabel]:
+        p: Palette,
+        *,
+        badge: str,
+        title: str,
+        body: str,
+        meta: str,
+    ) -> dict:
+        """Selectable card matching undo/safety density (badge · title · body · meta)."""
         card = _SelectableCard()
         card.setCursor(Qt.CursorShape.PointingHandCursor)
+        card.setMinimumHeight(200)
+        card.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         lay = QVBoxLayout(card)
-        lay.setContentsMargins(20, 22, 20, 22)
-        lay.setSpacing(11)
-        tag = QLabel()
-        h = QLabel(title)
-        h.setStyleSheet(f"font-size: 15px; font-weight: 600; color: {p.text};")
-        h.setWordWrap(True)
-        b = QLabel(body)
-        b.setWordWrap(True)
-        b.setObjectName("obBody")
-        lay.addWidget(tag)
-        lay.addWidget(h)
-        lay.addWidget(b)
-        return card, tag
+        lay.setContentsMargins(20, 20, 20, 18)
+        lay.setSpacing(0)
+
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        badge_lab = QLabel(badge)
+        badge_lab.setObjectName("obHmBadge")
+        pick_lab = QLabel()
+        pick_lab.setObjectName("obHmPick")
+        pick_lab.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        head.addWidget(badge_lab, 0)
+        head.addStretch(1)
+        head.addWidget(pick_lab, 0)
+        lay.addLayout(head)
+        lay.addSpacing(12)
+
+        title_lab = QLabel(title)
+        title_lab.setObjectName("obHmTitle")
+        title_lab.setWordWrap(True)
+        lay.addWidget(title_lab)
+        lay.addSpacing(8)
+
+        body_lab = QLabel(body)
+        body_lab.setObjectName("obBody")
+        body_lab.setWordWrap(True)
+        lay.addWidget(body_lab)
+        lay.addStretch(1)
+        lay.addSpacing(14)
+
+        meta_lab = QLabel(meta)
+        meta_lab.setObjectName("obHmMeta")
+        meta_lab.setWordWrap(True)
+        lay.addWidget(meta_lab)
+
+        # Stash static labels for style refresh (badge text is fixed)
+        return {
+            "card": card,
+            "badge": badge_lab,
+            "badge_text": badge,
+            "pick": pick_lab,
+            "title": title_lab,
+            "meta": meta_lab,
+            "p_seed": p,
+        }
 
     def _set_history_mode(self, enabled: bool) -> None:
         self._history_revert = enabled
@@ -605,35 +663,61 @@ class OnboardingDialog(QDialog):
     def _refresh_history_mode_cards(self) -> None:
         p = active_palette()
         self._style_history_mode_card(
-            self._readonly_card,
-            self._readonly_tag,
-            p,
-            selected=not self._history_revert,
+            self._hm_readonly, p, selected=not self._history_revert
         )
         self._style_history_mode_card(
-            self._revert_card, self._revert_tag, p, selected=self._history_revert
+            self._hm_revert, p, selected=self._history_revert
         )
 
     @staticmethod
     def _style_history_mode_card(
-        card: _SelectableCard, tag: QLabel, p: Palette, *, selected: bool
+        parts: dict, p: Palette, *, selected: bool
     ) -> None:
+        card: _SelectableCard = parts["card"]
+        badge: QLabel = parts["badge"]
+        pick: QLabel = parts["pick"]
+        title: QLabel = parts["title"]
+        meta: QLabel = parts["meta"]
+        badge_text = parts["badge_text"]
+
         if selected:
             card.setStyleSheet(
                 f"QFrame {{ background: {p.bg_muted}; "
                 f"border: 2px solid {p.primary}; border-radius: 8px; }}"
             )
-            tag.setText("● 선택됨")
-            tag.setStyleSheet(
+            badge.setText(badge_text)
+            badge.setStyleSheet(
                 f"font-size: 11.5px; font-weight: 600; color: {p.primary};"
+            )
+            pick.setText("✓ 선택됨")
+            pick.setStyleSheet(
+                f"font-size: 12px; font-weight: 600; color: {p.primary};"
+            )
+            title.setStyleSheet(
+                f"font-size: 16px; font-weight: 600; color: {p.text};"
+            )
+            meta.setStyleSheet(
+                f"font-size: 12.5px; color: {p.text_secondary}; "
+                f"padding-top: 12px; border-top: 1px solid {p.border_soft};"
             )
         else:
             card.setStyleSheet(
                 f"QFrame {{ background: {p.bg_muted}; "
                 f"border: 1px solid {p.border_soft}; border-radius: 8px; }}"
             )
-            tag.setText("선택하려면 클릭")
-            tag.setStyleSheet(f"font-size: 11.5px; color: {p.text_muted};")
+            badge.setText(badge_text)
+            badge.setStyleSheet(
+                f"font-size: 11.5px; font-weight: 600; color: {p.text_muted};"
+            )
+            pick.setText("클릭해서 고르기")
+            pick.setStyleSheet(f"font-size: 12px; color: {p.text_faint};")
+            title.setStyleSheet(
+                f"font-size: 16px; font-weight: 600; color: {p.text};"
+            )
+            meta.setStyleSheet(
+                f"font-size: 12.5px; color: {p.text_muted}; "
+                f"padding-top: 12px; border-top: 1px solid {p.border_soft};"
+            )
 
     def _page_cost(self, p: Palette) -> QWidget:
         w = QWidget()

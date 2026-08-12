@@ -51,6 +51,10 @@ def test_onboarding_steps_count() -> None:
         "undo",
         "safety",
     ]
+    hist = next(st for st in _STEPS if st.key == "history_mode")
+    # Headline should read like other steps (not a thin "골라 보세요" only)
+    assert "커밋 내역" in hist.title
+    assert "기본" in hist.lead or "확인" in hist.lead
 
 
 def test_glossary_has_core_product_words() -> None:
