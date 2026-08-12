@@ -1,5 +1,10 @@
 # CloneUp (클론업)
 
+> **이 저장소 README는 개발·기여자용입니다.**  
+> 최종 사용자는 [Releases](https://github.com/seongbin45/CloneUp/releases)의 `CloneUp-Setup.exe`만 받으면 됩니다.  
+> 앱 안 안내: 첫 실행 온보딩 · 설정 → 용어 안내 · 탭 팁 카드.  
+> 설계 메모: [docs/GIT_FOR_BEGINNERS.md](docs/GIT_FOR_BEGINNERS.md) · [docs/UX_GUIDANCE.md](docs/UX_GUIDANCE.md).
+
 Windows용 **GitHub 도우미** 데스크톱 앱입니다.  
 폴더를 GitHub에 **만들고 올리기** · **받기** · **동기화** 할 수 있습니다.
 
@@ -10,7 +15,8 @@ Windows용 **GitHub 도우미** 데스크톱 앱입니다.
 | 설치 파일 빌드 | `powershell -File scripts\build_installer.ps1` |
 | GitHub | https://github.com/seongbin45/CloneUp |
 | 라이선스 | [Apache License 2.0](LICENSE) |
-| 초심자 안내 4층 | [docs/UX_GUIDANCE.md](docs/UX_GUIDANCE.md) |
+| 초심자 UX 층 (설계) | [docs/UX_GUIDANCE.md](docs/UX_GUIDANCE.md) |
+| Git 자리 모델 | [docs/GIT_FOR_BEGINNERS.md](docs/GIT_FOR_BEGINNERS.md) |
 | 패키징 | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | Git 없을 때 | [docs/GIT_BOOTSTRAP.md](docs/GIT_BOOTSTRAP.md) |
 
@@ -48,7 +54,7 @@ CloneUp/
 ├── requirements.txt          ← Python 패키지 목록
 ├── cloneup.spec              ← exe 빌드 설정 (PyInstaller)
 ├── app/                      ← 프로그램 로직 (기능 수정은 주로 여기)
-│   ├── auth/                 ← GitHub 로그인 (Device Flow)
+│   ├── auth/                 ← GitHub 로그인 (기본: PAT 키 붙여넣기)
 │   ├── git/                  ← clone / publish / sync / 안전 검사
 │   ├── github/               ← GitHub API
 │   ├── ui/                   ← 화면·버튼·팝업
@@ -235,7 +241,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 | 하고 싶은 일 | 어디서부터 | 어디까지 | 어떻게 |
 |--------------|------------|----------|--------|
 | 버튼 글자만 수정 | `app/ui/` 또는 `ui/main_window.ui` | 커밋·push | 3장 흐름 |
-| 로그인 동작 수정 | `app/auth/` | 커밋·push + 로그인 테스트 | Device Flow 확인 |
+| 로그인 동작 수정 | `app/auth/` | 커밋·push + 로그인 테스트 | **PAT** 연결 확인 (Device Flow는 opt-in) |
 | clone/push 버그 | `app/git/` | 커밋·push + 해당 탭 테스트 | `docs/FAILURE_CASES.md` 참고 |
 | 아이콘 다시 만들기 | `scripts/render_icons.py` | `assets/icons/` 생성 | 스크립트 실행 후 커밋 |
 | 사용자용 설치 파일 | `scripts/build_installer.ps1` | `installer/Output/*.exe` | 4장 배포 |
@@ -278,7 +284,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 ## 8. 문제 해결 빠른 링크
 
 - Git 없음 → [docs/GIT_BOOTSTRAP.md](docs/GIT_BOOTSTRAP.md)  
-- 로그인 실패 → Device 코드는 팝업에서 복사 후 `github.com/login/device`에 붙여넣기  
+- 로그인 실패 → GitHub에서 **새 PAT** 발급(권한 `repo`, classic) 후 「GitHub: 연결」에 붙여넣기  
+  - (개발자 opt-in) Device Flow는 `CLONEUP_ALLOW_DEVICE_FLOW=1`일 때만 · `github.com/login/device`  
 - 비밀 파일·개인정보 검사 → [docs/PII_CROSS_VERIFY.md](docs/PII_CROSS_VERIFY.md)  
 - 실패 케이스 표 → [docs/FAILURE_CASES.md](docs/FAILURE_CASES.md)  
 

@@ -55,7 +55,11 @@ def test_onboarding_steps_count() -> None:
     # Headline should read like other steps (not a thin "골라 보세요" only)
     assert "커밋 내역" in hist.title
     assert "기본" in hist.lead or "확인" in hist.lead
-
+    folders = next(st for st in _STEPS if st.key == "folders")
+    # Do not teach “folder == GitHub automatic cloud”
+    assert "자동" in folders.lead or "커밋" in folders.lead
+    loop = next(st for st in _STEPS if st.key == "loop")
+    assert "넷" in loop.lead or "네" in loop.lead
 
 def test_glossary_has_core_product_words() -> None:
     """용어 안내 keeps real CloneUp labels (no renaming)."""
