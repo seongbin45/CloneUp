@@ -824,14 +824,15 @@ class SettingsDialog(QDialog):
                 )
 
         n_user = len(user_rows)
-        hint = QLabel(
-            "혼자 쓸 때도 어제 나에게 남기는 기록입니다. "
-            "협업은 그다음 이야기입니다.\n"
-            f"내 용어 {n_user}/{USER_GLOSSARY_MAX}개 · 이 컴퓨터에만 저장됩니다."
-        )
-        hint.setObjectName("setMeta")
-        hint.setWordWrap(True)
-        lay.addWidget(hint)
+        # Count line only when the user has registered at least one term.
+        if n_user > 0:
+            hint = QLabel(
+                f"내 용어 {n_user}/{USER_GLOSSARY_MAX}개 · "
+                "이 컴퓨터에만 저장됩니다."
+            )
+            hint.setObjectName("setMeta")
+            hint.setWordWrap(True)
+            lay.addWidget(hint)
         lay.addStretch(1)
 
         if hasattr(self, "_btn_add_term") and self._btn_add_term is not None:
