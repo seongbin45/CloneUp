@@ -603,7 +603,8 @@ class MainController(QObject):
                 "• 폴더를 고르거나 경로를 붙이면 상태가 다시 읽힙니다.\n"
                 "• 올리기 전에 비밀 파일 후보가 있는지 확인하세요.",
             ),
-        ]        for obj_name, summary, body in tips:
+        ]
+        for obj_name, summary, body in tips:
             ph = self.window.findChild(QLabel, obj_name)
             if ph is not None:
                 install_tip_card(ph, summary=summary, body=body)
