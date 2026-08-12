@@ -601,12 +601,12 @@ class OnboardingDialog(QDialog):
         meta: str,
     ) -> dict:
         """
-        Selectable card — same density as undo/safety, selection language from
-        시안 (warm paper + left primary bar), not a cool mint wash.
+        Selectable card: brand solid when selected, with filled text panels
+        (body / meta) so copy is not floating on bare green.
         """
         card = _SelectableCard()
         card.setCursor(Qt.CursorShape.PointingHandCursor)
-        card.setMinimumHeight(204)
+        card.setMinimumHeight(220)
         card.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
@@ -614,15 +614,15 @@ class OnboardingDialog(QDialog):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # Fixed-width accent rail — selected fills primary, idle stays quiet
         rail = QFrame()
         rail.setObjectName("obHmRail")
         rail.setFixedWidth(4)
         outer.addWidget(rail)
 
         inner = QWidget()
+        inner.setObjectName("obHmInner")
         lay = QVBoxLayout(inner)
-        lay.setContentsMargins(18, 20, 18, 18)
+        lay.setContentsMargins(16, 16, 16, 14)
         lay.setSpacing(0)
 
         head = QHBoxLayout()
@@ -631,7 +631,7 @@ class OnboardingDialog(QDialog):
         badge_lab.setObjectName("obHmBadge")
         pick_lab = QLabel()
         pick_lab.setObjectName("obHmPick")
-        pick_lab.setFixedWidth(18)
+        pick_lab.setFixedWidth(22)
         pick_lab.setAlignment(Qt.AlignmentFlag.AlignCenter)
         head.addWidget(badge_lab, 0)
         head.addStretch(1)
@@ -643,30 +643,45 @@ class OnboardingDialog(QDialog):
         title_lab.setObjectName("obHmTitle")
         title_lab.setWordWrap(True)
         lay.addWidget(title_lab)
-        lay.addSpacing(8)
+        lay.addSpacing(10)
 
+        # Body sits in a filled panel (not bare text on the card)
+        body_panel = QFrame()
+        body_panel.setObjectName("obHmBodyPanel")
+        bp = QVBoxLayout(body_panel)
+        bp.setContentsMargins(12, 11, 12, 11)
+        bp.setSpacing(0)
         body_lab = QLabel(body)
         body_lab.setObjectName("obHmBody")
         body_lab.setWordWrap(True)
-        lay.addWidget(body_lab)
-        lay.addStretch(1)
-        lay.addSpacing(14)
+        bp.addWidget(body_lab)
+        lay.addWidget(body_panel, 1)
+        lay.addSpacing(10)
 
+        meta_panel = QFrame()
+        meta_panel.setObjectName("obHmMetaPanel")
+        mp = QVBoxLayout(meta_panel)
+        mp.setContentsMargins(12, 10, 12, 10)
+        mp.setSpacing(0)
         meta_lab = QLabel(meta)
         meta_lab.setObjectName("obHmMeta")
         meta_lab.setWordWrap(True)
-        lay.addWidget(meta_lab)
+        mp.addWidget(meta_lab)
+        lay.addWidget(meta_panel)
 
         outer.addWidget(inner, 1)
 
         return {
             "card": card,
             "rail": rail,
+            "inner": inner,
             "badge": badge_lab,
             "badge_text": badge,
             "pick": pick_lab,
             "title": title_lab,
+            "body_panel": body_panel,
             "body": body_lab,
+            "meta_panel": meta_panel,
             "meta": meta_lab,
         }
 
@@ -690,29 +705,32 @@ class OnboardingDialog(QDialog):
     ) -> None:
         card: _SelectableCard = parts["card"]
         rail: QFrame = parts["rail"]
+        inner: QWidget = parts["inner"]
         badge: QLabel = parts["badge"]
         pick: QLabel = parts["pick"]
         title: QLabel = parts["title"]
+        body_panel: QFrame = parts["body_panel"]
         body: QLabel = parts["body"]
+        meta_panel: QFrame = parts["meta_panel"]
         meta: QLabel = parts["meta"]
         badge_text = parts["badge_text"]
 
-        # Selected: solid brand fill + ✓ + type that contrasts on primary
-        # (light: near-white on deep teal; dark: deep ink on bright teal).
-        # Unselected: warm paper card, quiet chrome.
+        # Selected: solid brand card; body/meta in filled panels; ✓ + near-white type.
+        # Unselected: warm paper with muted filled text boxes.
         if selected:
             on = p.text_on_primary
             if getattr(p, "name", "light") == "dark":
-                # Primary is bright — ink-on-bright (not white-on-bright)
                 on_body = "#14352b"
                 on_meta = "#1a4034"
-                on_line = "rgba(15, 35, 28, 0.28)"
+                panel = "#3d9a7c"  # lighter brand wash on bright primary
+                panel_meta = "#389075"
                 badge_fg, badge_bg = p.primary_soft, on
             else:
-                # Primary is deep — near-white type on brand fill
-                on_body = "#e8f4ef"
-                on_meta = "#d2eae0"
-                on_line = "rgba(255, 255, 255, 0.30)"
+                on_body = "#f3faf7"
+                on_meta = "#e4f3ec"
+                # Slightly lighter teal panels on deep primary
+                panel = "#2a8570"
+                panel_meta = "#247a66"
                 badge_fg, badge_bg = p.primary, on
 
             card.setStyleSheet(
@@ -723,25 +741,35 @@ class OnboardingDialog(QDialog):
                 f"background: {p.primary_hover}; border: none; "
                 f"border-top-left-radius: 7px; border-bottom-left-radius: 7px;"
             )
+            inner.setStyleSheet("background: transparent;")
             badge.setText(badge_text)
             badge.setStyleSheet(
                 f"font-size: 11px; font-weight: 600; color: {badge_fg}; "
-                f"background: {badge_bg}; padding: 3px 9px; border-radius: 4px;"
+                f"background: {badge_bg}; padding: 4px 10px; border-radius: 4px;"
             )
             pick.setText("✓")
-            pick.setFixedWidth(22)
             pick.setStyleSheet(
-                f"font-size: 15px; font-weight: 700; color: {on};"
+                f"font-size: 15px; font-weight: 700; color: {on}; "
+                f"background: transparent;"
             )
             title.setStyleSheet(
-                f"font-size: 16px; font-weight: 600; color: {on};"
+                f"font-size: 16px; font-weight: 600; color: {on}; "
+                f"background: transparent;"
+            )
+            body_panel.setStyleSheet(
+                f"QFrame#obHmBodyPanel {{ background: {panel}; "
+                f"border: none; border-radius: 6px; }}"
             )
             body.setStyleSheet(
-                f"font-size: 12.5px; color: {on_body}; line-height: 1.45;"
+                f"font-size: 12.5px; color: {on_body}; line-height: 1.45; "
+                f"background: transparent;"
+            )
+            meta_panel.setStyleSheet(
+                f"QFrame#obHmMetaPanel {{ background: {panel_meta}; "
+                f"border: none; border-radius: 6px; }}"
             )
             meta.setStyleSheet(
-                f"font-size: 12.5px; color: {on_meta}; "
-                f"padding-top: 12px; border-top: 1px solid {on_line};"
+                f"font-size: 12.5px; color: {on_meta}; background: transparent;"
             )
         else:
             card.setStyleSheet(
@@ -752,23 +780,34 @@ class OnboardingDialog(QDialog):
                 f"background: {p.border_divider}; border: none; "
                 f"border-top-left-radius: 7px; border-bottom-left-radius: 7px;"
             )
+            inner.setStyleSheet("background: transparent;")
             badge.setText(badge_text)
             badge.setStyleSheet(
                 f"font-size: 11px; font-weight: 600; color: {p.text_muted}; "
-                f"background: {p.bg_muted}; padding: 3px 9px; border-radius: 4px;"
+                f"background: {p.bg_muted}; padding: 4px 10px; border-radius: 4px;"
             )
             pick.setText("")
-            pick.setFixedWidth(22)
-            pick.setStyleSheet(f"font-size: 15px; color: {p.text_faint};")
+            pick.setStyleSheet(
+                f"font-size: 15px; color: {p.text_faint}; background: transparent;"
+            )
             title.setStyleSheet(
-                f"font-size: 16px; font-weight: 600; color: {p.text};"
+                f"font-size: 16px; font-weight: 600; color: {p.text}; "
+                f"background: transparent;"
+            )
+            body_panel.setStyleSheet(
+                f"QFrame#obHmBodyPanel {{ background: {p.bg_muted}; "
+                f"border: 1px solid {p.border_soft}; border-radius: 6px; }}"
             )
             body.setStyleSheet(
-                f"font-size: 12.5px; color: {p.text_secondary}; line-height: 1.45;"
+                f"font-size: 12.5px; color: {p.text_secondary}; line-height: 1.45; "
+                f"background: transparent;"
+            )
+            meta_panel.setStyleSheet(
+                f"QFrame#obHmMetaPanel {{ background: {p.bg_hint}; "
+                f"border: 1px solid {p.border_soft}; border-radius: 6px; }}"
             )
             meta.setStyleSheet(
-                f"font-size: 12.5px; color: {p.text_muted}; "
-                f"padding-top: 12px; border-top: 1px solid {p.border_soft};"
+                f"font-size: 12.5px; color: {p.text_muted}; background: transparent;"
             )
 
     def _page_cost(self, p: Palette) -> QWidget:
