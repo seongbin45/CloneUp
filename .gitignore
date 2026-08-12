@@ -79,3 +79,5 @@ _test_publish/
 *.key
 id_rsa*
 id_ed25519*
+
+.venv310/
