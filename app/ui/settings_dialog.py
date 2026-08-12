@@ -8,6 +8,7 @@ Colors follow active_palette() (OS light/dark).
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QRectF, QUrl, Qt, Signal, Slot
@@ -979,8 +980,16 @@ class SettingsDialog(QDialog):
         btn_terms = QPushButton("이용약관")
         btn_terms.setObjectName("setSecondary")
         btn_terms.clicked.connect(self._open_terms)
+        btn_license = QPushButton("라이선스")
+        btn_license.setObjectName("setSecondary")
+        btn_license.clicked.connect(self._open_license)
+        btn_oss = QPushButton("오픈소스 고지")
+        btn_oss.setObjectName("setSecondary")
+        btn_oss.clicked.connect(self._open_oss_notices)
         actions.addWidget(btn_onb)
         actions.addWidget(btn_terms)
+        actions.addWidget(btn_license)
+        actions.addWidget(btn_oss)
         actions.addStretch(1)
         lay.addLayout(actions)
         lay.addStretch(1)
@@ -1242,28 +1251,16 @@ class SettingsDialog(QDialog):
         if self._on_open_onboarding is not None:
             self._on_open_onboarding()
 
-    @Slot()
-    def _open_terms(self) -> None:
-        path = app_root() / "legal" / "CloneUp_Terms_ko.txt"
-        if not path.is_file():
-            # frozen installer may place under same tree
-            alt = app_root() / "installer" / "license" / "CloneUp_Terms_ko.txt"
-            path = alt if alt.is_file() else path
-        if not path.is_file():
-            QMessageBox.information(
-                self,
-                "이용약관",
-                "이용약관 파일을 찾지 못했습니다.\n"
-                "설치 시 약관에 동의하셨습니다.",
-            )
-            return
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError as e:
-            QMessageBox.warning(self, "이용약관", str(e))
-            return
+    def _resolve_legal_path(self, *candidates: Path) -> Path | None:
+        """First existing file among candidates (dev tree / frozen / install)."""
+        for path in candidates:
+            if path.is_file():
+                return path
+        return None
+
+    def _show_text_document(self, title: str, text: str) -> None:
         dlg = QDialog(self)
-        dlg.setWindowTitle("이용약관")
+        dlg.setWindowTitle(title)
         dlg.setMinimumSize(560, 480)
         dlg.resize(640, 560)
         vl = QVBoxLayout(dlg)
@@ -1276,6 +1273,67 @@ class SettingsDialog(QDialog):
         close.clicked.connect(dlg.accept)
         vl.addWidget(close, 0, Qt.AlignmentFlag.AlignRight)
         dlg.exec()
+
+    def _open_legal_file(
+        self,
+        title: str,
+        candidates: list[Path],
+        missing_message: str,
+    ) -> None:
+        path = self._resolve_legal_path(*candidates)
+        if path is None:
+            QMessageBox.information(self, title, missing_message)
+            return
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+        except OSError as e:
+            QMessageBox.warning(self, title, str(e))
+            return
+        self._show_text_document(title, text)
+
+    @Slot()
+    def _open_terms(self) -> None:
+        root = app_root()
+        self._open_legal_file(
+            "이용약관",
+            [
+                root / "legal" / "CloneUp_Terms_ko.txt",
+                # frozen installer may place under same tree
+                root / "installer" / "license" / "CloneUp_Terms_ko.txt",
+                # onedir: LICENSE next to exe, legal sometimes under parent
+                root.parent / "legal" / "CloneUp_Terms_ko.txt",
+            ],
+            "이용약관 파일을 찾지 못했습니다.\n설치 시 약관에 동의하셨습니다.",
+        )
+
+    @Slot()
+    def _open_license(self) -> None:
+        """Apache License 2.0 (repo root LICENSE; also shipped next to install)."""
+        root = app_root()
+        self._open_legal_file(
+            "라이선스 (Apache 2.0)",
+            [
+                root / "LICENSE",
+                root.parent / "LICENSE",  # install: exe folder if MEIPASS=_internal
+                root / "legal" / "LICENSE",
+            ],
+            "라이선스 파일을 찾지 못했습니다.\n"
+            "저장소 LICENSE 또는 설치 폴더의 LICENSE를 확인해 주세요.",
+        )
+
+    @Slot()
+    def _open_oss_notices(self) -> None:
+        """Third-party OSS notices promised in terms §16."""
+        root = app_root()
+        self._open_legal_file(
+            "오픈소스 고지",
+            [
+                root / "legal" / "CloneUp_OpenSourceNotices_ko.txt",
+                root.parent / "legal" / "CloneUp_OpenSourceNotices_ko.txt",
+            ],
+            "오픈소스 고지 파일을 찾지 못했습니다.\n"
+            "legal/CloneUp_OpenSourceNotices_ko.txt 를 확인해 주세요.",
+        )
 
     # ----- style -----
     @staticmethod

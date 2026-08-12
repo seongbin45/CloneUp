@@ -40,7 +40,7 @@ VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} — GitHub helper for beginners
 VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyAppVersion}
-VersionInfoCopyright=Copyright (C) 2026 {#MyAppPublisher}
+VersionInfoCopyright=Copyright 2026 최성빈
 OutputDir=Output
 OutputBaseFilename=CloneUp-Setup
 Compression=lzma
@@ -70,8 +70,10 @@ Source: "..\assets\icons\icon-64.png"; DestDir: "{app}\icons"; Flags: ignorevers
 Source: "..\assets\icons\icon-128.png"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\icon-256.png"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\icon-512.png"; DestDir: "{app}\icons"; Flags: ignoreversion
-; Terms copy installed with the app
+; Legal: terms (also LicenseFile above), Apache LICENSE, OSS notices
 Source: "license\CloneUp_Terms_ko.txt"; DestDir: "{app}\legal"; Flags: ignoreversion
+Source: "..\legal\CloneUp_OpenSourceNotices_ko.txt"; DestDir: "{app}\legal"; Flags: ignoreversion
+Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 ; Start Menu — explicit multi-size .ico so shell picks 16/32/48 correctly

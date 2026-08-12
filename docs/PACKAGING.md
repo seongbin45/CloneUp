@@ -36,7 +36,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 ```
 
 - 아이콘: `assets/icons/CloneUp.ico`
-- 포함: `ui/main_window.ui`, `assets/icons/*`
+- 포함: `ui/main_window.ui`, `assets/icons/*`, `legal/*`, 루트 `LICENSE`
 - Git / `.env` **미포함** — 첫 실행 DG1/DG2
 
 ## DG3 — 설치 관리자
@@ -45,6 +45,11 @@ powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 - 언어: 한국어 + 영어
 - **이용약관:** `LicenseFile=installer/license/CloneUp_Terms_ko.txt`  
   (원본 `desin/provision/CloneUp 이용약관.dc.html` → `scripts/export_terms_license.py`)
+- **라이선스·고지 (설치 후):**
+  - `{app}\LICENSE` — Apache License 2.0 (저작권: Copyright 2026 최성빈)
+  - `{app}\legal\CloneUp_Terms_ko.txt` — 이용약관
+  - `{app}\legal\CloneUp_OpenSourceNotices_ko.txt` — 제3자 오픈소스 고지
+- 앱 **설정 → 정보** 에서 이용약관 / 라이선스 / 오픈소스 고지 열람
 - **아이콘:** `SetupIconFile` / `UninstallDisplayIcon` / 바로가기 모두 `CloneUp.ico` (16–256)
 - 설치 시 Git 강제 설치 없음 (방식 D: 앱 첫 실행 시 안내)
 

@@ -8,12 +8,15 @@
 | `license/CloneUp_Terms_ko.txt` | **설치 동의 약관** (UTF-8 BOM) |
 | `Output/CloneUp-Setup.exe` | **빌드 결과** (gitignore, 재생성) |
 
-## 이용약관
+## 이용약관 · 라이선스
 
 - 시안 원본: [`desin/provision/CloneUp 이용약관.dc.html`](../desin/provision/CloneUp%20이용약관.dc.html)
 - 추출: `.\.venv\Scripts\python.exe scripts\export_terms_license.py`
 - Inno Setup `LicenseFile` → 설치 마법사 **약관 동의** 페이지
-- 설치 후에도 `{app}\legal\CloneUp_Terms_ko.txt` 로 남음
+- 설치 후에도 남는 파일:
+  - `{app}\legal\CloneUp_Terms_ko.txt` — 이용약관
+  - `{app}\legal\CloneUp_OpenSourceNotices_ko.txt` — 오픈소스 고지
+  - `{app}\LICENSE` — Apache License 2.0 (루트 `LICENSE` 복사)
 
 약관 HTML을 고친 뒤에는 추출 스크립트를 다시 실행한 다음 Setup을 빌드하세요.  
 (`build_installer.ps1` 이 추출을 자동으로 호출합니다.)

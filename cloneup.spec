@@ -15,8 +15,10 @@ a = Analysis(
         (str(ROOT / "ui" / "main_window.ui"), "ui"),
         # Multi-size icons: CloneUp.ico + icon-{16..512}.png (+ masters)
         (str(ROOT / "assets" / "icons"), "assets/icons"),
-        # Terms of service (installer also ships a copy under {app}\legal)
+        # Terms + OSS notices (installer also ships under {app}\legal)
         (str(ROOT / "legal"), "legal"),
+        # Apache License 2.0 (app about · 설정 라이선스 버튼)
+        (str(ROOT / "LICENSE"), "."),
     ],
     hiddenimports=[
         "keyring.backends",
