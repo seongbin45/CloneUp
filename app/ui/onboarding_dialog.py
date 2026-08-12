@@ -53,13 +53,13 @@ _STEPS: tuple[_Step, ...] = (
     ),
     _Step(
         "commits",
-        "커밋은 돌아올 수 있는 지점입니다",
-        "사진을 찍어두는 것과 같습니다. 찍어둔 만큼 돌아갈 수 있습니다.",
+        "커밋은 내 서고에 남기는 기록입니다",
+        "책상 위 원고를 봉인해 꽂아 두는 단계입니다. 아직 GitHub(밖)로 보낸 것은 아닙니다.",
     ),
     _Step(
         "loop",
-        "왜 Git을 쓰나요 — 한 바퀴 루프",
-        "기록하고, 원격에 맞추고, 다시 고칩니다. 클론업 탭은 이 루프를 나누어 둔 것입니다.",
+        "왜 여러 단계인가요 — 한 바퀴 루프",
+        "자리가 넷입니다. 클론업 탭은 그 길을 나누어 둔 것이지, 자동 클라우드 동기화가 아닙니다.",
     ),
     _Step(
         "history_mode",
@@ -377,16 +377,17 @@ class OnboardingDialog(QDialog):
                 lines=[
                     ("GitHub", "obMuted"),
                     ("seong/my-project", "obMono"),
-                    ("집 밖 두 번째 서랍 — 보관·다른 곳에서 이어 쓰기", "obBody"),
+                    ("GitHub (원격) — 보내야 밖에 남습니다", "obBody"),
                 ],
             ),
             1,
         )
         lay.addLayout(row)
         foot = QLabel(
-            "둘은 자동으로 맞춰지지 않습니다. "
-            "만들고 올리기·받기·동기화 버튼은 결국 이 화살표(올리기 / 받아오기) 둘 중 하나입니다. "
-            "서랍이 두 개여야 PC가 바뀌어도 기록을 이어 갈 수 있습니다."
+            "둘은 구글 드라이브처럼 자동으로 맞춰지지 않습니다. "
+            "만들고 올리기·받기·동기화는 결국 이 화살표(올리기 / 받아오기) 쪽 일입니다. "
+            "자리가 둘만이 아닙니다 — 커밋 전 기록은 아직 GitHub에 없습니다. "
+            "(설정 > 용어 안내의 「네 자리」)"
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
@@ -457,9 +458,10 @@ class OnboardingDialog(QDialog):
                 cl.setAlignment(line, Qt.AlignmentFlag.AlignVCenter)
         lay.addWidget(card)
         foot = QLabel(
-            "점 하나가 커밋 하나입니다. 잘 되는 순간을 사진(세이브)으로 남기지 않으면, "
-            "망가진 뒤에는 ‘어제 저녁 버전이 나았다’는 기억만 남습니다. "
-            "커밋할 때마다 그 순간의 폴더 전체가 통째로 남고, 자주 할수록 돌아갈 곳이 많아집니다."
+            "점 하나가 커밋(commit) 하나입니다. 책상 위 수정만으로는 부족하고, "
+            "봉인해 내 서고(로컬 저장소)에 꽂아야 ‘남긴 기록’이 됩니다. "
+            "아직 출판사(GitHub)로 보낸 것은 아닙니다. "
+            "선형 게임 세이브와 달리, 나중에 갈래(브랜치=이름표)도 같은 그림 위에 올라갑니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
@@ -468,33 +470,33 @@ class OnboardingDialog(QDialog):
         return w
 
     def _page_loop(self, p: Palette) -> QWidget:
-        """Why Git: commit → remote → edit again (maps to CloneUp tabs)."""
+        """Why Git: four places + product tabs (no rename of UI words)."""
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(14)
 
-        # Product words kept; metaphors only in body/why lines.
+        # Product words kept; manuscript metaphor; formal terms in parentheses.
         rows: tuple[tuple[str, str, str], ...] = (
             (
-                "1 · 커밋",
-                "지금 폴더 상태를 한 점(세이브·사진)으로 남깁니다.",
-                "왜: 나중에 이 자리로 돌아올 수 있습니다. 혼자여도 ‘어제 나’에게 남기는 기록입니다.",
+                "1 · 커밋 (commit)",
+                "책상 위 원고를 봉인해 내 서고에 꽂습니다. (로컬 저장소)",
+                "왜: 나중에 이 기록을 가리킬 수 있습니다. 커밋 전 수정은 GitHub에 안 갑니다.",
             ),
             (
-                "2 · 만들고 올리기 / 올리고 보내기",
-                "그 기록을 GitHub(두 번째 서랍)에도 맞춥니다.",
-                "왜: 백업·공유·다른 PC에서 이어 쓰기. 파일을 지우는 이사가 아닙니다.",
+                "2 · 만들고 올리기 / 올리고 보내기 (push)",
+                "내 서고에 있는 봉인 기록을 GitHub(원격)로 보냅니다.",
+                "왜: 밖과 맞추고 다른 자리에서도 이어 씁니다. 자동 클라우드 동기화가 아닙니다.",
             ),
             (
-                "3 · 받아오기",
-                "GitHub에 더 새 기록이 있으면 내 폴더로 가져옵니다.",
-                "왜: 집 노트와 학교 노트를 맞추듯, 어느 쪽이 앞섰는지 보고 가져옵니다.",
+                "3 · 받아오기 (pull)",
+                "GitHub에 더 새 기록이 있으면 이 폴더 쪽으로 가져옵니다.",
+                "왜: 어느 쪽이 앞선 장을 가졌는지 보고 맞춥니다. 겹치면 충돌이 납니다.",
             ),
             (
                 "4 · 다시 고치기",
-                "파일을 수정한 뒤 1번(커밋)으로 돌아갑니다.",
-                "이 한 바퀴가 Git을 쓰는 이유의 전부입니다. 클론업 탭은 이 루프를 나눈 것입니다.",
+                "작업 폴더에서 파일을 수정한 뒤 1번(커밋)으로 돌아갑니다.",
+                "클론업 탭은 이 길을 나눈 것입니다. 성공한 뒤 ‘네 자리’를 보면 그림이 고정됩니다.",
             ),
         )
         for title, body, why in rows:
@@ -521,10 +523,10 @@ class OnboardingDialog(QDialog):
             lay.addWidget(card)
 
         foot = QLabel(
-            "「충돌」은 같은 줄을 양쪽에서 고쳐 자동으로 합치지 못해 멈춘 상태입니다. "
-            "「충돌 취소」는 그 합치기 시도를 포기하는 비상 버튼이고, "
-            "「커밋 내역」은 쌓인 점으로 돌아가 보거나(설정에 따라) 되돌리는 도구입니다. "
-            "둘은 다릅니다. 설정 > 용어 안내에서도 같은 설명을 볼 수 있습니다."
+            "「충돌」은 같은 줄을 양쪽에서 고쳐 자동 합치기가 멈춘 상태입니다. "
+            "「충돌 취소」는 합치기 시도 포기(abort)이지, 타임머신 되돌리기가 아닙니다. "
+            "「커밋 내역」은 서고에 꽂힌 점 목록입니다. 둘은 다릅니다. "
+            "설정 > 용어 안내의 「네 자리」·「브랜치 (이름표)」를 함께 보세요."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)

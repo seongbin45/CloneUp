@@ -60,6 +60,7 @@ def test_glossary_has_core_product_words() -> None:
     terms = {t for t, _a, _b in GLOSSARY_ENTRIES}
     for need in (
         "왜 쓰나요?",
+        "네 자리 (가장 중요)",
         "커밋",
         "만들고 올리기",
         "받기",
@@ -67,9 +68,13 @@ def test_glossary_has_core_product_words() -> None:
         "충돌 취소",
         "커밋 내역",
         "공개 / 비공개",
+        "브랜치 (이름표)",
     ):
         assert need in terms
-    assert len(GLOSSARY_ENTRIES) >= 10
+    assert len(GLOSSARY_ENTRIES) >= 12
+    # Fragile metaphors must not be the primary teaching frame
+    blob = " ".join(a + b for _t, a, b in GLOSSARY_ENTRIES)
+    assert "구글 드라이브" not in blob or "아닙니다" in blob
 
 
 def test_history_revert_enabled_default_off() -> None:
