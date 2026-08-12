@@ -17,13 +17,11 @@ GLOSSARY_ENTRIES: tuple[tuple[str, str, str], ...] = (
     (
         "네 자리 (가장 중요)",
         "작업 폴더·staging·commit·GitHub 네 곳입니다.",
-        "겉보기에는 내 PC와 GitHub 둘만 맞추는 것처럼 보이지만, "
-        "안쪽에는 책상 위 원고, 봉투에 넣을 장(staging), 봉인해 둔 내 서고(커밋), "
-        "출판사(GitHub)가 있습니다. "
-        "git add는 파일의 현재 내용을 staging area에 기록합니다. "
-        "git commit은 staging 내용으로 로컬 저장소에 커밋을 만듭니다. "
-        "git push는 로컬 커밋을 remote로 보냅니다. "
-        "커밋에 넣은 것만 건너가므로 폴더 전체가 자동으로 같아지지는 않습니다.",
+        "겉보기에는 내 PC와 GitHub 둘만 맞춥니다. "
+        "안쪽에는 책상 원고, staging 봉투, 커밋 서고, GitHub 출판사가 있습니다. "
+        "git add는 staging에, git commit은 로컬 커밋으로 남깁니다. "
+        "git push는 그 커밋을 remote로 보냅니다. "
+        "커밋에 넣은 것만 건너갑니다. 폴더 전체 자동 동기화가 아닙니다.",
     ),
     (
         "커밋",
