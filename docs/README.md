@@ -12,7 +12,8 @@
 | [GIT_FOR_BEGINNERS.md](GIT_FOR_BEGINNERS.md) | 초심자 Git 설명 원칙: **부하 시험·유효 범위·명사 비유** (금지 나열만이 아님) |
 | [DIFFERENTIATION.md](DIFFERENTIATION.md) | GitHub Desktop·Bitbucket 대비 **차별 가치**와 로드맵 |
 | [ORG_OAUTH_APP.md](ORG_OAUTH_APP.md) | **Org OAuth App 운영** 초보 체크리스트 (client_id 이전) |
-| [RELEASE_0.1.6.md](RELEASE_0.1.6.md) | **0.1.6** 사용자·배포 노트 (현재) |
+| [RELEASE_0.1.7.md](RELEASE_0.1.7.md) | **0.1.7** 사용자·배포 노트 (현재) |
+| [RELEASE_0.1.6.md](RELEASE_0.1.6.md) | **0.1.6** 사용자·배포 노트 |
 | [RELEASE_0.1.5.md](RELEASE_0.1.5.md) | **0.1.5** 사용자·배포 노트 |
 | [RELEASE_0.1.4.md](RELEASE_0.1.4.md) | **0.1.4** 사용자·배포 노트 |
 | [RELEASE_0.1.3.md](RELEASE_0.1.3.md) | **0.1.3** 사용자·배포 노트 |
