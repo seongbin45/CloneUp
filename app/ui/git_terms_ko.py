@@ -116,7 +116,11 @@ GLOSSARY_ENTRIES: tuple[tuple[str, str, str], ...] = (
         "그 키가 GitHub에서 할 수 있는 일의 범위입니다.",
         "클론업 기본은 repo(저장소 읽기·쓰기)입니다. "
         "Select scopes 목록이 길어도 기본은 「repo」 한 줄만 켜면 됩니다. "
-        "하위 줄(repo:status, public_repo 등)만 켜면 부족할 수 있습니다.",
+        "하위 줄(repo:status, public_repo 등)만 켜면 부족할 수 있습니다. "
+        "설정 표시는 이 PC 저장값입니다. "
+        "설정 열기·권한 다시 확인·올리기/동기화 때 GitHub와 맞춥니다. "
+        "classic 키는 웹에서 같은 키에 권한을 못 붙입니다. "
+        "새 키를 만든 뒤 다시 로그인하세요.",
     ),
     (
         "repo 권한",

@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.auth.session import refresh_scopes_from_github
 from app.auth.token_store import (
     AUTH_KIND_DEVICE,
     AUTH_KIND_PAT,
@@ -397,17 +398,30 @@ class SettingsDialog(QDialog):
         self._btn_connect = QPushButton("GitHub 연결")
         self._btn_connect.setObjectName("setSecondary")
         self._btn_connect.clicked.connect(self._do_relogin)
+        self._btn_refresh_scopes = QPushButton("권한 다시 확인")
+        self._btn_refresh_scopes.setObjectName("setSecondary")
+        self._btn_refresh_scopes.setToolTip(
+            "GitHub에 물어 이 컴퓨터에 저장된 권한 목록을 맞춥니다.\n"
+            "classic 키: 같은 키 문자열의 scope는 웹에서 바꿀 수 없고,\n"
+            "새 키를 만들어 「다시 로그인」해야 합니다.\n"
+            "세분 키: 목록이 안 와 「권한 확인 불가」로 남을 수 있습니다."
+        )
+        self._btn_refresh_scopes.clicked.connect(self._do_refresh_scopes)
         btns = QHBoxLayout()
         btns.setSpacing(8)
         btns.addWidget(self._btn_relogin)
         btns.addWidget(self._btn_logout)
         btns.addWidget(self._btn_connect)
+        btns.addWidget(self._btn_refresh_scopes)
         card_l.addLayout(btns)
         lay.addWidget(self._acct_card)
 
         hint = QLabel(
             "로그아웃하면 이 컴퓨터에 저장된 토큰이 지워집니다. "
-            "GitHub 쪽 승인까지 없애려면 GitHub 설정에서 따로 해제해야 합니다."
+            "GitHub 쪽 승인까지 없애려면 GitHub 설정에서 따로 해제해야 합니다.\n"
+            "표시되는 「권한」은 이 PC에 저장된 값이며, 설정 열 때·「권한 다시 확인」·"
+            "올리기/동기화 때 GitHub와 맞춥니다. "
+            "classic 키 권한은 웹에서 같은 키에 붙일 수 없어 새 키 + 다시 로그인이 필요합니다."
         )
         hint.setObjectName("setBanner")
         hint.setWordWrap(True)
@@ -753,8 +767,17 @@ class SettingsDialog(QDialog):
         return w
 
     # ----- account actions -----
-    def _refresh_account(self) -> None:
+    def _refresh_account(self, *, live: bool = True) -> None:
+        """
+        Paint account card from keyring.
+
+        ``live=True`` (default): ask GitHub once so Settings reflects
+        X-OAuth-Scopes after web-side token changes / last API refresh.
+        """
         p = active_palette()
+        if live and is_logged_in():
+            # Best-effort; failures keep previous keyring values.
+            refresh_scopes_from_github()
         logged = is_logged_in()
         login = load_last_github_login() or ""
         if logged:
@@ -777,6 +800,7 @@ class SettingsDialog(QDialog):
             self._btn_relogin.show()
             self._btn_logout.show()
             self._btn_connect.hide()
+            self._btn_refresh_scopes.show()
         else:
             self._acct_dot.setStyleSheet(f"color: {p.text_disabled}; font-size: 10px;")
             self._acct_title.setText("GitHub에 연결되지 않음")
@@ -784,6 +808,7 @@ class SettingsDialog(QDialog):
             self._btn_relogin.hide()
             self._btn_logout.hide()
             self._btn_connect.show()
+            self._btn_refresh_scopes.hide()
 
     @Slot()
     def _do_relogin(self) -> None:
@@ -796,7 +821,41 @@ class SettingsDialog(QDialog):
     def _do_logout(self) -> None:
         if self._on_logout is not None:
             self._on_logout()
-        self._refresh_account()
+        self._refresh_account(live=False)
+
+    @Slot()
+    def _do_refresh_scopes(self) -> None:
+        if not is_logged_in():
+            self._refresh_account(live=False)
+            return
+        self._acct_meta.setText("GitHub에서 권한 확인 중…")
+        before = (load_scope() or "").strip()
+        scope, user = refresh_scopes_from_github()
+        self._refresh_account(live=False)
+        if not is_logged_in():
+            QMessageBox.warning(
+                self,
+                "연결 끊김",
+                "저장된 키가 만료·취소된 것 같습니다.\n"
+                "「GitHub 연결」로 새 키를 붙여 넣으세요.",
+            )
+            return
+        after = (scope or load_scope() or "").strip()
+        if user and user.get("login"):
+            from app.ui.settings_store import save_last_github_login
+
+            save_last_github_login(str(user["login"]))
+            self._acct_title.setText(f"{user['login']} 으로 로그인됨")
+        if after == SCOPE_UNKNOWN or after == "unknown":
+            note = (
+                "GitHub이 classic 권한 목록을 주지 않았습니다 "
+                "(세분 키일 수 있음). 화면은 「권한 확인 불가」입니다."
+            )
+        elif before != after:
+            note = f"권한 목록을 맞췄습니다.\n이전: {before or '(없음)'}\n지금: {after}"
+        else:
+            note = f"권한 목록이 같습니다.\n지금: {after or '(없음)'}"
+        QMessageBox.information(self, "권한 다시 확인", note)
 
     # ----- defaults -----
     def _set_private(self, private: bool) -> None:

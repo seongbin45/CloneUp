@@ -9,7 +9,9 @@ from app.auth.token_store import (
     SCOPE_UNKNOWN,
     delete_token,
     has_scope,
+    is_scope_unknown,
     load_auth_kind,
+    load_connected_at_raw,
     load_scope,
     load_token,
     normalize_scope_string,
@@ -116,6 +118,85 @@ def login_device_flow(
     return token_resp.access_token
 
 
+def _save_scope_only(token: str, scope: str, *, auth_kind: str | None = None) -> None:
+    """
+    Update keyring scope (and optional auth_kind) without resetting connect age.
+
+    Scope backfill from GET /user must not make the key look brand-new every time.
+    """
+    prev_at = load_connected_at_raw()
+    kwargs: dict = {}
+    if auth_kind is not None:
+        kwargs["auth_kind"] = auth_kind
+    if prev_at:
+        kwargs["connected_at"] = prev_at
+    save_token(token, scope, **kwargs)
+
+
+def apply_oauth_scopes_from_user(token: str, user: dict) -> str:
+    """
+    Persist classic scopes from GET /user ``_oauth_scopes`` (X-OAuth-Scopes).
+
+    Returns the scope string now stored (may be ``SCOPE_UNKNOWN``).
+    Does not invent ``repo`` when the header is empty (M3 / fine-grained).
+    """
+    header = user.get("_oauth_scopes")
+    current = load_scope()
+
+    if header is None:
+        # Header omitted entirely — leave stored value; unknown if empty.
+        if current is None or (current or "").strip() == "":
+            _save_scope_only(token, SCOPE_UNKNOWN)
+            print(f"  scope → {SCOPE_UNKNOWN!r} (header omitted)")
+            return SCOPE_UNKNOWN
+        return (current or "").strip()
+
+    header_stripped = (header or "").strip()
+    if header_stripped:
+        normalized = normalize_scope_string(header_stripped)
+        if current != normalized:
+            _save_scope_only(token, normalized)
+            print(f"  scope from X-OAuth-Scopes: {normalized!r}")
+        return normalized
+
+    # Empty header: fine-grained PAT (or rare omit). Never invent "repo" (M3).
+    # If we already stored a classic list, keep it — do not wipe on empty header
+    # (regenerate/revoke is 401; classic scopes do not shrink in place).
+    if current is None or (current or "").strip() == "" or is_scope_unknown(current):
+        if current != SCOPE_UNKNOWN:
+            _save_scope_only(token, SCOPE_UNKNOWN)
+            print(f"  scope backfill → {SCOPE_UNKNOWN!r} (header empty)")
+        return SCOPE_UNKNOWN
+    return (current or "").strip()
+
+def refresh_scopes_from_github() -> tuple[str | None, dict | None]:
+    """
+    Live-refresh stored scopes via GET /user (for Settings display).
+
+    Returns ``(scope_now, user_json)`` or ``(None, None)`` if no token /
+    network/API failure (caller keeps showing last keyring value).
+    On 401, deletes the token and returns ``(None, None)``.
+    """
+    token = load_token()
+    if not token:
+        return None, None
+    try:
+        user = get_authenticated_user(token)
+    except GitHubAPIError as e:
+        if e.status == 401:
+            print("권한 새로고침: 토큰 무효(401) → keyring 삭제")
+            delete_token()
+            return None, None
+        print(f"권한 새로고침 실패: {e}")
+        return load_scope(), None
+    except Exception as e:  # network etc.
+        print(f"권한 새로고침 실패: {e}")
+        return load_scope(), None
+
+    scope = apply_oauth_scopes_from_user(token, user)
+    return scope, user
+
+
 def login_with_pat(token: str) -> tuple[str, dict]:
     """
     Validate a user-supplied Personal Access Token and store it.
@@ -196,6 +277,10 @@ def ensure_valid_token(
     Security: does **not** auto-start Device Flow. Missing/invalid tokens raise
     AuthError(LOGIN_REQUIRED_MSG) so the UI can open PAT login.
 
+    Always validates with GET /user **before** the classic-scope gate, so a
+    keyring scope that is stale relative to GitHub is refreshed first.
+    Settings and later UI then see the same stored list.
+
     ``force_login=True`` only runs Device Flow when ``is_device_flow_allowed()``
     (maintainer opt-in). Otherwise raises AuthError.
     """
@@ -211,6 +296,7 @@ def ensure_valid_token(
             raise AuthError(LOGIN_REQUIRED_MSG)
         token = login_device_flow(scopes=scopes, **login_kw)
         user = get_authenticated_user(token)
+        apply_oauth_scopes_from_user(token, user)
         return token, user
 
     want = scopes if scopes is not None else get_github_scopes()
@@ -221,17 +307,8 @@ def ensure_valid_token(
         print("저장된 토큰 없음 → 자동 Device Flow 하지 않음")
         raise AuthError(LOGIN_REQUIRED_MSG)
 
-    # Only enforce scope gate when classic scopes are known. Fine-grained /
-    # unknown → allow through; API/git will fail with a clear error if rights lack.
-    if needed and scopes_known() and not all(has_scope(s) for s in needed):
-        # Do not silently re-auth via public client_id.
-        print(
-            f"저장된 scope {load_scope()!r} 가 필요 권한 {want!r} 보다 좁음"
-        )
-        raise AuthError(format_missing_repo_scope_error(load_scope() or ""))
-
     print("keyring 토큰 검증 중…")
-    print(f"  stored scope: {load_scope()!r}")
+    print(f"  stored scope (before refresh): {load_scope()!r}")
     print(f"  auth kind: {load_auth_kind()!r}")
     try:
         user = get_authenticated_user(token)
@@ -242,23 +319,16 @@ def ensure_valid_token(
         delete_token()
         raise AuthError(TOKEN_EXPIRED_MSG) from e
 
-    # Backfill / refresh classic scopes from API when present.
-    header_scopes = user.get("_oauth_scopes")
-    if header_scopes is not None:
-        header_stripped = (header_scopes or "").strip()
-        current = load_scope()
-        if header_stripped:
-            normalized = normalize_scope_string(header_stripped)
-            if current != normalized:
-                save_token(token, normalized)
-                print(f"  scope from X-OAuth-Scopes: {normalized!r}")
-            if needed and not all(has_scope(s) for s in needed):
-                raise AuthError(
-                    format_missing_repo_scope_error(normalized or header_stripped)
-                )
-        elif current is None or (current or "").strip() == "":
-            # Empty header + no stored scope → mark unknown (not invent repo)
-            save_token(token, SCOPE_UNKNOWN)
-            print(f"  scope backfill → {SCOPE_UNKNOWN!r} (header empty)")
+    # Refresh keyring from live X-OAuth-Scopes *before* the scope gate.
+    # Old order gated on stale keyring and never called the API when scope
+    # looked too narrow — so GitHub-side changes never reached Settings.
+    stored = apply_oauth_scopes_from_user(token, user)
+    print(f"  stored scope (after refresh): {stored!r}")
+
+    # Only enforce when classic scopes are known. Fine-grained / unknown →
+    # allow through; API/git will fail with a clear error if rights lack.
+    if needed and scopes_known() and not all(has_scope(s) for s in needed):
+        print(f"  필요 권한 {want!r} 보다 좁음 → 재연결 안내")
+        raise AuthError(format_missing_repo_scope_error(stored or load_scope() or ""))
 
     return token, user

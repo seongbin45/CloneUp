@@ -2,10 +2,12 @@ from .device_flow import DeviceFlowError, run_device_flow
 from .session import (
     AuthError,
     MISSING_REPO_MARKER,
+    apply_oauth_scopes_from_user,
     ensure_valid_token,
     format_missing_repo_scope_error,
     login_device_flow,
     login_with_pat,
+    refresh_scopes_from_github,
 )
 from .token_store import (
     AUTH_KIND_DEVICE,
@@ -28,6 +30,7 @@ __all__ = [
     "AuthError",
     "DeviceFlowError",
     "MISSING_REPO_MARKER",
+    "apply_oauth_scopes_from_user",
     "delete_token",
     "ensure_valid_token",
     "format_missing_repo_scope_error",
@@ -40,6 +43,7 @@ __all__ = [
     "login_with_pat",
     "normalize_scope_string",
     "parse_oauth_scopes",
+    "refresh_scopes_from_github",
     "run_device_flow",
     "save_token",
     "token_age_info",
