@@ -69,10 +69,10 @@ def show_missing_repo_help(
     why.setWordWrap(True)
 
     steps = QLabel(
-        "1. 아래에서 새 키 만들기 (Tokens classic)\n"
-        "2. 「repo」 한 줄만 체크 ✓  (Full control of private repositories)\n"
-        "   · repo:status / public_repo 등 하위 줄만 켜면 부족합니다\n"
-        "3. 만료 90일 권장 · Generate → 복사 → 다시 연결"
+        "A) 같은 키(classic): GitHub 토큰 페이지에서 「repo」 켠 뒤\n"
+        "   설정 → 「권한 다시 확인」\n"
+        "B) 새 키: 아래에서 만들기 → 「repo」 한 줄 ✓ → 복사 → 다시 연결\n"
+        "   · repo:status / public_repo 만 켜면 부족합니다 · 만료 90일 권장"
     )
     steps.setObjectName("wizBox")
     steps.setWordWrap(True)
@@ -86,7 +86,8 @@ def show_missing_repo_help(
         except Exception:
             pass
     detail_bits = [
-        "예전 키에는 권한을 나중에 붙일 수 없습니다. 새 키를 만드세요.",
+        "classic 키는 웹에서 권한(scope)을 바꿀 수 있습니다. "
+        "바꾼 뒤에는 앱에서 「권한 다시 확인」을 눌러 주세요.",
         "Select scopes 목록이 길어도 CloneUp은 「repo」만 필요합니다 "
         "(workflow 파일이 있을 때만 별도 안내로 workflow를 추가합니다).",
     ]
@@ -193,7 +194,8 @@ def show_missing_workflow_scope_help(
     steps.setWordWrap(True)
 
     detail = _DetailToggle(
-        "예전 키에는 권한을 나중에 붙일 수 없습니다. 새 키를 만드세요.\n"
+        "classic 키는 웹에서 「workflow」를 추가할 수 있습니다. "
+        "추가한 뒤 설정 → 「권한 다시 확인」을 누르세요.\n"
         "워크플로 파일이 없는 저장소라면 이 권한은 필요 없습니다 — "
         "그래서 기본 연결 화면에서는 요청하지 않습니다."
     )

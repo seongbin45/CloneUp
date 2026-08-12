@@ -40,7 +40,8 @@ def next_step_for_error(message: str) -> str | None:
         or ("repo" in low and "권한" in msg and "없" in msg)
     ):
         return (
-            "저장소 권한을 켠 새 키를 만드세요. "
+            "GitHub에서 같은 키에 저장소(repo) 권한을 켠 뒤 "
+            "설정 → 권한 다시 확인을 하거나, 새 키를 연결하세요. "
             "안내 창의 「새 키 만들기」→ 복사 → 다시 연결."
         )
 
@@ -150,7 +151,8 @@ def next_step_for_error(message: str) -> str | None:
     # needs it — the default connect flow still only ever asks for `repo`.
     if is_missing_workflow_scope_error(msg):
         return (
-            "workflow 권한을 추가한 새 키를 만드세요. "
+            "GitHub에서 같은 키에 workflow 권한을 추가한 뒤 "
+            "권한 다시 확인을 하거나, workflow가 있는 새 키를 연결하세요. "
             "안내 창의 「새 키 만들기」→ 복사 → 다시 연결."
         )
 

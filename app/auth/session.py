@@ -57,17 +57,20 @@ def format_missing_repo_scope_error(current_scopes: str) -> str:
         "「repo」(저장소) 권한이 있는 키가 필요합니다.\n"
         "지금 붙여 넣은 키에는 그 권한이 없습니다.\n"
         "\n"
-        "차근차근 다시 만들기\n"
-        "1) 「새 키 만들기」로 GitHub 페이지를 엽니다 (Tokens classic)\n"
-        "2) Expiration(만료일) — 90일 또는 없음 권장\n"
-        "3) Select scopes에서 「repo」(Full control of private repositories)만 ✓\n"
-        "   · 하위 줄(repo:status, public_repo …)만 켜면 부족합니다\n"
-        "4) Generate token(토큰 생성) 누르기\n"
-        "5) 초록색으로 보이는 긴 키 전체를 복사\n"
-        "6) 「GitHub: 연결」에서 그 새 키를 붙여 넣기\n"
+        "차근차근 다시 하기\n"
+        "A) 같은 키(classic)를 쓰는 경우\n"
+        "  1) GitHub → Settings → Developer settings → Tokens (classic)\n"
+        "  2) 해당 키를 열어 「repo」에 체크 후 저장\n"
+        "  3) 설정 → 「권한 다시 확인」 또는 「GitHub: 연결」\n"
+        "B) 키를 새로 만드는 경우\n"
+        "  1) 「새 키 만들기」(Tokens classic)\n"
+        "  2) Expiration — 90일 또는 없음 권장\n"
+        "  3) Select scopes에서 「repo」(Full control of private repositories) ✓\n"
+        "  4) Generate token → 초록 키 전체 복사 → 「GitHub: 연결」에 붙여 넣기\n"
         "\n"
         f"이 키에 있던 권한: {scopes}\n"
-        "※ 예전 키는 권한을 나중에 추가할 수 없습니다. 새 키를 만드세요."
+        "※ classic 키는 웹에서 권한(scope)을 바꿀 수 있습니다. "
+        "바꾼 뒤에는 앱에서 「권한 다시 확인」을 눌러 주세요."
     )
 
 
@@ -163,7 +166,7 @@ def apply_oauth_scopes_from_user(token: str, user: dict) -> str:
 
     # Empty header: fine-grained PAT (or rare omit). Never invent "repo" (M3).
     # If we already stored a classic list, keep it — do not wipe on empty header
-    # (regenerate/revoke is 401; classic scopes do not shrink in place).
+    # (revoke/regenerate is 401; scope edits on the web show up on next refresh).
     if current is None or (current or "").strip() == "" or is_scope_unknown(current):
         if current != SCOPE_UNKNOWN:
             _save_scope_only(token, SCOPE_UNKNOWN)

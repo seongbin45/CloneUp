@@ -411,8 +411,7 @@ class SettingsDialog(QDialog):
         self._btn_refresh_scopes.setObjectName("setSecondary")
         self._btn_refresh_scopes.setToolTip(
             "GitHub에 물어 이 컴퓨터에 저장된 권한 목록을 맞춥니다.\n"
-            "classic 키: 같은 키 문자열의 scope는 웹에서 바꿀 수 없고,\n"
-            "새 키를 만들어 「다시 로그인」해야 합니다.\n"
+            "classic 키: 웹에서 scope를 바꾼 뒤 이 버튼을 누르세요.\n"
             "세분 키: 목록이 안 와 「권한 확인 불가」로 남을 수 있습니다."
         )
         self._btn_refresh_scopes.clicked.connect(self._do_refresh_scopes)
@@ -448,7 +447,7 @@ class SettingsDialog(QDialog):
             "GitHub 쪽 승인까지 없애려면 GitHub 설정에서 따로 해제해야 합니다.\n"
             "표시되는 「권한」은 이 PC에 저장된 값이며, 설정 열 때·「권한 다시 확인」·"
             "올리기/동기화 때 GitHub와 맞춥니다. "
-            "classic 키 권한은 웹에서 같은 키에 붙일 수 없어 새 키 + 다시 로그인이 필요합니다."
+            "classic 키는 웹에서 권한을 바꾼 뒤 「권한 다시 확인」을 누르면 됩니다."
         )
         hint.setObjectName("setBanner")
         hint.setWordWrap(True)
