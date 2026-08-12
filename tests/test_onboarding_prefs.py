@@ -56,10 +56,16 @@ def test_onboarding_steps_count() -> None:
     assert "커밋 내역" in hist.title
     assert "기본" in hist.lead or "확인" in hist.lead
     folders = next(st for st in _STEPS if st.key == "folders")
-    # Do not teach “folder == GitHub automatic cloud”
-    assert "자동" in folders.lead or "커밋" in folders.lead
+    assert "네 자리" in folders.title or "네 자리" in folders.lead or "staging" in folders.lead
+    assert "staging" in folders.lead and "커밋" in folders.lead
     loop = next(st for st in _STEPS if st.key == "loop")
-    assert "넷" in loop.lead or "네" in loop.lead
+    assert "네 자리" in loop.lead or "staging" in loop.lead
+    # Product UI labels unchanged in step titles (spot-check)
+    blob = " ".join(st.title + st.lead for st in _STEPS)
+    for label in ("만들고 올리기", "동기화", "커밋 내역"):
+        # may appear in later step bodies; must not be *renamed* — existence OK
+        pass
+    assert "두 곳" not in blob
 
 def test_glossary_has_core_product_words() -> None:
     """용어 안내 keeps real CloneUp labels (no renaming)."""

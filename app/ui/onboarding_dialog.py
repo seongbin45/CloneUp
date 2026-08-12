@@ -45,12 +45,14 @@ class _Step:
     lead: str
 
 
+# 확정 자리 모델 (네 자리): 작업 폴더 · staging · 커밋(로컬) · GitHub(remote)
+# 버튼·탭 이름(만들고 올리기 등)은 바꾸지 않는다.
 _STEPS: tuple[_Step, ...] = (
     _Step(
         "folders",
-        "맞출 쪽은 둘입니다 — 다만 전체가 자동은 아닙니다",
-        "내 컴퓨터와 GitHub를 맞춥니다. 폴더 전체가 같아지는 클라우드가 아니라, "
-        "커밋에 넣은 것만 건너갑니다.",
+        "파일은 네 자리를 거쳐 GitHub에 갑니다",
+        "작업 폴더 → staging → 커밋(로컬) → GitHub(remote). "
+        "커밋에 넣은 것만 넘어갑니다.",
     ),
     _Step(
         "commits",
@@ -60,8 +62,8 @@ _STEPS: tuple[_Step, ...] = (
     _Step(
         "loop",
         "왜 여러 단계인가요 — 한 바퀴 루프",
-        "안쪽에는 자리가 넷입니다(작업 폴더·staging·커밋·GitHub). "
-        "성공한 뒤 이 그림을 보면 됩니다. 자동 클라우드가 아닙니다.",
+        "네 자리(작업 폴더·staging·커밋·GitHub)를 한 바퀴 돕니다. "
+        "받아오기·올리고 보내기를 누를 때만 맞춰집니다.",
     ),
     _Step(
         "history_mode",
@@ -87,7 +89,7 @@ _STEPS: tuple[_Step, ...] = (
 )
 
 _COST_ROWS: tuple[tuple[str, str, str, bool], ...] = (
-    ("커밋하기", "돌아올 지점이 하나 생깁니다", "없습니다", False),
+    ("커밋하기", "로컬 커밋이 하나 생깁니다", "없습니다", False),
     ("비공개로 올리기", "다른 곳에서도 받아 쓸 수 있습니다", "없습니다", False),
     (
         "공개로 올리기",
@@ -97,7 +99,7 @@ _COST_ROWS: tuple[tuple[str, str, str, bool], ...] = (
     ),
     (
         "되돌리기",
-        "예전 내용이 돌아옵니다",
+        "예전 내용을 새 커밋으로 되살립니다",
         "기록이 한 줄 길어집니다",
         False,
     ),
@@ -106,7 +108,7 @@ _COST_ROWS: tuple[tuple[str, str, str, bool], ...] = (
 _SAFETY_ROWS: tuple[tuple[str, str], ...] = (
     (
         "되돌리기 전에 백업 브랜치를 만듭니다",
-        "잘못 눌러도 돌아올 자리가 남습니다. 따로 하실 일은 없습니다.",
+        "잘못 눌러도 백업 브랜치가 남습니다. 따로 하실 일은 없습니다.",
     ),
     (
         "비밀번호가 든 파일로 보이면 멈춥니다",
@@ -387,11 +389,11 @@ class OnboardingDialog(QDialog):
         )
         lay.addLayout(row)
         foot = QLabel(
-            "만들고 올리기·받기·동기화는 이 화살표(올리기 / 받아오기) 쪽 일입니다. "
-            "커밋에 들어간 내용만 GitHub에 맞춰집니다 — 예를 들어 .env 같은 파일은 "
-            "안전 검사·제외로 안 올라갈 수 있습니다. "
-            "받아오기·올리고 보내기를 누를 때만 양쪽이 맞춰집니다. "
-            "다음 장에서 안쪽 네 자리를 짧게 봅니다."
+            "그림의 양쪽 끝은 작업 폴더와 GitHub입니다. "
+            "그 사이에는 staging과 커밋(로컬)이 있습니다. "
+            "만들고 올리기·받기·동기화는 이 경로를 돕습니다. "
+            "커밋에 들어간 내용만 GitHub에 맞춰집니다 "
+            "(.env 등은 안전 검사로 막힐 수 있습니다)."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
@@ -479,27 +481,27 @@ class OnboardingDialog(QDialog):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(14)
 
-        # Product words kept; manuscript metaphor; formal terms in parentheses.
+        # Four places in product order; tab names unchanged; English terms once.
         rows: tuple[tuple[str, str, str], ...] = (
             (
-                "1 · 커밋 (commit)",
+                "1 · 작업 폴더 → staging → 커밋 (commit)",
                 "책상 위 원고를 봉인해 내 서고에 꽂습니다. (로컬 저장소)",
-                "왜: 나중에 이 기록을 가리킬 수 있습니다. 커밋 전 수정은 GitHub에 안 갑니다.",
+                "왜: 커밋 전 수정은 GitHub에 안 갑니다. git commit 이 이 단계입니다.",
             ),
             (
                 "2 · 만들고 올리기 / 올리고 보내기 (push)",
-                "내 서고에 있는 봉인 기록을 GitHub(원격)로 보냅니다.",
-                "왜: 밖과 맞추고 다른 자리에서도 이어 씁니다. 자동 클라우드 동기화가 아닙니다.",
+                "내 서고에 있는 봉인 기록을 GitHub(remote)로 보냅니다.",
+                "왜: 다른 PC에서도 이어서 쓰려면 remote에 맞춰야 합니다. git push.",
             ),
             (
                 "3 · 받아오기 (pull)",
-                "GitHub에 더 새 기록이 있으면 이 폴더 쪽으로 가져옵니다.",
-                "왜: 어느 쪽이 앞선 장을 가졌는지 보고 맞춥니다. 겹치면 충돌이 납니다.",
+                "GitHub에 더 새 기록이 있으면 이 작업 폴더 쪽으로 가져옵니다.",
+                "왜: 어느 쪽 커밋이 앞섰는지 보고 맞춥니다. 겹치면 충돌(conflict)이 납니다.",
             ),
             (
                 "4 · 다시 고치기",
-                "작업 폴더에서 파일을 수정한 뒤 1번(커밋)으로 돌아갑니다.",
-                "클론업 탭은 이 길을 나눈 것입니다. 성공한 뒤 ‘네 자리’를 보면 그림이 고정됩니다.",
+                "작업 폴더에서 파일을 수정한 뒤 다시 커밋합니다.",
+                "클론업 탭은 이 네 자리를 나눈 것입니다. 설정 > 용어 안내에서도 같습니다.",
             ),
         )
         for title, body, why in rows:

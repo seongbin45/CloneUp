@@ -568,13 +568,14 @@ class MainController(QObject):
 
     def _install_tab_tip_cards(self) -> None:
         """G1/G2 — collapsible tip cards (folded by default to save space)."""
+        # Four-place model copy only (작업 폴더 · staging · 커밋 · GitHub).
         tips: list[tuple[str, str, str]] = [
             (
                 "labelTabIntroPublish",
                 "내 컴퓨터 폴더를 GitHub에 처음 올립니다.",
-                "• 왜: 작업 폴더 내용을 커밋(로컬 기록)한 뒤 GitHub(원격)로 보냅니다. "
-                "커밋 전 파일은 밖에 안 갑니다.\n"
-                "• 먼저 위쪽 「GitHub: 연결」에서 키를 연결하세요.\n"
+                "• 왜: 작업 폴더 → (staging) → 커밋(commit) → GitHub(remote/push). "
+                "커밋에 넣은 것만 넘어갑니다.\n"
+                "• 먼저 위쪽 「GitHub: 연결」에서 PAT 키를 연결하세요.\n"
                 "• branch 는 보통 main 입니다. 필요하면 목록에서 고르거나 직접 입력하세요.\n"
                 "• 「커밋에 내 이메일 숨기기」를 켜 두면 학교·회사 메일이 안 남습니다.\n"
                 "• 공개 저장소는 누구나 볼 수 있고, 한 번 올라간 내용은 거두기 어렵습니다.\n"
@@ -583,7 +584,7 @@ class MainController(QObject):
             (
                 "labelTabIntroClone",
                 "GitHub에 있는 폴더를 내 컴퓨터로 복사합니다.",
-                "• 왜: GitHub(원격) 기록을 이 PC 작업 폴더로 가져와, 고치고 다시 맞출 준비를 합니다.\n"
+                "• 왜: GitHub(remote) 기록을 이 PC 작업 폴더로 가져옵니다(clone).\n"
                 "• 주소를 붙여 넣거나, GitHub 연결 후 「목록 ▼」에서 내 저장소를 고를 수 있습니다.\n"
                 "• 같은 이름의 폴더가 이미 있으면 실패합니다. 이름을 바꾸세요.\n"
                 "• 비공개 저장소는 「비공개 저장소 받을 때 GitHub 연결 사용」을 켠 뒤 연결하세요.\n"
@@ -593,17 +594,16 @@ class MainController(QObject):
             (
                 "labelTabIntroSync",
                 "이미 연결된 폴더의 변경사항을 주고받습니다.",
-                "• 왜: 로컬 커밋과 GitHub를 맞춥니다(자동 드라이브 동기화 아님). "
-                "상태의 보낼/받을 커밋을 보세요.\n"
+                "• 왜: 로컬 커밋과 GitHub를 맞춥니다. "
+                "받아오기·올리고 보내기를 누를 때만 맞춰집니다.\n"
                 "• 이 폴더에 .git 이 있어야 합니다. 없으면 「받기」나 「만들고 올리기」를 먼저 하세요.\n"
                 "• 「커밋 내역」은 지난 시점 보기·(설정 시) 되돌리기입니다. "
                 "「충돌 취소」는 합치기 중 겹침을 포기하는 비상 버튼입니다.\n"
                 "• 왼쪽 branch / 상태에 이 폴더 정보가 나란히 보입니다.\n"
-                "• 폴더를 고르거나 경로를 붙이면 상태가 자동으로 다시 읽힙니다.\n"
+                "• 폴더를 고르거나 경로를 붙이면 상태가 다시 읽힙니다.\n"
                 "• 올리기 전에 비밀 파일 후보가 있는지 확인하세요.",
             ),
-        ]
-        for obj_name, summary, body in tips:
+        ]        for obj_name, summary, body in tips:
             ph = self.window.findChild(QLabel, obj_name)
             if ph is not None:
                 install_tip_card(ph, summary=summary, body=body)

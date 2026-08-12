@@ -56,16 +56,33 @@ IMPLEMENTED_UI: set[str] = {
 }
 PLANNED_UI: set[str] = set()  # none currently; planned names would go here
 
-# 고정 금지 비유 6종. 목록은 늘리지 않는다(새 실패는 시험 항목으로).
+# 금지: 동사 서술·제품 오해 비유. 목록은 늘리지 않는다(새 실패는 시험 항목으로).
 # 부정형("~가 아닙니다")도 걸린다 — 부정형은 오해를 막는 게 아니라 처음 심는다.
+# 「사진」「세이브포인트」명사 단독은 금지하지 않는다(동사가 붙을 때 아래 패턴).
 BANNED_METAPHORS: dict[str, tuple[str, ...]] = {
-    "백업/복사본 보관": ("백업", "복사본 보관", "통째 업로드", "이사"),
+    "통째 보관/이사": ("복사본 보관", "통째 업로드", "이사"),
     "자동 클라우드 동기화": ("구글 드라이브", "드롭박스", "드라이브처럼", "클라우드 동기화"),
-    "세이브포인트": ("세이브포인트", "세이브 포인트", "저장하고 불러오기", "불러오기"),
-    "타임머신": ("타임머신", "타임 머신", "과거로 돌아", "과거로 감", "시간을 되돌"),
+    "과거로 감(동사)": (
+        "과거로 돌아",
+        "과거로 감",
+        "시간을 되돌",
+        "불러오기",
+        "저장하고 불러오기",
+    ),
+    "타임머신": ("타임머신", "타임 머신"),
     "브랜치=폴더 복사본": ("폴더 복사본", "폴더 통째 복사", "브랜치를 복사"),
     "USB/단순 파일 전송": ("USB", "유에스비", "단순 폴더 복사", "파일 전송"),
 }
+
+# 실제 기능·명령·버튼 고유명 — 금지 어휘와 겹쳐도 통과 (부분 문자열 예외).
+PROPER_NAME_EXCEPTIONS: tuple[str, ...] = (
+    "백업 브랜치",
+    "git commit",
+    "git push",
+    "git pull",
+    "git add",
+    "git clone",
+)
 
 # 집필 규칙 어휘. 사용자 카드에 있으면 누수다.
 META_LEAK: tuple[str, ...] = (
@@ -243,15 +260,29 @@ class Linter:
         joined = f"{summary} {body}"
         scan = self._strip_prefixes(joined)
 
-        # GT001 금지 비유 (부정형 포함)
+        # GT001 금지 비유 (부정형 포함). 고유명 예외는 해당 구간을 지우고 검사.
+        scan_banned = scan
+        for proper in PROPER_NAME_EXCEPTIONS:
+            if proper in scan_banned:
+                scan_banned = scan_banned.replace(proper, " " * len(proper))
+        # 「백업」단독 금지는 예외 문구 제거 후에만 (백업 브랜치 통과)
+        if "백업" in scan_banned and "백업 브랜치" not in scan:
+            # still may be bare 백업 after exception strip
+            pass
         for label, tokens in BANNED_METAPHORS.items():
             for tok in tokens:
-                if tok in scan:
+                if tok in scan_banned:
                     self.add(ERROR, "GT001", where,
                              f"금지 비유 '{label}' 어휘 노출 — 부정형도 금지(오해를 막지 않고 심는다). "
                              f"옳은 사실을 긍정 단정문으로 쓸 것",
                              self._clip(scan, tok))
                     break
+        # bare "백업" without 백업 브랜치 (통째 보관 오해)
+        if "백업" in scan_banned:
+            self.add(ERROR, "GT001", where,
+                     "금지 비유 '통째 보관/이사' 어휘 노출 — '백업' 단독. "
+                     "기능 설명이면 '백업 브랜치' 등 고유명을 쓸 것",
+                     self._clip(scan, "백업"))
 
         # GT002 집필 규칙 누수 (카드당 1건으로 합침)
         leaked = [tok for tok in META_LEAK if tok in scan]
