@@ -42,6 +42,11 @@ from app.auth.token_store import (
 from app.git.runner import require_git
 from app.paths import app_root
 from app.ui.settings_store import (
+    USER_GLOSSARY_DETAIL_MAX,
+    USER_GLOSSARY_LINE_MAX,
+    USER_GLOSSARY_MAX,
+    USER_GLOSSARY_TERM_MAX,
+    add_user_glossary_entry,
     clear_recent_folders,
     load_hide_real_email,
     load_history_revert_enabled,
@@ -51,6 +56,8 @@ from app.ui.settings_store import (
     load_last_publish_branch,
     load_recent_folders,
     load_secret_pii_scan_enabled,
+    load_user_glossary,
+    remove_user_glossary_entry,
     save_hide_real_email,
     save_history_revert_enabled,
     save_last_commit_message,
@@ -680,60 +687,245 @@ class SettingsDialog(QDialog):
         return w
 
     def _build_terms(self, p: Palette) -> QWidget:
-        """Read-only beginner glossary — product UI words kept as-is."""
+        """Built-in glossary + user-added terms (「+」). Product UI words kept."""
         w, lay = self._page_shell()
         lay.setSpacing(14)
-        lay.addWidget(
+
+        head_row = QHBoxLayout()
+        head_row.setSpacing(12)
+        head_row.addWidget(
             self._heading(
                 "용어 안내",
                 "화면에 보이는 말을 짧게 풀어 둡니다. "
-                "commit, push, staging 같은 말도 함께 적습니다.",
-            )
+                "commit, push, staging 같은 말도 함께 적습니다. "
+                "「+」로 나만의 용어를 추가할 수 있습니다.",
+            ),
+            1,
         )
+        self._btn_add_term = QPushButton("+")
+        self._btn_add_term.setObjectName("setSecondary")
+        self._btn_add_term.setFixedSize(36, 36)
+        self._btn_add_term.setToolTip(
+            "용어 추가\n"
+            f"이 컴퓨터에만 저장됩니다 (최대 {USER_GLOSSARY_MAX}개)."
+        )
+        self._btn_add_term.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_add_term.clicked.connect(self._on_add_glossary_term)
+        head_row.addWidget(
+            self._btn_add_term, 0, Qt.AlignmentFlag.AlignTop
+        )
+        lay.addLayout(head_row)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setObjectName("setScroll")
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        host = QWidget()
-        host_l = QVBoxLayout(host)
-        host_l.setContentsMargins(0, 0, 0, 0)
-        host_l.setSpacing(10)
+        self._terms_scroll = scroll
+        self._terms_host = QWidget()
+        self._terms_host_l = QVBoxLayout(self._terms_host)
+        self._terms_host_l.setContentsMargins(0, 0, 0, 0)
+        self._terms_host_l.setSpacing(10)
+        scroll.setWidget(self._terms_host)
+        lay.addWidget(scroll, 1)
 
-        for term, one_line, detail in GLOSSARY_ENTRIES:
-            card = QFrame()
-            card.setObjectName("setCard")
-            cl = QVBoxLayout(card)
-            cl.setContentsMargins(15, 13, 15, 13)
-            cl.setSpacing(6)
-            t = QLabel(term)
-            t.setObjectName("setCardTitle")
-            one = QLabel(one_line)
-            one.setObjectName("setBody")
-            one.setWordWrap(True)
-            one.setStyleSheet(
-                f"font-size: 13px; font-weight: 500; color: {p.text};"
+        self._rebuild_terms_list()
+        return w
+
+    def _glossary_card(
+        self,
+        p: Palette,
+        *,
+        term: str,
+        one_line: str,
+        detail: str,
+        user_owned: bool,
+    ) -> QFrame:
+        card = QFrame()
+        card.setObjectName("setCard")
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(15, 13, 15, 13)
+        cl.setSpacing(6)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        t = QLabel(term)
+        t.setObjectName("setCardTitle")
+        t.setWordWrap(True)
+        title_row.addWidget(t, 1)
+        if user_owned:
+            badge = QLabel("내 용어")
+            badge.setStyleSheet(
+                f"font-size: 11px; font-weight: 600; color: {p.primary}; "
+                f"background: {p.bg_window}; padding: 2px 8px; border-radius: 4px;"
             )
+            title_row.addWidget(badge, 0)
+            btn_del = QPushButton("삭제")
+            btn_del.setObjectName("setSecondary")
+            btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn_del.setToolTip("이 컴퓨터에서 이 용어만 지웁니다.")
+            btn_del.clicked.connect(
+                lambda _=False, name=term: self._on_remove_glossary_term(name)
+            )
+            title_row.addWidget(btn_del, 0)
+        cl.addLayout(title_row)
+
+        one = QLabel(one_line)
+        one.setObjectName("setBody")
+        one.setWordWrap(True)
+        one.setStyleSheet(
+            f"font-size: 13px; font-weight: 500; color: {p.text};"
+        )
+        cl.addWidget(one)
+        if detail.strip():
             d = QLabel(detail)
             d.setObjectName("setMeta")
             d.setWordWrap(True)
             d.setStyleSheet(f"font-size: 12px; color: {p.text_muted};")
-            cl.addWidget(t)
-            cl.addWidget(one)
             cl.addWidget(d)
-            host_l.addWidget(card)
+        return card
 
+    def _rebuild_terms_list(self) -> None:
+        """Fill scroll host: built-in cards, then user cards, then hint."""
+        if not hasattr(self, "_terms_host_l") or self._terms_host_l is None:
+            return
+        p = active_palette()
+        lay = self._terms_host_l
+        while lay.count():
+            item = lay.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        for term, one_line, detail in GLOSSARY_ENTRIES:
+            lay.addWidget(
+                self._glossary_card(
+                    p,
+                    term=term,
+                    one_line=one_line,
+                    detail=detail,
+                    user_owned=False,
+                )
+            )
+
+        user_rows = load_user_glossary()
+        if user_rows:
+            sec = QLabel("내가 추가한 용어")
+            sec.setObjectName("setSection")
+            lay.addWidget(sec)
+            for term, one_line, detail in user_rows:
+                lay.addWidget(
+                    self._glossary_card(
+                        p,
+                        term=term,
+                        one_line=one_line,
+                        detail=detail,
+                        user_owned=True,
+                    )
+                )
+
+        n_user = len(user_rows)
         hint = QLabel(
             "혼자 쓸 때도 어제 나에게 남기는 기록입니다. "
-            "협업은 그다음 이야기입니다."
+            "협업은 그다음 이야기입니다.\n"
+            f"내 용어 {n_user}/{USER_GLOSSARY_MAX}개 · 이 컴퓨터에만 저장됩니다."
         )
         hint.setObjectName("setMeta")
         hint.setWordWrap(True)
-        host_l.addWidget(hint)
-        host_l.addStretch(1)
-        scroll.setWidget(host)
-        lay.addWidget(scroll, 1)
-        return w
+        lay.addWidget(hint)
+        lay.addStretch(1)
+
+        if hasattr(self, "_btn_add_term") and self._btn_add_term is not None:
+            self._btn_add_term.setEnabled(n_user < USER_GLOSSARY_MAX)
+
+    @Slot()
+    def _on_add_glossary_term(self) -> None:
+        p = active_palette()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("용어 추가")
+        dlg.setModal(True)
+        dlg.setMinimumWidth(420)
+        root = QVBoxLayout(dlg)
+        root.setSpacing(10)
+        root.setContentsMargins(18, 16, 18, 14)
+
+        lab = QLabel(
+            "내가 헷갈리는 말을 짧게 적어 두세요. "
+            "앱에 기본으로 들어 있는 용어는 그대로 두고, 아래에 덧붙입니다."
+        )
+        lab.setWordWrap(True)
+        lab.setStyleSheet(f"color: {p.text_secondary}; font-size: 12.5px;")
+        root.addWidget(lab)
+
+        def _field(title: str, placeholder: str, *, multi: bool = False):
+            t = QLabel(title)
+            t.setObjectName("setFormLabel")
+            root.addWidget(t)
+            if multi:
+                edit = QPlainTextEdit()
+                edit.setPlaceholderText(placeholder)
+                edit.setFixedHeight(88)
+            else:
+                edit = QLineEdit()
+                edit.setPlaceholderText(placeholder)
+                edit.setClearButtonEnabled(True)
+            root.addWidget(edit)
+            return edit
+
+        edit_term = _field("용어", f"예: staging (최대 {USER_GLOSSARY_TERM_MAX}자)")
+        edit_one = _field(
+            "한 줄 요약",
+            f"예: 다음에 커밋에 넣을 장을 고르는 자리 (최대 {USER_GLOSSARY_LINE_MAX}자)",
+        )
+        edit_detail = _field(
+            "긴 설명 (선택)",
+            f"더 자세한 메모 (최대 {USER_GLOSSARY_DETAIL_MAX}자)",
+            multi=True,
+        )
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.button(QDialogButtonBox.StandardButton.Ok).setText("추가")
+        btns.button(QDialogButtonBox.StandardButton.Cancel).setText("취소")
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        root.addWidget(btns)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        term = edit_term.text().strip()
+        one = edit_one.text().strip()
+        detail = edit_detail.toPlainText().strip()
+        if not term or not one:
+            QMessageBox.warning(
+                self, "입력 부족", "용어와 한 줄 요약은 꼭 적어 주세요."
+            )
+            return
+        if not add_user_glossary_entry(term, one, detail):
+            QMessageBox.warning(
+                self,
+                "추가하지 못함",
+                "이름이 비었거나, 이미 같은 이름이 있거나, "
+                f"최대 {USER_GLOSSARY_MAX}개에 도달했습니다.",
+            )
+            return
+        self._rebuild_terms_list()
+
+    @Slot()
+    def _on_remove_glossary_term(self, term: str) -> None:
+        reply = QMessageBox.question(
+            self,
+            "용어 삭제",
+            f"「{term}」을(를) 이 컴퓨터에서 지울까요?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        if remove_user_glossary_entry(term):
+            self._rebuild_terms_list()
 
     def _build_about(self, p: Palette) -> QWidget:
         w, lay = self._page_shell()

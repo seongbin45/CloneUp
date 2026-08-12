@@ -138,3 +138,100 @@ def load_onboarding_done() -> bool:
 
 def save_onboarding_done(done: bool = True) -> None:
     _settings().setValue("onboarding_done", bool(done))
+
+
+# ----- user glossary (설정 → 용어 안내) -----
+# Built-in GLOSSARY_ENTRIES stay in code; these are user-added extras only.
+USER_GLOSSARY_MAX = 40
+USER_GLOSSARY_TERM_MAX = 40
+USER_GLOSSARY_LINE_MAX = 80
+USER_GLOSSARY_DETAIL_MAX = 400
+
+
+def load_user_glossary() -> list[tuple[str, str, str]]:
+    """Return user-defined (term, one_line, detail) rows from QSettings."""
+    raw = _settings().value("user_glossary_entries", [])
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        # Unexpected single string — ignore
+        return []
+    out: list[tuple[str, str, str]] = []
+    try:
+        items = list(raw)
+    except TypeError:
+        return []
+    for item in items:
+        term, one, detail = "", "", ""
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            term = str(item[0] or "").strip()
+            one = str(item[1] or "").strip()
+            detail = str(item[2] or "").strip() if len(item) >= 3 else ""
+        elif isinstance(item, dict):
+            term = str(item.get("term") or item.get("t") or "").strip()
+            one = str(item.get("one_line") or item.get("summary") or item.get("s") or "").strip()
+            detail = str(item.get("detail") or item.get("d") or "").strip()
+        else:
+            continue
+        if not term or not one:
+            continue
+        out.append(
+            (
+                term[:USER_GLOSSARY_TERM_MAX],
+                one[:USER_GLOSSARY_LINE_MAX],
+                detail[:USER_GLOSSARY_DETAIL_MAX],
+            )
+        )
+        if len(out) >= USER_GLOSSARY_MAX:
+            break
+    return out
+
+
+def save_user_glossary(entries: list[tuple[str, str, str]]) -> None:
+    """Persist user glossary (overwrites). Built-in terms are never stored here."""
+    cleaned: list[list[str]] = []
+    for term, one, detail in entries:
+        t = (term or "").strip()[:USER_GLOSSARY_TERM_MAX]
+        o = (one or "").strip()[:USER_GLOSSARY_LINE_MAX]
+        d = (detail or "").strip()[:USER_GLOSSARY_DETAIL_MAX]
+        if not t or not o:
+            continue
+        cleaned.append([t, o, d])
+        if len(cleaned) >= USER_GLOSSARY_MAX:
+            break
+    _settings().setValue("user_glossary_entries", cleaned)
+
+
+def add_user_glossary_entry(term: str, one_line: str, detail: str = "") -> bool:
+    """
+    Append one user term. Returns False if full, empty, or duplicate term name
+    (case-insensitive, against existing user entries only).
+    """
+    t = (term or "").strip()[:USER_GLOSSARY_TERM_MAX]
+    o = (one_line or "").strip()[:USER_GLOSSARY_LINE_MAX]
+    d = (detail or "").strip()[:USER_GLOSSARY_DETAIL_MAX]
+    if not t or not o:
+        return False
+    cur = load_user_glossary()
+    if len(cur) >= USER_GLOSSARY_MAX:
+        return False
+    low = t.casefold()
+    if any(x[0].casefold() == low for x in cur):
+        return False
+    cur.append((t, o, d))
+    save_user_glossary(cur)
+    return True
+
+
+def remove_user_glossary_entry(term: str) -> bool:
+    """Remove first user entry whose term matches (case-insensitive)."""
+    t = (term or "").strip()
+    if not t:
+        return False
+    low = t.casefold()
+    cur = load_user_glossary()
+    nxt = [x for x in cur if x[0].casefold() != low]
+    if len(nxt) == len(cur):
+        return False
+    save_user_glossary(nxt)
+    return True
