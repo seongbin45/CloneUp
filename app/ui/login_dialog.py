@@ -23,6 +23,12 @@ from PySide6.QtWidgets import (
 from app.config import is_device_flow_allowed
 from app.ui.theme import Palette, active_palette
 
+# Prefer fine-grained first (single repo + Contents). Classic is fallback.
+PAT_CREATE_URL_FINE = (
+    "https://github.com/settings/personal-access-tokens/new"
+    "?name=CloneUp"
+    "&contents=write"
+)
 PAT_CREATE_URL = (
     "https://github.com/settings/tokens/new"
     "?scopes=repo&description=CloneUp"
@@ -31,9 +37,7 @@ PAT_LIST_URL = "https://github.com/settings/tokens"
 
 # Only used by show_missing_workflow_scope_help below — a *reactive* dialog
 # shown after a push actually fails for lacking `workflow`. Never used by
-# the default connect wizard (_page_make_key), which stays `repo`-only:
-# most repos don't have .github/workflows/*, so asking for this up front
-# would be requesting a broader scope than the app needs.
+# the default connect wizard (_page_make_key).
 WORKFLOW_PAT_CREATE_URL = (
     "https://github.com/settings/tokens/new"
     "?scopes=repo,workflow&description=CloneUp"
@@ -403,6 +407,10 @@ class ConnectGitHubWizard(QDialog):
             self._edit.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _open_create_page(self) -> None:
+        # Default: fine-grained create (narrower). Classic is secondary.
+        QDesktopServices.openUrl(QUrl(PAT_CREATE_URL_FINE))
+
+    def _open_classic_create_page(self) -> None:
         QDesktopServices.openUrl(QUrl(PAT_CREATE_URL))
 
     def _page_make_key(self) -> QWidget:
@@ -417,11 +425,12 @@ class ConnectGitHubWizard(QDialog):
         lead.setWordWrap(True)
 
         box = QLabel(
-            "· Select scopes → 「repo」 한 줄만 체크 (Full control…)\n"
-            "  (repo:status / public_repo 만 켜면 부족합니다)\n"
-            "· 가능하면 세분 키: 해당 저장소만 · Contents 읽기/쓰기\n"
-            "· 만료일: 90일 또는 없음 권장\n"
-            "· Generate token 후 초록 키 전체 복사"
+            "1순위 · 세분 키 (권장)\n"
+            "  · 해당 저장소만 · Contents 읽기/쓰기 · 만료 90일 권장\n"
+            "  · 「브라우저에서 만들기」가 세분 키 화면을 엽니다\n"
+            "안 될 때만 · classic\n"
+            "  · Tokens (classic) → 「repo」 한 줄 ✓ (모든 저장소 읽기·쓰기)\n"
+            "  · Generate 후 초록 키 전체 복사"
         )
         box.setObjectName("wizBox")
         box.setWordWrap(True)
@@ -429,10 +438,9 @@ class ConnectGitHubWizard(QDialog):
         detail = _DetailToggle(
             "키 = 비밀번호 대용 출입증. 채팅·캡처에 올리지 마세요.\n"
             "이 컴퓨터에만 저장됩니다. 만료되면 새 키가 필요합니다.\n"
-            "저장소(repo) 권한은 이 앱에서 쓴 폴더뿐 아니라, 내 GitHub의 "
-            "모든 저장소(비공개 포함)를 읽고 쓸 수 있는 넓은 권한입니다.\n"
-            "권한 목록이 길어 보여도 CloneUp 기본은 「repo」만 필요합니다.\n"
-            "GitHub 영문: Tokens (classic) · Expiration · repo · Generate · Copy."
+            "classic 「repo」는 내 GitHub의 모든 저장소(비공개 포함)를 "
+            "읽고 쓸 수 있는 넓은 권한입니다. 가능하면 세분 키를 쓰세요.\n"
+            "GitHub 영문: Fine-grained · Contents · Tokens (classic) · repo."
         )
 
         btn_open = QPushButton("브라우저에서 만들기")
@@ -440,12 +448,18 @@ class ConnectGitHubWizard(QDialog):
         btn_open.setDefault(True)
         btn_open.clicked.connect(self._open_create_page)
 
+        btn_classic = QPushButton("classic으로 만들기")
+        btn_classic.setObjectName("btnSecondary")
+        btn_classic.setToolTip(
+            "세분 키가 안 될 때만. repo 권한이 미리 체크된 classic 페이지를 엽니다."
+        )
+        btn_classic.clicked.connect(self._open_classic_create_page)
+
         btn_list = QPushButton("키 목록")
         btn_list.setObjectName("btnSecondary")
         btn_list.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(PAT_LIST_URL))
         )
-
         btn_cancel = QPushButton("취소")
         btn_cancel.setObjectName("btnGhost")
         btn_cancel.clicked.connect(self.reject)
@@ -457,6 +471,7 @@ class ConnectGitHubWizard(QDialog):
         top_btns = QHBoxLayout()
         top_btns.setSpacing(8)
         top_btns.addWidget(btn_open, 1)
+        top_btns.addWidget(btn_classic, 0)
         top_btns.addWidget(btn_list, 0)
 
         nav = QHBoxLayout()

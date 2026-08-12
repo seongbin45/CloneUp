@@ -45,14 +45,13 @@ class _Step:
     lead: str
 
 
-# 확정 자리 모델 (네 자리): 작업 폴더 · staging · 커밋(로컬) · GitHub(remote)
+# 온보딩 1단계 = 두 곳(첫 성공용). staging·네 자리 전체는 용어 안내·.env 지점.
 # 버튼·탭 이름(만들고 올리기 등)은 바꾸지 않는다.
 _STEPS: tuple[_Step, ...] = (
     _Step(
         "folders",
-        "파일은 네 자리를 거쳐 GitHub에 갑니다",
-        "작업 폴더 → staging → 커밋(로컬) → GitHub(remote). "
-        "커밋에 넣은 것만 넘어갑니다.",
+        "폴더가 두 곳에 있습니다",
+        "내 컴퓨터와 GitHub입니다. 클론업 버튼은 이 둘을 맞출 때 씁니다.",
     ),
     _Step(
         "commits",
@@ -62,7 +61,7 @@ _STEPS: tuple[_Step, ...] = (
     _Step(
         "loop",
         "왜 여러 단계인가요 — 한 바퀴 루프",
-        "네 자리(작업 폴더·staging·커밋·GitHub)를 한 바퀴 돕니다. "
+        "로컬에 커밋한 뒤 GitHub로 보냅니다. "
         "받아오기·올리고 보내기를 누를 때만 맞춰집니다.",
     ),
     _Step(
@@ -389,11 +388,8 @@ class OnboardingDialog(QDialog):
         )
         lay.addLayout(row)
         foot = QLabel(
-            "그림의 양쪽 끝은 작업 폴더와 GitHub입니다. "
-            "그 사이에는 staging과 커밋(로컬)이 있습니다. "
-            "만들고 올리기·받기·동기화는 이 경로를 돕습니다. "
-            "커밋에 들어간 내용만 GitHub에 맞춰집니다 "
-            "(.env 등은 안전 검사로 막힐 수 있습니다)."
+            "만들고 올리기·받기·동기화는 이 화살표(올리기 / 받아오기) 쪽 일입니다. "
+            "받아오기·올리고 보내기를 누를 때만 양쪽이 맞춰집니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
@@ -475,16 +471,16 @@ class OnboardingDialog(QDialog):
         return w
 
     def _page_loop(self, p: Palette) -> QWidget:
-        """Why Git: four places + product tabs (no rename of UI words)."""
+        """Why Git: product tabs around commit/push/pull (no staging in step 1 path)."""
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(14)
 
-        # Four places in product order; tab names unchanged; English terms once.
+        # Product words kept; English once. Full four-place model → 용어 안내.
         rows: tuple[tuple[str, str, str], ...] = (
             (
-                "1 · 작업 폴더 → staging → 커밋 (commit)",
+                "1 · 커밋 (commit)",
                 "책상 위 원고를 봉인해 내 서고에 꽂습니다. (로컬 저장소)",
                 "왜: 커밋 전 수정은 GitHub에 안 갑니다. git commit 이 이 단계입니다.",
             ),
@@ -495,13 +491,14 @@ class OnboardingDialog(QDialog):
             ),
             (
                 "3 · 받아오기 (pull)",
-                "GitHub에 더 새 기록이 있으면 이 작업 폴더 쪽으로 가져옵니다.",
+                "GitHub에 더 새 기록이 있으면 이 폴더 쪽으로 가져옵니다.",
                 "왜: 어느 쪽 커밋이 앞섰는지 보고 맞춥니다. 겹치면 충돌(conflict)이 납니다.",
             ),
             (
                 "4 · 다시 고치기",
-                "작업 폴더에서 파일을 수정한 뒤 다시 커밋합니다.",
-                "클론업 탭은 이 네 자리를 나눈 것입니다. 설정 > 용어 안내에서도 같습니다.",
+                "폴더에서 파일을 수정한 뒤 다시 커밋합니다.",
+                "클론업 탭은 이 길을 나눈 것입니다. "
+                "더 세분한 자리 그림은 설정 > 용어 안내에서 볼 수 있습니다.",
             ),
         )
         for title, body, why in rows:
