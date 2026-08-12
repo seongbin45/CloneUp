@@ -100,6 +100,118 @@ def get_repo_default_branch(
     return name or None
 
 
+def get_repo_access(
+    owner: str,
+    repo: str,
+    *,
+    access_token: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    GET /repos/{owner}/{repo} — same endpoint get_repo_default_branch already
+    calls, read further into the response for the sync tab's repo-state
+    banner (내 저장소 / 남의 저장소 / 내 사본 / 사본 만들기 불가):
+
+        push=True                    → 내 저장소 (or 내 사본 if is_fork)
+        push=False, allow_forking=True  → 남의 저장소, offer 사본 만들기
+        push=False, allow_forking=False → 사본 만들기 불가
+
+    Returns None on any failure (offline, 404, no token for a private repo)
+    so callers fall back to today's default (own-repo) behavior instead of
+    blocking the status refresh on this optional check. A real fork/push
+    failure later still gets a proper error via _friendly_repo_error.
+    """
+    try:
+        resp = requests.get(
+            f"{API_BASE}/repos/{owner}/{repo}",
+            headers=_repo_headers(access_token),
+            timeout=30,
+        )
+        _raise_for_status(resp)
+        data = resp.json()
+    except (requests.RequestException, GitHubAPIError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    perms = data.get("permissions") or {}
+    parent = data.get("parent") or {}
+    return {
+        "default_branch": (data.get("default_branch") or "").strip() or None,
+        "push": bool(perms.get("push")),
+        "allow_forking": bool(data.get("allow_forking", True)),
+        "private": bool(data.get("private")),
+        "is_fork": bool(data.get("fork")),
+        "parent_full_name": (parent.get("full_name") or "").strip() or None,
+    }
+
+
+def create_fork(
+    access_token: str,
+    owner: str,
+    repo: str,
+    *,
+    name: str | None = None,
+) -> dict[str, Any]:
+    """
+    POST /repos/{owner}/{repo}/forks — creates (or returns the existing)
+    fork under the authenticated user's account.
+
+    GitHub queues fork creation asynchronously; the returned repo object
+    can 404 briefly right after this call. Callers that immediately clone
+    or push to it should tolerate a short retry.
+    """
+    payload: dict[str, Any] = {}
+    if name:
+        payload["name"] = name
+    try:
+        resp = requests.post(
+            f"{API_BASE}/repos/{owner}/{repo}/forks",
+            headers=_auth_headers(access_token),
+            json=payload,
+            timeout=30,
+        )
+        _raise_for_status(resp)
+    except GitHubAPIError as e:
+        raise GitHubAPIError(
+            e.status, _friendly_repo_error(e, owner=owner, repo=repo), body=e.body
+        ) from e
+    return resp.json()
+
+
+def create_pull_request(
+    access_token: str,
+    owner: str,
+    repo: str,
+    *,
+    title: str,
+    head: str,
+    base: str,
+    body: str = "",
+) -> dict[str, Any]:
+    """
+    POST /repos/{owner}/{repo}/pulls
+
+    *owner/repo* is the upstream (base) repository. *head* is
+    "fork-owner:branch" when the fork lives on a different account than
+    the upstream, or just "branch" for a same-repo PR.
+    """
+    payload: dict[str, Any] = {"title": title, "head": head, "base": base}
+    if body:
+        payload["body"] = body
+    try:
+        resp = requests.post(
+            f"{API_BASE}/repos/{owner}/{repo}/pulls",
+            headers=_auth_headers(access_token),
+            json=payload,
+            timeout=30,
+        )
+        _raise_for_status(resp)
+    except GitHubAPIError as e:
+        raise GitHubAPIError(
+            e.status, _friendly_repo_error(e, owner=owner, repo=repo), body=e.body
+        ) from e
+    return resp.json()
+
+
 def list_user_repos(
     access_token: str,
     *,
@@ -225,6 +337,19 @@ def _friendly_repo_error(err: GitHubAPIError, *, owner: str, repo: str) -> str:
             f"이 저장소를 볼 권한이 없습니다 ({owner}/{repo}).\n"
             "비공개 저장소는 GitHub 연결이 필요합니다."
         )
+    if err.status == 422:
+        msg = (err.message or "").lower()
+        if "already exists" in msg:
+            return (
+                "이미 같은 내용의 제안(PR)이 있습니다.\n"
+                "GitHub에서 확인해 이어서 진행하세요."
+            )
+        if "no commits" in msg or "not have any commits" in msg:
+            return (
+                "사본과 원본 사이에 보낼 변경이 없습니다.\n"
+                "사본에 먼저 올린 뒤 다시 시도하세요."
+            )
+        return f"요청을 처리할 수 없습니다: {err.message}"
     return str(err)
 
 

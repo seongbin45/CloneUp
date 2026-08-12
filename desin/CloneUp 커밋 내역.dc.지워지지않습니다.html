@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #e8e6e1; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 44px; display: flex; justify-content: center; align-items: flex-start; overflow-x: auto;">
+  <div style="width: 1000px; flex-shrink: 0; position: relative; background: #fbfaf8; border: 1px solid #c9c5bd; border-radius: 10px; box-shadow: 0 18px 48px rgba(40,36,30,.18); overflow: hidden; display: flex; flex-direction: column;">
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+      <div style="display: flex; gap: 7px;">
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+      </div>
+      <div style="font-size: 13px; font-weight: 600; color: #3d382f;">커밋 내역</div>
+      <div style="font-size: 12.5px; color: #8b8477; font-family: 'IBM Plex Mono', monospace;">my-project</div>
+    </div>
+
+    <div style="display: flex; align-items: flex-start; gap: 10px; margin: 16px 20px 0; padding: 12px 14px; background: #f4f1e8; border-left: 3px solid #1f6f5c; border-radius: 0 6px 6px 0;">
+      <div style="font-size: 13px; font-weight: 600; color: #1f6f5c; flex-shrink: 0;">지워지지 않습니다</div>
+      <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">되돌리기는 예전 내용을 되살린 새 커밋을 쌓는 방식입니다. 지금까지의 기록은 그대로 남고, 되돌린 뒤에 다시 되돌릴 수 있습니다.</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 78px 1fr auto; gap: 10px; align-items: center; padding: 16px 20px 14px;">
+      <label style="font-size: 13px; color: #4a453b;">폴더</label>
+      <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">C:\Users\seong\Desktop\my-project</div>
+      <div style="height: 32px; padding: 0 14px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #4a453b; cursor: pointer;" style-hover="background: #e9e5dd;">목록 새로고침</div>
+    </div>
+
+    <div style="display: flex; gap: 0; border-top: 1px solid #e6e1d8; min-height: 430px;">
+
+      <div style="flex: 1.55; display: flex; flex-direction: column; border-right: 1px solid #e6e1d8;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 11px 20px 9px; background: #fbfaf8;">
+          <span style="font-size: 12px; font-weight: 600; color: #4a453b;">커밋 목록</span>
+          <span style="font-size: 11.5px; color: #6d675c;">최신순 · {{ loadedLabel }}</span>
+        </div>
+        <div style="display: flex; flex-direction: column;">
+          <sc-for list="{{ commits }}" as="c" hint-placeholder-count="6">
+            <div onClick="{{ c.select }}" style="display: flex; gap: 0; cursor: pointer; border-top: 1px solid #eeeae2; background: {{ c.bg }};" style-hover="background: #f4f1e8;">
+              <div style="width: 3px; flex-shrink: 0; background: {{ c.bar }};"></div>
+              <div style="flex: 1; padding: 11px 20px 12px 17px; display: flex; flex-direction: column; gap: 5px; min-width: 0;">
+                <div style="font-size: 13.5px; font-weight: 500; color: #232019; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ c.message }}</div>
+                <div style="display: flex; align-items: center; gap: 9px; font-size: 11.5px; color: #6d675c;">
+                  <span>{{ c.rel }}</span>
+                  <span style="color: #cdc8bf;">·</span>
+                  <span style="font-family: 'IBM Plex Mono', monospace;">{{ c.abs }}</span>
+                  <span style="color: #cdc8bf;">·</span>
+                  <span>{{ c.author }}</span>
+                  <span style="color: #cdc8bf;">·</span>
+                  <span>파일 {{ c.files }}개</span>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding: 13px 20px; border-top: 1px solid #eeeae2; display: flex; justify-content: center;">
+          <sc-if value="{{ canLoadMore }}" hint-placeholder-val="{{ true }}">
+            <div onClick="{{ loadMore }}" style="padding: 8px 20px; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #4a453b; cursor: pointer;" style-hover="background: #e9e5dd;">더 보기</div>
+          </sc-if>
+          <sc-if value="{{ allShown }}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 8px 20px; font-size: 12.5px; color: #6d675c;">전체 표시됨</div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="flex: 1; display: flex; flex-direction: column; background: #faf8f4;">
+        <div style="padding: 11px 20px 9px;">
+          <span style="font-size: 12px; font-weight: 600; color: #4a453b;">선택한 시점의 내용</span>
+        </div>
+        <div style="padding: 0 20px 16px; display: flex; flex-direction: column; gap: 14px;">
+          <div style="padding: 13px 15px; background: #fff; border: 1px solid #e6e1d8; border-radius: 6px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="font-size: 13.5px; font-weight: 600; color: #232019; line-height: 1.5;">{{ sel.message }}</div>
+            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: #6d675c;">
+              <div>{{ sel.abs }} · {{ sel.rel }}</div>
+              <div>{{ sel.author }}</div>
+              <div style="font-family: 'IBM Plex Mono', monospace;">{{ sel.hash }}</div>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 7px;">
+            <div style="font-size: 12px; font-weight: 600; color: #4a453b;">이 커밋에서 바뀐 파일</div>
+            <sc-for list="{{ selFiles }}" as="f" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; gap: 9px; padding: 7px 10px; background: #fff; border: 1px solid #e6e1d8; border-radius: 5px;">
+                <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; color: #fbfaf8; background: {{ f.tone }};">{{ f.kind }}</span>
+                <span style="font-size: 12px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ f.path }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; padding-top: 2px;">
+            <sc-if value="{{ canRevert }}" hint-placeholder-val="{{ true }}">
+              <div onClick="{{ openConfirm }}" style="height: 38px; display: flex; align-items: center; justify-content: center; background: #1f6f5c; color: #fff; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer;" style-hover="background: #185b4b;">이 시점으로 되돌리기</div>
+            </sc-if>
+            <sc-if value="{{ isCurrent }}" hint-placeholder-val="{{ false }}">
+              <div style="height: 38px; display: flex; align-items: center; justify-content: center; background: #f2efe9; border: 1px solid #ddd8d0; color: #8b8477; font-size: 13px; border-radius: 6px;">지금 이 상태입니다</div>
+            </sc-if>
+            <div style="height: 36px; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #b7b1a5; color: #3d382f; font-size: 12.5px; border-radius: 6px; cursor: pointer;" style-hover="background: #f4f1e8;">이 시점 파일 보기</div>
+            <div style="font-size: 11.5px; color: #6d675c; line-height: 1.6; text-align: center;">파일 보기는 임시 폴더에 꺼내 보여주기만 합니다. 작업 폴더는 그대로 있습니다.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 20px; border-top: 1px solid #e6e1d8; background: #f2efe9;">
+      <div style="font-size: 11.5px; color: #6d675c; line-height: 1.6;">되돌리기 전에 백업 브랜치를 자동으로 만듭니다. 되돌린 결과는 GitHub에도 함께 올라갑니다.</div>
+      <div style="height: 32px; padding: 0 18px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer; flex-shrink: 0;" style-hover="background: #f4f1e8;">닫기</div>
+    </div>
+
+    <sc-if value="{{ showConfirm }}" hint-placeholder-val="{{ false }}">
+      <div style="position: absolute; inset: 0; background: rgba(35,32,25,.42); display: flex; align-items: center; justify-content: center; padding: 32px;">
+        <div style="width: 560px; max-height: 100%; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 10px; box-shadow: 0 16px 40px rgba(40,36,30,.32); overflow: hidden; display: flex; flex-direction: column;">
+          <div style="flex-shrink: 0; padding: 20px 24px 16px; display: flex; flex-direction: column; gap: 7px; border-bottom: 1px solid #e6e1d8;">
+            <div style="font-size: 16px; font-weight: 600; color: #232019;">이 시점으로 되돌립니다</div>
+            <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">{{ sel.abs }} · {{ sel.message }}</div>
+          </div>
+          <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; flex-direction: column; gap: 7px;">
+              <div style="font-size: 12px; font-weight: 600; color: #4a453b;">바뀌는 파일 {{ revertCount }}개</div>
+              <sc-for list="{{ revertFiles }}" as="f" hint-placeholder-count="3">
+                <div style="display: flex; align-items: center; gap: 9px; padding: 7px 10px; background: #fff; border: 1px solid #e6e1d8; border-radius: 5px;">
+                  <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; color: #fbfaf8; background: {{ f.tone }};">{{ f.kind }}</span>
+                  <span style="font-size: 12px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ f.path }}</span>
+                  <span style="margin-left: auto; font-size: 11.5px; color: #6d675c; flex-shrink: 0;">{{ f.note }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 9px; padding: 14px 16px; background: #f2efe9; border-radius: 6px;">
+              <div style="display: flex; gap: 10px;">
+                <div style="width: 6px; height: 6px; border-radius: 50%; background: #1f6f5c; margin-top: 6px; flex-shrink: 0;"></div>
+                <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">백업 브랜치 <span style="font-family: 'IBM Plex Mono', monospace; color: #232019;">{{ backupName }}</span> 를 먼저 만듭니다.</div>
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <div style="width: 6px; height: 6px; border-radius: 50%; background: #1f6f5c; margin-top: 6px; flex-shrink: 0;"></div>
+                <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">지금까지의 커밋은 하나도 지워지지 않습니다. 되돌린 내용이 새 커밋으로 쌓입니다.</div>
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <div style="width: 6px; height: 6px; border-radius: 50%; background: #8a6d12; margin-top: 6px; flex-shrink: 0;"></div>
+                <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">끝나면 <strong style="color: #232019;">GitHub에 자동으로 올라갑니다.</strong> 공개 저장소라면 이 시점의 내용이 곧바로 공개됩니다.</div>
+              </div>
+            </div>
+          </div>
+          <div style="flex-shrink: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px; background: #f2efe9; border-top: 1px solid #e6e1d8;">
+            <div onClick="{{ closeOverlay }}" style="height: 36px; padding: 0 18px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer;" style-hover="background: #f4f1e8;">취소</div>
+            <div onClick="{{ doRevert }}" style="height: 36px; padding: 0 22px; display: flex; align-items: center; background: #1f6f5c; color: #fff; font-size: 13px; font-weight: 600; border-radius: 5px; cursor: pointer;" style-hover="background: #185b4b;">되돌리기</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showDone }}" hint-placeholder-val="{{ false }}">
+      <div style="position: absolute; inset: 0; background: rgba(35,32,25,.42); display: flex; align-items: center; justify-content: center; padding: 32px;">
+        <div style="width: 520px; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 10px; box-shadow: 0 16px 40px rgba(40,36,30,.32); overflow: hidden; display: flex; flex-direction: column;">
+          <div style="padding: 24px 24px 18px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="font-size: 16px; font-weight: 600; color: #1f6f5c;">되돌렸습니다</div>
+            <div style="font-size: 13px; color: #4a453b; line-height: 1.65;">{{ sel.abs }} 시점의 내용으로 돌아갔고, GitHub에도 올렸습니다.</div>
+          </div>
+          <div style="padding: 0 24px 20px; display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; gap: 14px; padding: 11px 14px; background: #f2efe9; border-radius: 6px;">
+              <span style="font-size: 12.5px; color: #6d675c;">새로 만든 커밋</span>
+              <span style="font-size: 12.5px; color: #232019; font-family: 'IBM Plex Mono', monospace;">3b90f7d</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; gap: 14px; padding: 11px 14px; background: #f2efe9; border-radius: 6px;">
+              <span style="font-size: 12.5px; color: #6d675c;">백업 브랜치</span>
+              <span style="font-size: 12.5px; color: #232019; font-family: 'IBM Plex Mono', monospace;">{{ backupName }}</span>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 24px; background: #f2efe9; border-top: 1px solid #e6e1d8;">
+            <div style="font-size: 11.5px; color: #6d675c; line-height: 1.6;">이 되돌리기가 마음에 들지 않으면 목록 맨 위 커밋을 골라 다시 되돌리면 됩니다.</div>
+            <div onClick="{{ closeOverlay }}" style="height: 36px; padding: 0 22px; display: flex; align-items: center; background: #1f6f5c; color: #fff; font-size: 13px; font-weight: 600; border-radius: 5px; cursor: pointer;" style-hover="background: #185b4b;">확인</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1088,&quot;height&quot;:720}}">
+class Component extends DCLogic {
+  state = { picked: 0, page: 1, overlay: null, reverted: null };
+
+  // A backup branch preserves the CURRENT state, so it is stamped with "now".
+  backupName = "cloneup-backup-20260807-1615";
+
+  data() {
+    return [
+      { message: "버튼 색 수정", rel: "3시간 전", abs: "8/7 14:02", author: "seong", files: 2, hash: "a4f19c2",
+        changed: [{ kind: "M", path: "app/ui/theme.py" }, { kind: "M", path: "app/ui/main_window.py" }] },
+      { message: "로그인 화면 추가", rel: "6시간 전", abs: "8/7 11:30", author: "seong", files: 4, hash: "7d3e08b",
+        changed: [{ kind: "A", path: "app/ui/login_dialog.py" }, { kind: "A", path: "app/auth/session.py" }, { kind: "M", path: "app/ui/main_window.py" }, { kind: "M", path: "app/config.py" }] },
+      { message: "비밀 파일 점검 기능", rel: "1일 전", abs: "8/6 19:14", author: "seong", files: 3, hash: "c81b5f4",
+        changed: [{ kind: "A", path: "app/git/safety.py" }, { kind: "M", path: "app/git/publish.py" }, { kind: "D", path: "app/git/old_check.py" }] },
+      { message: "동기화 탭 상태 표시", rel: "2일 전", abs: "8/5 16:48", author: "seong", files: 2, hash: "e29a730",
+        changed: [{ kind: "M", path: "app/git/sync_ops.py" }, { kind: "M", path: "app/ui/tab_workers.py" }] },
+      { message: "받기 탭 주소 정리", rel: "3일 전", abs: "8/4 10:05", author: "seong", files: 1, hash: "b6c4d81",
+        changed: [{ kind: "A", path: "app/git/url_utils.py" }] },
+      { message: "첫 커밋", rel: "5일 전", abs: "8/2 09:22", author: "seong", files: 12, hash: "0f5e6a9",
+        changed: [{ kind: "A", path: "app/main.py" }, { kind: "A", path: "requirements.txt" }, { kind: "A", path: "README.md" }] },
+    ];
+  }
+
+  renderVals() {
+    const all = this.data();
+    if (this.state.reverted) {
+      all.unshift({
+        message: '"' + this.state.reverted + '" 시점으로 되돌림',
+        rel: "방금", abs: "8/7 16:15", author: "seong", files: 3, hash: "3b90f7d",
+        changed: [{ kind: "M", path: "app/ui/theme.py" }, { kind: "M", path: "app/ui/main_window.py" }, { kind: "D", path: "app/ui/login_dialog.py" }],
+      });
+    }
+    const shown = this.state.page === 1 ? all.slice(0, 4) : all;
+    const pick = Math.min(this.state.picked, shown.length - 1);
+    const sel = shown[pick];
+    const tone = { A: "#1f6f5c", M: "#8a6d12", D: "#9a4a45" };
+    const exhausted = shown.length === all.length;
+
+    // Going back to commit N undoes every change made after it.
+    const flip = { A: "D", D: "A", M: "M" };
+    const note = { A: "되살아납니다", D: "지워집니다", M: "예전 내용으로" };
+    const seen = new Set();
+    const revert = [];
+    for (let n = 0; n < pick; n++) {
+      for (const f of shown[n].changed) {
+        if (seen.has(f.path)) continue;
+        seen.add(f.path);
+        const k = flip[f.kind];
+        revert.push({ kind: k, path: f.path, tone: tone[k], note: note[k] });
+      }
+    }
+    return {
+      commits: shown.map((c, i) => ({
+        message: c.message, rel: c.rel, abs: c.abs, author: c.author, files: c.files,
+        bg: i === pick ? "#f2efe9" : "#fbfaf8",
+        bar: i === pick ? "#1f6f5c" : "transparent",
+        select: () => this.setState({ picked: i }),
+      })),
+      sel: { message: sel.message, rel: sel.rel, abs: sel.abs, author: sel.author, hash: sel.hash },
+      selFiles: sel.changed.map((f) => ({ kind: f.kind, path: f.path, tone: tone[f.kind] })),
+      loadedLabel: shown.length + "개 표시 중",
+      canLoadMore: !exhausted,
+      allShown: exhausted,
+      loadMore: () => this.setState({ page: 2, picked: this.state.picked }),
+      showConfirm: this.state.overlay === "confirm",
+      showDone: this.state.overlay === "done",
+      canRevert: revert.length > 0,
+      isCurrent: revert.length === 0,
+      openConfirm: revert.length > 0 ? () => this.setState({ overlay: "confirm" }) : () => {},
+      doRevert: () => this.setState({ overlay: "done", reverted: sel.message }),
+      closeOverlay: () => this.setState({ overlay: null }),
+      revertFiles: revert,
+      revertCount: revert.length,
+      backupName: this.backupName,
+    };
+  }
+}
+</script>
+</body>
+</html>
