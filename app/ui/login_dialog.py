@@ -23,15 +23,18 @@ from PySide6.QtWidgets import (
 from app.config import is_device_flow_allowed
 from app.ui.theme import Palette, active_palette
 
-# Prefer fine-grained first (single repo + Contents). Classic is fallback.
+# Default path matches 「만들고 올리기」 = POST /user/repos + push.
+# Classic `repo` can create private/public repos. Fine-grained "this repo only
+# + Contents" cannot: the new name is not in the list yet, and Contents ≠ create.
+PAT_CREATE_URL = (
+    "https://github.com/settings/tokens/new"
+    "?scopes=repo&description=CloneUp"
+)
+# Existing-repo sync only (push/pull Contents). Not default for first publish.
 PAT_CREATE_URL_FINE = (
     "https://github.com/settings/personal-access-tokens/new"
     "?name=CloneUp"
     "&contents=write"
-)
-PAT_CREATE_URL = (
-    "https://github.com/settings/tokens/new"
-    "?scopes=repo&description=CloneUp"
 )
 PAT_LIST_URL = "https://github.com/settings/tokens"
 
@@ -407,11 +410,11 @@ class ConnectGitHubWizard(QDialog):
             self._edit.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _open_create_page(self) -> None:
-        # Default: fine-grained create (narrower). Classic is secondary.
-        QDesktopServices.openUrl(QUrl(PAT_CREATE_URL_FINE))
-
-    def _open_classic_create_page(self) -> None:
+        # Default: classic + repo — required path for 「만들고 올리기」 (create repo).
         QDesktopServices.openUrl(QUrl(PAT_CREATE_URL))
+
+    def _open_fine_create_page(self) -> None:
+        QDesktopServices.openUrl(QUrl(PAT_CREATE_URL_FINE))
 
     def _page_make_key(self) -> QWidget:
         w = QWidget()
@@ -420,17 +423,20 @@ class ConnectGitHubWizard(QDialog):
         )
         title.setObjectName("wizTitle")
 
-        lead = QLabel("브라우저에서 키를 만든 뒤, 다음 단계에 붙여 넣습니다.")
+        lead = QLabel(
+            "만들고 올리기(새 저장소)를 쓰려면 classic 키가 필요합니다. "
+            "브라우저에서 만든 뒤 다음 단계에 붙여 넣습니다."
+        )
         lead.setObjectName("wizLead")
         lead.setWordWrap(True)
 
         box = QLabel(
-            "1순위 · 세분 키 (권장)\n"
-            "  · 해당 저장소만 · Contents 읽기/쓰기 · 만료 90일 권장\n"
-            "  · 「브라우저에서 만들기」가 세분 키 화면을 엽니다\n"
-            "안 될 때만 · classic\n"
-            "  · Tokens (classic) → 「repo」 한 줄 ✓ (모든 저장소 읽기·쓰기)\n"
-            "  · Generate 후 초록 키 전체 복사"
+            "1순위 · classic (만들고 올리기용)\n"
+            "  · Tokens (classic) → 「repo」 한 줄 ✓ · 만료 90일 권장\n"
+            "  · Generate 후 초록 키 전체 복사\n"
+            "이미 있는 저장소만 동기화할 때 · 세분 키\n"
+            "  · 목록에 있는 저장소 선택 · Contents 읽기/쓰기\n"
+            "  · (아직 없는 저장소 이름·「해당 저장소만」으로는 새 저장소를 못 만듭니다)"
         )
         box.setObjectName("wizBox")
         box.setWordWrap(True)
@@ -438,9 +444,10 @@ class ConnectGitHubWizard(QDialog):
         detail = _DetailToggle(
             "키 = 비밀번호 대용 출입증. 채팅·캡처에 올리지 마세요.\n"
             "이 컴퓨터에만 저장됩니다. 만료되면 새 키가 필요합니다.\n"
-            "classic 「repo」는 내 GitHub의 모든 저장소(비공개 포함)를 "
-            "읽고 쓸 수 있는 넓은 권한입니다. 가능하면 세분 키를 쓰세요.\n"
-            "GitHub 영문: Fine-grained · Contents · Tokens (classic) · repo."
+            "classic 「repo」는 모든 저장소(비공개 포함) 읽기·쓰기 + 새 저장소 생성에 쓰입니다.\n"
+            "세분 키는 범위를 좁힐 수 있지만, 만들고 올리기의 저장소 생성에는 "
+            "보통 classic repo 가 필요합니다.\n"
+            "GitHub 영문: Tokens (classic) · repo · Fine-grained · Contents."
         )
 
         btn_open = QPushButton("브라우저에서 만들기")
@@ -448,12 +455,13 @@ class ConnectGitHubWizard(QDialog):
         btn_open.setDefault(True)
         btn_open.clicked.connect(self._open_create_page)
 
-        btn_classic = QPushButton("classic으로 만들기")
-        btn_classic.setObjectName("btnSecondary")
-        btn_classic.setToolTip(
-            "세분 키가 안 될 때만. repo 권한이 미리 체크된 classic 페이지를 엽니다."
+        btn_fine = QPushButton("세분 키 (기존 저장소)")
+        btn_fine.setObjectName("btnSecondary")
+        btn_fine.setToolTip(
+            "이미 GitHub에 있는 저장소에 동기화만 할 때.\n"
+            "만들고 올리기(새 저장소)에는 맞지 않을 수 있습니다."
         )
-        btn_classic.clicked.connect(self._open_classic_create_page)
+        btn_fine.clicked.connect(self._open_fine_create_page)
 
         btn_list = QPushButton("키 목록")
         btn_list.setObjectName("btnSecondary")
@@ -471,7 +479,7 @@ class ConnectGitHubWizard(QDialog):
         top_btns = QHBoxLayout()
         top_btns.setSpacing(8)
         top_btns.addWidget(btn_open, 1)
-        top_btns.addWidget(btn_classic, 0)
+        top_btns.addWidget(btn_fine, 0)
         top_btns.addWidget(btn_list, 0)
 
         nav = QHBoxLayout()
