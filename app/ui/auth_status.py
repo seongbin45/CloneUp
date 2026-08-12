@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QPushButton
 from app.auth.token_store import (
     AUTH_KIND_DEVICE,
     AUTH_KIND_PAT,
+    format_scopes_display,
     has_scope,
     is_scope_unknown,
     load_auth_kind,
@@ -170,10 +171,11 @@ class AuthStatusButton(QObject):
                 self.button.setStyleSheet(
                     _status_button_style(p, emphasis=p.success_dot)
                 )
+            scope_disp = format_scopes_display(scope) or (scope or "")
             self.button.setToolTip(
                 f"계정={who}\n"
                 f"방식={kind_txt}\n"
-                f"권한={scope!r}\n"
+                f"권한={scope_disp}\n"
                 f"키={mask_token(token)}\n"
                 f"{store_note}\n"
                 f"{age.tooltip_extra}\n"

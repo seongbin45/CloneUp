@@ -34,6 +34,7 @@ from app.auth.token_store import (
     AUTH_KIND_DEVICE,
     AUTH_KIND_PAT,
     SCOPE_UNKNOWN,
+    format_scopes_display,
     is_logged_in,
     load_auth_kind,
     load_scope,
@@ -784,11 +785,12 @@ class SettingsDialog(QDialog):
             self._acct_dot.setStyleSheet(f"color: {p.primary}; font-size: 10px;")
             name = login or "(사용자)"
             self._acct_title.setText(f"{name} 으로 로그인됨")
-            scope = (load_scope() or "").strip() or SCOPE_UNKNOWN
-            if scope == SCOPE_UNKNOWN:
+            scope_raw = (load_scope() or "").strip() or SCOPE_UNKNOWN
+            pretty = format_scopes_display(scope_raw)
+            if not pretty:
                 scope_s = "권한 확인 불가"
             else:
-                scope_s = f"권한 {scope}"
+                scope_s = f"권한 {pretty}"
             kind = load_auth_kind()
             if kind == AUTH_KIND_PAT:
                 kind_s = "개인 액세스 토큰"
@@ -829,7 +831,8 @@ class SettingsDialog(QDialog):
             self._refresh_account(live=False)
             return
         self._acct_meta.setText("GitHub에서 권한 확인 중…")
-        before = (load_scope() or "").strip()
+        before_raw = (load_scope() or "").strip()
+        before = format_scopes_display(before_raw) or before_raw or "(없음)"
         scope, user = refresh_scopes_from_github()
         self._refresh_account(live=False)
         if not is_logged_in():
@@ -840,21 +843,22 @@ class SettingsDialog(QDialog):
                 "「GitHub 연결」로 새 키를 붙여 넣으세요.",
             )
             return
-        after = (scope or load_scope() or "").strip()
+        after_raw = (scope or load_scope() or "").strip()
+        after = format_scopes_display(after_raw) or after_raw or "(없음)"
         if user and user.get("login"):
             from app.ui.settings_store import save_last_github_login
 
             save_last_github_login(str(user["login"]))
             self._acct_title.setText(f"{user['login']} 으로 로그인됨")
-        if after == SCOPE_UNKNOWN or after == "unknown":
+        if after_raw == SCOPE_UNKNOWN or after_raw == "unknown" or not format_scopes_display(after_raw):
             note = (
                 "GitHub이 classic 권한 목록을 주지 않았습니다 "
                 "(세분 키일 수 있음). 화면은 「권한 확인 불가」입니다."
             )
         elif before != after:
-            note = f"권한 목록을 맞췄습니다.\n이전: {before or '(없음)'}\n지금: {after}"
+            note = f"권한 목록을 맞췄습니다.\n이전: {before}\n지금: {after}"
         else:
-            note = f"권한 목록이 같습니다.\n지금: {after or '(없음)'}"
+            note = f"권한 목록이 같습니다.\n지금: {after}"
         QMessageBox.information(self, "권한 다시 확인", note)
 
     # ----- defaults -----

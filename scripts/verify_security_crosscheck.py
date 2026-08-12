@@ -103,9 +103,10 @@ def main() -> int:
         str(comma_parts),
     )
     check(
-        "A10 normalize_scope_string spaces",
-        normalize_scope_string("repo, user") == "repo user",
-        normalize_scope_string("repo, user"),
+        "A10 normalize_scope_string comma display",
+        normalize_scope_string("repo, user") == "repo, user"
+        and normalize_scope_string("repo user") == "repo, user",
+        normalize_scope_string("repo user"),
     )
     # ensure_valid_token: live GET /user before classic scope gate
     src_ensure = inspect.getsource(ensure_valid_token)

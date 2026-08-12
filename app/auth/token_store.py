@@ -240,9 +240,10 @@ def parse_oauth_scopes(raw: str | None) -> list[str]:
 
 def normalize_scope_string(raw: str | None) -> str:
     """
-    Canonical space-separated scope list (order preserved, first wins on dupes).
+    Canonical scope list for storage and UI (order preserved, first wins on dupes).
 
-    Use before saving so ``has_scope`` and UI never see trailing commas on names.
+    Format matches GitHub's X-OAuth-Scopes style: ``repo, user`` (comma + space).
+    Parsing accepts both commas and spaces; never leave a trailing comma on a name.
     """
     seen: set[str] = set()
     ordered: list[str] = []
@@ -251,7 +252,21 @@ def normalize_scope_string(raw: str | None) -> str:
             continue
         seen.add(s)
         ordered.append(s)
-    return " ".join(ordered)
+    return ", ".join(ordered)
+
+
+def format_scopes_display(raw: str | None) -> str:
+    """
+    Human-readable scopes for Settings / tooltips / error text.
+
+    Unknown / empty → empty string (caller chooses 「권한 확인 불가」 etc.).
+    """
+    if raw is None:
+        return ""
+    text = str(raw).strip()
+    if not text or is_scope_unknown(text):
+        return ""
+    return normalize_scope_string(text)
 
 
 def is_scope_unknown(scope: str | None = None) -> bool:

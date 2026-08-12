@@ -33,11 +33,13 @@ def test_parse_oauth_scopes(raw: str | None, expected: list[str]) -> None:
     assert parse_oauth_scopes(raw) == expected
 
 
-def test_normalize_dedupes_and_spaces() -> None:
-    assert normalize_scope_string("repo, user, repo") == "repo user"
+def test_normalize_dedupes_and_commas() -> None:
+    """Canonical form is GitHub-style comma + space (설정·툴팁 표시용)."""
+    assert normalize_scope_string("repo, user, repo") == "repo, user"
     assert normalize_scope_string("gist, read:org, repo, workflow") == (
-        "gist read:org repo workflow"
+        "gist, read:org, repo, workflow"
     )
+    assert normalize_scope_string("repo user") == "repo, user"
 
 
 def test_comma_form_must_detect_repo() -> None:

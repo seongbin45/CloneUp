@@ -22,9 +22,9 @@ def test_apply_oauth_scopes_comma_header_updates_keyring() -> None:
         patch("app.auth.session._save_scope_only") as save,
     ):
         out = apply_oauth_scopes_from_user("tok", user)
-    assert out == "repo workflow"
+    assert out == "repo, workflow"
     save.assert_called_once()
-    assert save.call_args[0][1] == "repo workflow"
+    assert save.call_args[0][1] == "repo, workflow"
 
 
 def test_apply_oauth_scopes_empty_header_unknown_when_empty_store() -> None:
@@ -59,7 +59,7 @@ def test_ensure_valid_token_refreshes_before_gate() -> None:
         patch("app.auth.session.get_authenticated_user", return_value=user) as get_user,
         patch(
             "app.auth.session.apply_oauth_scopes_from_user",
-            return_value="gist read:org repo workflow",
+            return_value="gist, read:org, repo, workflow",
         ) as apply,
         patch("app.auth.session.scopes_known", return_value=True),
         patch("app.auth.session.has_scope", side_effect=lambda s: s == "repo"),
@@ -100,8 +100,10 @@ def test_ensure_valid_token_gate_after_refresh_when_still_narrow() -> None:
 
 def test_normalize_matches_github_docs_example() -> None:
     assert normalize_scope_string("gist, read:org, repo, workflow") == (
-        "gist read:org repo workflow"
+        "gist, read:org, repo, workflow"
     )
+    # Space-only input still becomes comma display form
+    assert normalize_scope_string("repo workflow") == "repo, workflow"
 
 
 def test_refresh_scopes_401_clears_token() -> None:

@@ -78,6 +78,13 @@ def show_missing_repo_help(
     steps.setWordWrap(True)
 
     scopes = (current_scopes or "").strip()
+    if scopes and scopes not in ("(없음)", "unknown"):
+        try:
+            from app.auth.token_store import format_scopes_display
+
+            scopes = format_scopes_display(scopes) or scopes
+        except Exception:
+            pass
     detail_bits = [
         "예전 키에는 권한을 나중에 붙일 수 없습니다. 새 키를 만드세요.",
         "Select scopes 목록이 길어도 CloneUp은 「repo」만 필요합니다 "

@@ -14,6 +14,7 @@ from app.auth.token_store import (
     load_connected_at_raw,
     load_scope,
     load_token,
+    format_scopes_display,
     normalize_scope_string,
     parse_oauth_scopes,
     save_token,
@@ -46,7 +47,8 @@ MISSING_REPO_MARKER = "저장소(repo) 권한이 없습니다"
 
 def format_missing_repo_scope_error(current_scopes: str) -> str:
     """Beginner-oriented AuthError text when classic PAT lacks ``repo``."""
-    scopes = (current_scopes or "").strip() or "(없음)"
+    pretty = format_scopes_display(current_scopes)
+    scopes = pretty or (current_scopes or "").strip() or "(없음)"
     return (
         f"{MISSING_REPO_MARKER}\n"
         "\n"
