@@ -72,9 +72,21 @@ def test_glossary_has_core_product_words() -> None:
     ):
         assert need in terms
     assert len(GLOSSARY_ENTRIES) >= 12
-    # Fragile metaphors must not be the primary teaching frame
     blob = " ".join(a + b for _t, a, b in GLOSSARY_ENTRIES)
-    assert "구글 드라이브" not in blob or "아닙니다" in blob
+    # User-facing: do not plant banned metaphors even as "not X"
+    for banned in (
+        "구글 드라이브",
+        "타임머신",
+        "백업 업로드",
+        "USB",
+        "GIT_FOR_BEGINNERS",
+        "6개월",
+    ):
+        assert banned not in blob
+    # Product revert: definitive new-commit wording when enabled
+    hist = next(b for t, _a, b in GLOSSARY_ENTRIES if t == "커밋 내역")
+    assert "새 커밋" in hist
+    assert "방식이면" not in hist
 
 
 def test_history_revert_enabled_default_off() -> None:

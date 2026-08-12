@@ -651,9 +651,8 @@ class SettingsDialog(QDialog):
         lay.addWidget(
             self._heading(
                 "용어 안내",
-                "버튼·탭 이름은 그대로. 비유는 자리·관계에만 쓰고, 동작은 사실로 씁니다. "
-                "주 비유는 원고 제출(네 자리)이며 유효 범위 밖의 것은 비유 없이 적습니다. "
-                "commit / push / staging 등 정식 용어를 병기해 검색 가능하게 둡니다.",
+                "화면에 보이는 말을 짧게 풀어 둡니다. "
+                "commit, push, staging 같은 말도 함께 적습니다.",
             )
         )
 

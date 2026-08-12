@@ -384,10 +384,9 @@ class OnboardingDialog(QDialog):
         )
         lay.addLayout(row)
         foot = QLabel(
-            "둘은 구글 드라이브처럼 자동으로 맞춰지지 않습니다. "
-            "만들고 올리기·받기·동기화는 결국 이 화살표(올리기 / 받아오기) 쪽 일입니다. "
-            "자리가 둘만이 아닙니다 — 커밋 전 기록은 아직 GitHub에 없습니다. "
-            "(설정 > 용어 안내의 「네 자리」)"
+            "만들고 올리기·받기·동기화는 이 화살표(올리기 / 받아오기) 쪽 일입니다. "
+            "커밋하기 전에는 GitHub에 그 내용이 없습니다. "
+            "받아오기·올리고 보내기를 누를 때만 양쪽이 맞춰집니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
@@ -458,10 +457,9 @@ class OnboardingDialog(QDialog):
                 cl.setAlignment(line, Qt.AlignmentFlag.AlignVCenter)
         lay.addWidget(card)
         foot = QLabel(
-            "점 하나가 커밋(commit) 하나입니다. 책상 위 수정만으로는 부족하고, "
-            "봉인해 내 서고(로컬 저장소)에 꽂아야 ‘남긴 기록’이 됩니다. "
-            "아직 출판사(GitHub)로 보낸 것은 아닙니다. "
-            "선형 게임 세이브와 달리, 나중에 갈래(브랜치=이름표)도 같은 그림 위에 올라갑니다."
+            "점 하나가 커밋(commit) 하나입니다. "
+            "책상 위 수정만으로는 부족하고, 봉인해 내 서고(로컬 저장소)에 꽂아야 기록이 됩니다. "
+            "git commit 전까지는 GitHub에 그 내용이 없습니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
@@ -524,9 +522,9 @@ class OnboardingDialog(QDialog):
 
         foot = QLabel(
             "「충돌」은 같은 줄을 양쪽에서 고쳐 자동 합치기가 멈춘 상태입니다. "
-            "「충돌 취소」는 합치기 시도 포기(abort)이지, 타임머신 되돌리기가 아닙니다. "
-            "「커밋 내역」은 서고에 꽂힌 점 목록입니다. 둘은 다릅니다. "
-            "설정 > 용어 안내의 「네 자리」·「브랜치 (이름표)」를 함께 보세요."
+            "「충돌 취소」는 합치기 시도를 취소합니다. "
+            "「커밋 내역」은 남겨 둔 커밋 목록입니다. 둘은 다른 버튼입니다. "
+            "설정 > 용어 안내에서 같은 말을 다시 볼 수 있습니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)
