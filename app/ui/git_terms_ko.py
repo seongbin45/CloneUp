@@ -80,7 +80,7 @@ GLOSSARY_ENTRIES: tuple[tuple[str, str, str], ...] = (
         "충돌 취소",
         "진행 중이던 합치기 시도를 취소합니다.",
         "git merge --abort 또는 git rebase --abort 에 해당합니다. "
-        "합치기 직전 상태로 돌아갑니다. "
+        "합치기 직전 상태로 되돌립니다. "
         "커밋 내역의 되돌리기와는 다른 버튼입니다.",
     ),
     (
