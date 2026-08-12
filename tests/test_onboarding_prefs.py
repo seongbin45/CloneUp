@@ -40,11 +40,12 @@ def test_onboarding_done_roundtrip() -> None:
 def test_onboarding_steps_count() -> None:
     from app.ui.onboarding_dialog import _STEPS
 
-    assert len(_STEPS) == 6
+    assert len(_STEPS) == 7
     keys = [st.key for st in _STEPS]
     assert keys == [
         "folders",
         "commits",
+        "loop",
         "history_mode",
         "cost",
         "undo",

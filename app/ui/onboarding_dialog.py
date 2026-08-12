@@ -1,6 +1,7 @@
 """First-run onboarding — desin/CloneUp 첫 실행 안내.dc.html.
 
-Five short steps for beginners. Shown once after install; reopen via 도움말.
+Short steps for beginners (folders · commits · why-Git loop · history mode ·
+cost · undo · safety). Shown once after install; reopen via 도움말.
 """
 
 from __future__ import annotations
@@ -54,6 +55,11 @@ _STEPS: tuple[_Step, ...] = (
         "commits",
         "커밋은 돌아올 수 있는 지점입니다",
         "사진을 찍어두는 것과 같습니다. 찍어둔 만큼 돌아갈 수 있습니다.",
+    ),
+    _Step(
+        "loop",
+        "왜 Git을 쓰나요 — 한 바퀴 루프",
+        "기록하고, 원격에 맞추고, 다시 고칩니다. 클론업 탭은 이 루프를 나누어 둔 것입니다.",
     ),
     _Step(
         "history_mode",
@@ -195,6 +201,7 @@ class OnboardingDialog(QDialog):
         )
         self._stack.addWidget(self._page_folders(p))
         self._stack.addWidget(self._page_commits(p))
+        self._stack.addWidget(self._page_loop(p))
         self._stack.addWidget(self._page_history_mode(p))
         self._stack.addWidget(self._page_cost(p))
         self._stack.addWidget(self._page_undo(p))
@@ -450,6 +457,69 @@ class OnboardingDialog(QDialog):
         foot = QLabel(
             "점 하나가 커밋 하나입니다. 커밋할 때마다 그 순간의 폴더 전체가 통째로 "
             "저장되고, 언제든 그 점으로 돌아갈 수 있습니다. 자주 할수록 돌아갈 곳이 많아집니다."
+        )
+        foot.setObjectName("obBody")
+        foot.setWordWrap(True)
+        lay.addWidget(foot)
+        lay.addStretch(1)
+        return w
+
+    def _page_loop(self, p: Palette) -> QWidget:
+        """Why Git: commit → remote → edit again (maps to CloneUp tabs)."""
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(14)
+
+        rows: tuple[tuple[str, str, str], ...] = (
+            (
+                "1 · 커밋",
+                "지금 폴더 상태를 한 점으로 남깁니다.",
+                "왜: 나중에 이 자리로 돌아올 수 있습니다.",
+            ),
+            (
+                "2 · 만들고 올리기 / 올리고 보내기",
+                "그 기록을 GitHub에도 맞춥니다.",
+                "왜: 백업·공유·다른 PC에서 이어 쓰기.",
+            ),
+            (
+                "3 · 받아오기",
+                "GitHub에 더 새 기록이 있으면 내 폴더로 가져옵니다.",
+                "왜: 혼자 쓰든 이어서 쓰든, 원격과 어긋나지 않게.",
+            ),
+            (
+                "4 · 다시 고치기",
+                "파일을 수정한 뒤 1번으로 돌아갑니다.",
+                "이 한 바퀴가 Git을 쓰는 이유의 전부입니다.",
+            ),
+        )
+        for title, body, why in rows:
+            card = QFrame()
+            card.setObjectName("obCard")
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(16, 14, 16, 14)
+            cl.setSpacing(6)
+            t = QLabel(title)
+            t.setObjectName("obCardTitle")
+            t.setStyleSheet(
+                f"font-size: 13.5px; font-weight: 600; color: {p.primary};"
+            )
+            b = QLabel(body)
+            b.setObjectName("obBody")
+            b.setWordWrap(True)
+            y = QLabel(why)
+            y.setObjectName("obMuted")
+            y.setWordWrap(True)
+            y.setStyleSheet(f"font-size: 12px; color: {p.text_muted};")
+            cl.addWidget(t)
+            cl.addWidget(b)
+            cl.addWidget(y)
+            lay.addWidget(card)
+
+        foot = QLabel(
+            "클론업 탭 이름만 보면 복잡해 보이지만, 하는 일은 위 루프입니다. "
+            "「충돌 취소」는 3번에서 겹쳤을 때 합치기 시도를 포기하는 비상 버튼이고, "
+            "「커밋 내역」은 1번으로 쌓인 점으로 돌아가 보는 도구입니다."
         )
         foot.setObjectName("obBody")
         foot.setWordWrap(True)

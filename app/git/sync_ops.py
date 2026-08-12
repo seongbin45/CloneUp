@@ -149,30 +149,43 @@ def get_repo_status(folder: Path) -> RepoStatus:
             if len(parts) == 2:
                 ahead, behind = int(parts[0]), int(parts[1])
 
-    # Beginner-facing summary (work-line/branch shown separately in UI)
+    # Beginner-facing summary: what is true + why it matters (Git “why”)
     bits: list[str] = []
 
     if has_origin:
         bits.append("GitHub 주소와 연결되어 있습니다")
     else:
-        bits.append("아직 GitHub와 연결되어 있지 않습니다")
+        bits.append(
+            "아직 GitHub와 연결되어 있지 않습니다 "
+            "(원격 사본이 없으면 백업·다른 PC 이어쓰기가 어렵습니다)"
+        )
 
     if conflict:
-        bits.append("변경이 겹쳐 막혀 있습니다 — 「충돌 취소」를 확인하세요")
+        bits.append(
+            "같은 부분을 양쪽에서 고쳐서 자동으로 합치지 못했습니다 — "
+            "「충돌 취소」로 합치기 시도를 포기하거나, 파일을 직접 고친 뒤 다시 하세요"
+        )
     elif dirty:
-        bits.append("컴퓨터에 아직 안 올린 변경이 있습니다")
+        bits.append(
+            "컴퓨터에 아직 안 올린 변경이 있습니다 "
+            "(커밋·올리기로 시점 기록과 원격 사본을 맞출 수 있습니다)"
+        )
     else:
         bits.append("컴퓨터 쪽에 새 변경은 없습니다")
 
     if ahead is not None and behind is not None:
         if ahead == 0 and behind == 0:
-            bits.append("GitHub와 내용이 같습니다")
+            bits.append("GitHub와 내용이 같습니다 (양쪽 기록이 맞춰져 있습니다)")
         else:
             parts_ab: list[str] = []
             if ahead:
-                parts_ab.append(f"GitHub로 보낼 저장 {ahead}개")
+                parts_ab.append(
+                    f"GitHub로 보낼 커밋 {ahead}개 (내 기록이 원격보다 앞서 있음)"
+                )
             if behind:
-                parts_ab.append(f"GitHub에서 받을 저장 {behind}개")
+                parts_ab.append(
+                    f"GitHub에서 받을 커밋 {behind}개 (원격이 나보다 새 기록이 있음)"
+                )
             if parts_ab:
                 bits.append(" · ".join(parts_ab))
 
@@ -208,7 +221,10 @@ def pull_repo(folder: Path, *, token: str | None = None) -> str:
     if st.conflict:
         raise SyncError(
             "이미 변경이 겹쳐 막힌 상태입니다.\n"
-            "먼저 「충돌 취소」로 되돌린 뒤 다시 받아 오세요."
+            "같은 줄을 컴퓨터와 GitHub 양쪽에서 고쳐서, "
+            "Git이 자동으로 합치지 못한 상태입니다.\n"
+            "먼저 「충돌 취소」로 합치기 시도를 취소한 뒤 다시 받아 오세요.\n"
+            "(커밋 내역의 되돌리기와는 다릅니다.)"
         )
     if not st.has_origin:
         raise SyncError(
@@ -286,7 +302,9 @@ def commit_and_push(
     if st.conflict:
         raise SyncError(
             "변경이 겹쳐 막힌 상태에서는 올릴 수 없습니다.\n"
-            "「충돌 취소」로 되돌린 뒤 다시 시도하세요."
+            "합치기가 중간에 멈춘 상태라 새 커밋을 안전하게 보낼 수 없습니다.\n"
+            "「충돌 취소」로 합치기 시도를 취소한 뒤 다시 시도하세요.\n"
+            "(지난 시점으로 되돌리는 「커밋 내역」과는 다릅니다.)"
         )
     if not st.has_origin:
         raise SyncError(

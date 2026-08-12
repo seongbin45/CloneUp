@@ -14,6 +14,21 @@ Windows용 **GitHub 도우미** 데스크톱 앱입니다.
 | 패키징 | [docs/PACKAGING.md](docs/PACKAGING.md) |
 | Git 없을 때 | [docs/GIT_BOOTSTRAP.md](docs/GIT_BOOTSTRAP.md) |
 
+### 왜 Git을 쓰게 하나요?
+
+클론업은 Git 명령을 버튼으로만 감추는 앱이 아닙니다. 초심자가 Git을 쓰는 **이유**를  
+탭과 안내에 남깁니다.
+
+1. **커밋** — 지금 폴더를 “돌아올 수 있는 점”으로 남김  
+2. **올리기** — 그 기록을 GitHub에도 맞춰 백업·공유  
+3. **받아오기** — 원격의 새 기록을 이 PC에 맞춤  
+4. **다시 수정** — 1번으로 돌아감  
+
+「충돌 취소」는 받아오기 중 **겹침을 포기**하는 비상 버튼이고,  
+「커밋 내역」은 **지난 점**을 보거나 되돌리는 도구입니다 (서로 다릅니다).  
+
+더 긴 설계 메모: [docs/DIFFERENTIATION.md](docs/DIFFERENTIATION.md) 「왜 Git인가」.
+
 **`.env` 파일은 일반 사용자에게 필요 없습니다.**  
 OAuth client id·scope 기본값이 코드에 들어 있고, 로그인 토큰은 OS keyring에 저장됩니다.
 
