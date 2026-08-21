@@ -423,6 +423,10 @@ _STEPS: tuple[tuple[str, str], ...] = (
 )
 
 
+# Floating guide opacity (1.0 = solid). Lower = more see-through over the browser.
+_CONNECT_GUIDE_OPACITY = 0.72
+
+
 class ConnectGitHubWizard(QDialog):
     """
     Step-by-step PAT connect (stays on top while the browser is used).
@@ -442,6 +446,8 @@ class ConnectGitHubWizard(QDialog):
         self.setModal(True)
         # Stay above the browser so each next instruction remains visible.
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        # Near-transparent so the browser underneath stays visible.
+        self.setWindowOpacity(_CONNECT_GUIDE_OPACITY)
         self.setMinimumWidth(440)
         self.setMaximumWidth(520)
         self.setMinimumHeight(0)
