@@ -487,16 +487,25 @@ class ConnectGitHubWizard(QDialog):
         root.addWidget(self._progress)
         root.addWidget(self._stack)
         self._go(_STEP_START)
-        self._center_on_anchor()
+        self._place_bottom_right()
 
-    def _center_on_anchor(self) -> None:
-        if self._anchor is None:
-            return
+    def _place_bottom_right(self) -> None:
+        """Default: bottom-right of the screen (taskbar-safe available area)."""
+        margin = 24
         try:
-            ag = self._anchor.frameGeometry()
+            screen = None
+            if self._anchor is not None:
+                screen = self._anchor.screen()
+            if screen is None:
+                screen = QGuiApplication.primaryScreen()
+            if screen is None:
+                return
+            avail = screen.availableGeometry()
+            self.adjustSize()
             g = self.frameGeometry()
-            g.moveCenter(ag.center())
-            self.move(g.topLeft())
+            x = avail.right() - g.width() - margin + 1
+            y = avail.bottom() - g.height() - margin + 1
+            self.move(max(avail.left() + margin, x), max(avail.top() + margin, y))
         except Exception:
             pass
 
