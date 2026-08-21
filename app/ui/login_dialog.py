@@ -374,8 +374,8 @@ class ConnectGitHubWizard(QDialog):
 
         self.setWindowTitle("GitHub 연결")
         self.setModal(True)
-        self.setMinimumWidth(420)
-        self.setMaximumWidth(480)
+        self.setMinimumWidth(440)
+        self.setMaximumWidth(520)
         # Prefer short height; content drives size
         self.setMinimumHeight(0)
         self.setStyleSheet(_dialog_style(p))
@@ -424,35 +424,43 @@ class ConnectGitHubWizard(QDialog):
         title.setObjectName("wizTitle")
 
         lead = QLabel(
-            "만들고 올리기(새 저장소)를 쓰려면 classic 키가 필요합니다. "
-            "브라우저에서 만든 뒤 다음 단계에 붙여 넣습니다."
+            "클론업은 GitHub에 보낼 「키」가 필요합니다. "
+            "아래 버튼을 누르면 브라우저가 열리고, 거기에서 키를 만든 뒤 복사합니다."
         )
         lead.setObjectName("wizLead")
         lead.setWordWrap(True)
 
         box = QLabel(
-            "1순위 · classic (만들고 올리기용)\n"
-            "  · Tokens (classic) → 「repo」 한 줄 ✓ · 만료 90일 권장\n"
-            "  · Generate 후 초록 키 전체 복사\n"
-            "이미 있는 저장소만 동기화할 때 · 세분 키\n"
-            "  · 목록에 있는 저장소 선택 · Contents 읽기/쓰기\n"
-            "  · (아직 없는 저장소 이름·「해당 저장소만」으로는 새 저장소를 못 만듭니다)"
+            "브라우저에서 할 일 (만들고 올리기용 · classic)\n"
+            "\n"
+            "① 「브라우저에서 만들기」를 누릅니다. (GitHub 로그인 필요할 수 있음)\n"
+            "② Expiration(만료) — 90일 또는 더 길게 고릅니다.\n"
+            "③ Select scopes 목록에서 「repo」 한 줄만 켭니다.\n"
+            "   (repo:status / public_repo 만 켜면 부족합니다.)\n"
+            "④ 맨 아래 Generate token 을 누릅니다.\n"
+            "⑤ 초록색으로 나온 긴 글자(ghp_…로 시작)를 전부 복사합니다.\n"
+            "   ※ 이 화면을 닫으면 같은 키를 다시 볼 수 없습니다.\n"
+            "⑥ 이 창으로 돌아와 「복사했어요 →」를 누릅니다.\n"
+            "\n"
+            "이미 GitHub에 있는 저장소만 맞출 때 → 「세분 키」 버튼.\n"
+            "(새 저장소를 만드는 「만들고 올리기」에는 classic이 필요합니다.)"
         )
         box.setObjectName("wizBox")
         box.setWordWrap(True)
 
         detail = _DetailToggle(
-            "키 = 비밀번호 대용 출입증. 채팅·캡처에 올리지 마세요.\n"
-            "이 컴퓨터에만 저장됩니다. 만료되면 새 키가 필요합니다.\n"
-            "classic 「repo」는 모든 저장소(비공개 포함) 읽기·쓰기 + 새 저장소 생성에 쓰입니다.\n"
-            "세분 키는 범위를 좁힐 수 있지만, 만들고 올리기의 저장소 생성에는 "
-            "보통 classic repo 가 필요합니다.\n"
-            "GitHub 영문: Tokens (classic) · repo · Fine-grained · Contents."
+            "키는 비밀번호 대용입니다. 채팅·캡처·메일에 붙이지 마세요.\n"
+            "이 컴퓨터에만 저장됩니다. 만료되면 새 키를 만들어 다시 연결합니다.\n"
+            "「키 목록」은 예전에 만든 키를 보거나 지울 때 씁니다.\n"
+            "GitHub 영문 화면: Tokens (classic) · Generate new token · repo."
         )
 
         btn_open = QPushButton("브라우저에서 만들기")
         btn_open.setObjectName("btnPrimary")
         btn_open.setDefault(True)
+        btn_open.setToolTip(
+            "Tokens (classic) 새 키 페이지를 엽니다. scopes=repo 가 미리 켜져 있습니다."
+        )
         btn_open.clicked.connect(self._open_create_page)
 
         btn_fine = QPushButton("세분 키 (기존 저장소)")
@@ -465,6 +473,7 @@ class ConnectGitHubWizard(QDialog):
 
         btn_list = QPushButton("키 목록")
         btn_list.setObjectName("btnSecondary")
+        btn_list.setToolTip("GitHub에 이미 있는 키 목록을 엽니다.")
         btn_list.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(PAT_LIST_URL))
         )
@@ -474,6 +483,7 @@ class ConnectGitHubWizard(QDialog):
 
         btn_next = QPushButton("복사했어요 →")
         btn_next.setObjectName("btnPrimary")
+        btn_next.setToolTip("브라우저에서 초록 키를 복사한 뒤 눌러 주세요.")
         btn_next.clicked.connect(lambda: self._go(1))
 
         top_btns = QHBoxLayout()
@@ -508,14 +518,17 @@ class ConnectGitHubWizard(QDialog):
         title = QLabel("키 붙여 넣기")
         title.setObjectName("wizTitle")
 
-        lead = QLabel("복사한 키를 붙여 넣고 연결을 누르세요. (Ctrl+V)")
+        lead = QLabel(
+            "방금 복사한 초록 키를 아래 칸에 넣습니다.\n"
+            "「붙여넣기」를 누르거나 Ctrl+V 한 뒤, 「연결」을 누르세요."
+        )
         lead.setObjectName("wizLead")
         lead.setWordWrap(True)
 
         self._edit = QLineEdit()
         self._edit.setObjectName("patEdit")
         self._edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._edit.setPlaceholderText("ghp_… 키 붙여 넣기")
+        self._edit.setPlaceholderText("ghp_ 로 시작하는 키 전체")
         self._edit.setClearButtonEnabled(True)
 
         btn_paste = QPushButton("붙여넣기")
@@ -534,8 +547,10 @@ class ConnectGitHubWizard(QDialog):
         tools.addStretch(1)
 
         detail = _DetailToggle(
-            "키는 비밀번호와 같습니다. 남에게 보내지 마세요.\n"
-            "잘못 붙여 넣으면 연결이 안 됩니다. 다시 복사하세요."
+            "키가 짧거나 앞뒤가 잘리면 연결이 안 됩니다. "
+            "Generate 직후 화면에서 전체를 다시 복사하세요.\n"
+            "「보기」로 칸 내용이 ghp_ 로 시작하는지 확인할 수 있습니다.\n"
+            "키는 비밀번호와 같습니다. 남에게 보내지 마세요."
         )
 
         btn_back = QPushButton("← 이전")
