@@ -3,13 +3,26 @@
 from __future__ import annotations
 
 
-def test_connect_wizard_has_seven_classic_steps() -> None:
-    from app.ui.login_dialog import _STEPS, _STEP_PASTE
+def test_connect_wizard_step_order() -> None:
+    from app.ui.login_dialog import (
+        _STEP_PASTE,
+        _STEP_REPO,
+        _STEP_SIGNIN,
+        _STEPS,
+    )
 
-    assert len(_STEPS) == 7
-    assert _STEP_PASTE == 6
+    assert len(_STEPS) == 8
+    assert _STEP_SIGNIN == 2
+    assert _STEP_REPO == 4
+    assert _STEP_PASTE == 7
     titles = [t for t, _b in _STEPS]
     assert titles[0] == "시작"
-    assert titles[-1] == "붙여넣기"
     assert "브라우저" in titles[1]
-    assert "repo" in _STEPS[3][1]
+    assert "로그인" in titles[2]
+    assert titles[-1] == "붙여넣기"
+    assert "repo" in _STEPS[_STEP_REPO][1]
+    # New vs returning accounts both mentioned before classic key fields
+    signin_body = _STEPS[_STEP_SIGNIN][1]
+    assert "처음" in signin_body
+    assert "이미" in signin_body
+    assert "패스키" in signin_body or "암호" in signin_body

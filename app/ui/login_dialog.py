@@ -364,11 +364,12 @@ class _DetailToggle(QWidget):
 # Indices match _STEPS / stacked pages.
 _STEP_START = 0
 _STEP_BROWSER = 1
-_STEP_EXPIRY = 2
-_STEP_REPO = 3
-_STEP_GENERATE = 4
-_STEP_COPY = 5
-_STEP_PASTE = 6
+_STEP_SIGNIN = 2
+_STEP_EXPIRY = 3
+_STEP_REPO = 4
+_STEP_GENERATE = 5
+_STEP_COPY = 6
+_STEP_PASTE = 7
 
 _STEPS: tuple[tuple[str, str], ...] = (
     (
@@ -377,15 +378,29 @@ _STEPS: tuple[tuple[str, str], ...] = (
         "키는 비밀번호 대용이며, 이 컴퓨터에만 저장됩니다.\n"
         "\n"
         "만들고 올리기(새 저장소)를 쓰려면 classic 키를 만듭니다.\n"
-        "지금부터 브라우저에서 할 일을 한 단계씩 안내합니다.\n"
-        "이 작은 창은 브라우저 위에도 보이도록 위에 고정됩니다.",
+        "지금부터 할 일을 한 단계씩 안내합니다.",
     ),
     (
         "브라우저 열기",
-        "아래 버튼을 누르면 GitHub의 「새 classic 키」 페이지가 열립니다.\n"
-        "(GitHub 로그인이 필요할 수 있습니다.)\n"
+        "아래 버튼을 누르면 GitHub가 열립니다.\n"
+        "바로 키 화면이 열릴 수도 있고, 먼저 로그인·인증 화면이 열릴 수도 있습니다.\n"
         "\n"
-        "페이지가 열리면 이 창으로 돌아와 「다음」을 누르세요.",
+        "브라우저가 열리면 이 창으로 돌아와 「다음」을 누르세요.",
+    ),
+    (
+        "로그인·인증",
+        "키를 만들려면 GitHub에 들어간 상태여야 합니다.\n"
+        "\n"
+        "· 처음 쓰는 경우\n"
+        "  계정으로 로그인한 뒤, 이메일 코드 또는 패스키로\n"
+        "  본인 확인을 마칩니다.\n"
+        "\n"
+        "· 이미 계정이 있는 경우\n"
+        "  바로 키 화면일 수도 있고,\n"
+        "  이메일 코드·패스키 확인만 한 번 더 뜰 수도 있습니다.\n"
+        "\n"
+        "「새 classic 키」를 만드는 화면(Expiration, scopes 등)이 보이면\n"
+        "「했어요 →」를 누르세요.",
     ),
     (
         "만료일",
@@ -423,31 +438,33 @@ _STEPS: tuple[tuple[str, str], ...] = (
 )
 
 
-# Floating guide opacity (1.0 = solid). Lower = more see-through over the browser.
+# Only while guiding over the browser (not on 시작 / 붙여넣기).
 _CONNECT_GUIDE_OPACITY = 0.72
 
 
 class ConnectGitHubWizard(QDialog):
     """
-    Step-by-step PAT connect (stays on top while the browser is used).
+    Step-by-step PAT connect (independent window; translucent over browser).
 
     Classic ``repo`` path is the default for 「만들고 올리기」.
     """
 
     def __init__(self, parent: QWidget | None = None, *, reauth: bool = False) -> None:
-        super().__init__(parent)
+        # No QWidget parent → dragging this dialog does not raise the main window.
+        self._anchor = parent
+        super().__init__(None)
         self._token = ""
         self._want_device = False
         self._reauth = reauth
         self._via_fine = False
+        self._browser_opened = False
         p = active_palette()
 
         self.setWindowTitle("GitHub 연결")
-        self.setModal(True)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
         # Stay above the browser so each next instruction remains visible.
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        # Near-transparent so the browser underneath stays visible.
-        self.setWindowOpacity(_CONNECT_GUIDE_OPACITY)
+        self.setWindowOpacity(1.0)
         self.setMinimumWidth(440)
         self.setMaximumWidth(520)
         self.setMinimumHeight(0)
@@ -470,6 +487,18 @@ class ConnectGitHubWizard(QDialog):
         root.addWidget(self._progress)
         root.addWidget(self._stack)
         self._go(_STEP_START)
+        self._center_on_anchor()
+
+    def _center_on_anchor(self) -> None:
+        if self._anchor is None:
+            return
+        try:
+            ag = self._anchor.frameGeometry()
+            g = self.frameGeometry()
+            g.moveCenter(ag.center())
+            self.move(g.topLeft())
+        except Exception:
+            pass
 
     def token(self) -> str:
         return self._token
@@ -477,26 +506,45 @@ class ConnectGitHubWizard(QDialog):
     def wants_device_flow(self) -> bool:
         return self._want_device
 
+    def _sync_opacity(self, index: int) -> None:
+        """Translucent only after the browser is open and before paste."""
+        over_browser = (
+            self._browser_opened
+            and _STEP_SIGNIN <= index <= _STEP_COPY
+        )
+        self.setWindowOpacity(
+            _CONNECT_GUIDE_OPACITY if over_browser else 1.0
+        )
+
     def _go(self, index: int) -> None:
         n = len(_STEPS)
         index = max(0, min(index, n - 1))
         self._stack.setCurrentIndex(index)
         short = _STEPS[index][0]
         self._progress.setText(f"{index + 1} / {n}  ·  {short}")
+        self._sync_opacity(index)
         self.adjustSize()
         if index == _STEP_PASTE:
             self._edit.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _after_signin_next(self) -> None:
+        if self._via_fine:
+            self._go(_STEP_PASTE)
+        else:
+            self._go(_STEP_EXPIRY)
 
     def _open_create_page(self) -> None:
         # Classic + repo — required path for 「만들고 올리기」 (create repo).
         QDesktopServices.openUrl(QUrl(PAT_CREATE_URL))
         self._via_fine = False
-        self._go(_STEP_EXPIRY)
+        self._browser_opened = True
+        self._go(_STEP_SIGNIN)
 
     def _open_fine_and_paste(self) -> None:
         QDesktopServices.openUrl(QUrl(PAT_CREATE_URL_FINE))
         self._via_fine = True
-        self._go(_STEP_PASTE)
+        self._browser_opened = True
+        self._go(_STEP_SIGNIN)
 
     def _page_guide(self, index: int, title: str, body: str) -> QWidget:
         w = QWidget()
@@ -533,7 +581,7 @@ class ConnectGitHubWizard(QDialog):
             btn_fine.setToolTip(
                 "이미 GitHub에 있는 저장소만 동기화할 때.\n"
                 "만들고 올리기(새 저장소)에는 classic이 필요합니다.\n"
-                "누르면 세분 키 페이지를 연 뒤 붙여넣기 단계로 이동합니다."
+                "누르면 세분 키 페이지를 연 뒤 로그인·인증 → 붙여넣기로 이동합니다."
             )
             btn_fine.clicked.connect(self._open_fine_and_paste)
             btn_list = QPushButton("키 목록")
@@ -577,10 +625,20 @@ class ConnectGitHubWizard(QDialog):
             )
             btn_open.clicked.connect(self._open_create_page)
             nav.addWidget(btn_open)
-            # If they already opened the browser, allow skip ahead
+
+            def _opened_manual() -> None:
+                self._browser_opened = True
+                self._go(_STEP_SIGNIN)
+
             btn_next = QPushButton("열었어요 →")
             btn_next.setObjectName("btnSecondary")
-            btn_next.clicked.connect(lambda: self._go(_STEP_EXPIRY))
+            btn_next.clicked.connect(_opened_manual)
+            nav.addWidget(btn_next)
+        elif index == _STEP_SIGNIN:
+            btn_next = QPushButton("했어요 →")
+            btn_next.setObjectName("btnPrimary")
+            btn_next.setDefault(True)
+            btn_next.clicked.connect(self._after_signin_next)
             nav.addWidget(btn_next)
         elif index == _STEP_COPY:
             btn_next = QPushButton("복사했어요 →")
