@@ -360,9 +360,74 @@ class _DetailToggle(QWidget):
         self._btn.setText("접기 ▴" if self._open else "자세히 ▾")
 
 
+# Guided classic PAT path (만들고 올리기). One screen = one job.
+# Indices match _STEPS / stacked pages.
+_STEP_START = 0
+_STEP_BROWSER = 1
+_STEP_EXPIRY = 2
+_STEP_REPO = 3
+_STEP_GENERATE = 4
+_STEP_COPY = 5
+_STEP_PASTE = 6
+
+_STEPS: tuple[tuple[str, str], ...] = (
+    (
+        "시작",
+        "클론업이 GitHub와 이야기하려면 「키」가 필요합니다.\n"
+        "키는 비밀번호 대용이며, 이 컴퓨터에만 저장됩니다.\n"
+        "\n"
+        "만들고 올리기(새 저장소)를 쓰려면 classic 키를 만듭니다.\n"
+        "지금부터 브라우저에서 할 일을 한 단계씩 안내합니다.\n"
+        "이 작은 창은 브라우저 위에도 보이도록 위에 고정됩니다.",
+    ),
+    (
+        "브라우저 열기",
+        "아래 버튼을 누르면 GitHub의 「새 classic 키」 페이지가 열립니다.\n"
+        "(GitHub 로그인이 필요할 수 있습니다.)\n"
+        "\n"
+        "페이지가 열리면 이 창으로 돌아와 「다음」을 누르세요.",
+    ),
+    (
+        "만료일",
+        "브라우저에서 Expiration(만료)을 고릅니다.\n"
+        "\n"
+        "90일 또는 더 긴 기간을 권장합니다.\n"
+        "고른 뒤 이 창에서 「했어요 →」를 누르세요.",
+    ),
+    (
+        "repo 권한",
+        "Select scopes 목록에서 「repo」 한 줄만 켭니다.\n"
+        "\n"
+        "repo:status 또는 public_repo 만 켜면 부족합니다.\n"
+        "목록이 길어도 CloneUp은 「repo」면 됩니다.\n"
+        "\n"
+        "켠 뒤 「했어요 →」를 누르세요.",
+    ),
+    (
+        "키 만들기",
+        "페이지 맨 아래 Generate token 을 누릅니다.\n"
+        "\n"
+        "누른 뒤 「했어요 →」를 누르세요.",
+    ),
+    (
+        "복사",
+        "초록색으로 나온 긴 글자(ghp_ 로 시작)를 전부 복사합니다.\n"
+        "\n"
+        "이 화면을 닫으면 같은 키를 다시 볼 수 없습니다.\n"
+        "복사한 뒤 「복사했어요 →」를 누르세요.",
+    ),
+    (
+        "붙여넣기",
+        "방금 복사한 키를 아래에 넣고 「연결」을 누르세요.",
+    ),
+)
+
+
 class ConnectGitHubWizard(QDialog):
     """
-    Compact 2-step connect: 키 만들기 → 붙여넣기.
+    Step-by-step PAT connect (stays on top while the browser is used).
+
+    Classic ``repo`` path is the default for 「만들고 올리기」.
     """
 
     def __init__(self, parent: QWidget | None = None, *, reauth: bool = False) -> None:
@@ -370,13 +435,15 @@ class ConnectGitHubWizard(QDialog):
         self._token = ""
         self._want_device = False
         self._reauth = reauth
+        self._via_fine = False
         p = active_palette()
 
         self.setWindowTitle("GitHub 연결")
         self.setModal(True)
+        # Stay above the browser so each next instruction remains visible.
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setMinimumWidth(440)
         self.setMaximumWidth(520)
-        # Prefer short height; content drives size
         self.setMinimumHeight(0)
         self.setStyleSheet(_dialog_style(p))
 
@@ -385,15 +452,18 @@ class ConnectGitHubWizard(QDialog):
         self._progress.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         self._stack = QStackedWidget()
-        self._stack.addWidget(self._page_make_key())
-        self._stack.addWidget(self._page_paste())
+        for i, (title, body) in enumerate(_STEPS):
+            if i == _STEP_PASTE:
+                self._stack.addWidget(self._page_paste(title, body))
+            else:
+                self._stack.addWidget(self._page_guide(i, title, body))
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 16, 18, 14)
         root.setSpacing(10)
         root.addWidget(self._progress)
         root.addWidget(self._stack)
-        self._go(0)
+        self._go(_STEP_START)
 
     def token(self) -> str:
         return self._token
@@ -402,126 +472,134 @@ class ConnectGitHubWizard(QDialog):
         return self._want_device
 
     def _go(self, index: int) -> None:
+        n = len(_STEPS)
+        index = max(0, min(index, n - 1))
         self._stack.setCurrentIndex(index)
-        labels = ("1 / 2  ·  키 만들기", "2 / 2  ·  붙여넣기")
-        self._progress.setText(labels[index] if 0 <= index < 2 else "")
+        short = _STEPS[index][0]
+        self._progress.setText(f"{index + 1} / {n}  ·  {short}")
         self.adjustSize()
-        if index == 1:
+        if index == _STEP_PASTE:
             self._edit.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _open_create_page(self) -> None:
-        # Default: classic + repo — required path for 「만들고 올리기」 (create repo).
+        # Classic + repo — required path for 「만들고 올리기」 (create repo).
         QDesktopServices.openUrl(QUrl(PAT_CREATE_URL))
+        self._via_fine = False
+        self._go(_STEP_EXPIRY)
 
-    def _open_fine_create_page(self) -> None:
+    def _open_fine_and_paste(self) -> None:
         QDesktopServices.openUrl(QUrl(PAT_CREATE_URL_FINE))
+        self._via_fine = True
+        self._go(_STEP_PASTE)
 
-    def _page_make_key(self) -> QWidget:
+    def _page_guide(self, index: int, title: str, body: str) -> QWidget:
         w = QWidget()
-        title = QLabel(
-            "새 키로 다시 연결" if self._reauth else "GitHub 키 만들기"
+        head = QLabel(
+            ("새 키로 다시 연결" if self._reauth else title)
+            if index == _STEP_START
+            else title
         )
-        title.setObjectName("wizTitle")
+        head.setObjectName("wizTitle")
+        head.setWordWrap(True)
 
-        lead = QLabel(
-            "클론업은 GitHub에 보낼 「키」가 필요합니다. "
-            "아래 버튼을 누르면 브라우저가 열리고, 거기에서 키를 만든 뒤 복사합니다."
-        )
+        lead = QLabel(body)
         lead.setObjectName("wizLead")
         lead.setWordWrap(True)
-
-        box = QLabel(
-            "브라우저에서 할 일 (만들고 올리기용 · classic)\n"
-            "\n"
-            "① 「브라우저에서 만들기」를 누릅니다. (GitHub 로그인 필요할 수 있음)\n"
-            "② Expiration(만료) — 90일 또는 더 길게 고릅니다.\n"
-            "③ Select scopes 목록에서 「repo」 한 줄만 켭니다.\n"
-            "   (repo:status / public_repo 만 켜면 부족합니다.)\n"
-            "④ 맨 아래 Generate token 을 누릅니다.\n"
-            "⑤ 초록색으로 나온 긴 글자(ghp_…로 시작)를 전부 복사합니다.\n"
-            "   ※ 이 화면을 닫으면 같은 키를 다시 볼 수 없습니다.\n"
-            "⑥ 이 창으로 돌아와 「복사했어요 →」를 누릅니다.\n"
-            "\n"
-            "이미 GitHub에 있는 저장소만 맞출 때 → 「세분 키」 버튼.\n"
-            "(새 저장소를 만드는 「만들고 올리기」에는 classic이 필요합니다.)"
-        )
-        box.setObjectName("wizBox")
-        box.setWordWrap(True)
-
-        detail = _DetailToggle(
-            "키는 비밀번호 대용입니다. 채팅·캡처·메일에 붙이지 마세요.\n"
-            "이 컴퓨터에만 저장됩니다. 만료되면 새 키를 만들어 다시 연결합니다.\n"
-            "「키 목록」은 예전에 만든 키를 보거나 지울 때 씁니다.\n"
-            "GitHub 영문 화면: Tokens (classic) · Generate new token · repo."
-        )
-
-        btn_open = QPushButton("브라우저에서 만들기")
-        btn_open.setObjectName("btnPrimary")
-        btn_open.setDefault(True)
-        btn_open.setToolTip(
-            "Tokens (classic) 새 키 페이지를 엽니다. scopes=repo 가 미리 켜져 있습니다."
-        )
-        btn_open.clicked.connect(self._open_create_page)
-
-        btn_fine = QPushButton("세분 키 (기존 저장소)")
-        btn_fine.setObjectName("btnSecondary")
-        btn_fine.setToolTip(
-            "이미 GitHub에 있는 저장소에 동기화만 할 때.\n"
-            "만들고 올리기(새 저장소)에는 맞지 않을 수 있습니다."
-        )
-        btn_fine.clicked.connect(self._open_fine_create_page)
-
-        btn_list = QPushButton("키 목록")
-        btn_list.setObjectName("btnSecondary")
-        btn_list.setToolTip("GitHub에 이미 있는 키 목록을 엽니다.")
-        btn_list.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(PAT_LIST_URL))
-        )
-        btn_cancel = QPushButton("취소")
-        btn_cancel.setObjectName("btnGhost")
-        btn_cancel.clicked.connect(self.reject)
-
-        btn_next = QPushButton("복사했어요 →")
-        btn_next.setObjectName("btnPrimary")
-        btn_next.setToolTip("브라우저에서 초록 키를 복사한 뒤 눌러 주세요.")
-        btn_next.clicked.connect(lambda: self._go(1))
-
-        top_btns = QHBoxLayout()
-        top_btns.setSpacing(8)
-        top_btns.addWidget(btn_open, 1)
-        top_btns.addWidget(btn_fine, 0)
-        top_btns.addWidget(btn_list, 0)
-
-        nav = QHBoxLayout()
-        nav.addWidget(btn_cancel)
-        nav.addStretch(1)
-        nav.addWidget(btn_next)
 
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(8)
-        lay.addWidget(title)
+        lay.addWidget(head)
         lay.addWidget(lead)
-        lay.addWidget(box)
-        lay.addLayout(top_btns)
-        lay.addWidget(detail)
-        if is_device_flow_allowed():
-            btn_dev = QPushButton("개발용 장치 코드")
-            btn_dev.setObjectName("btnGhost")
-            btn_dev.clicked.connect(self._pick_device)
-            lay.addWidget(btn_dev)
+
+        if index == _STEP_START:
+            detail = _DetailToggle(
+                "키는 채팅·캡처·메일에 붙이지 마세요.\n"
+                "만료되면 새 키를 만들어 다시 연결합니다.\n"
+                "GitHub 영문: Tokens (classic) · Generate new token · repo."
+            )
+            lay.addWidget(detail)
+
+            side = QHBoxLayout()
+            side.setSpacing(8)
+            btn_fine = QPushButton("세분 키 (기존 저장소)")
+            btn_fine.setObjectName("btnSecondary")
+            btn_fine.setToolTip(
+                "이미 GitHub에 있는 저장소만 동기화할 때.\n"
+                "만들고 올리기(새 저장소)에는 classic이 필요합니다.\n"
+                "누르면 세분 키 페이지를 연 뒤 붙여넣기 단계로 이동합니다."
+            )
+            btn_fine.clicked.connect(self._open_fine_and_paste)
+            btn_list = QPushButton("키 목록")
+            btn_list.setObjectName("btnSecondary")
+            btn_list.setToolTip("GitHub에 이미 있는 키 목록을 엽니다.")
+            btn_list.clicked.connect(
+                lambda: QDesktopServices.openUrl(QUrl(PAT_LIST_URL))
+            )
+            side.addWidget(btn_fine)
+            side.addWidget(btn_list)
+            side.addStretch(1)
+            lay.addLayout(side)
+
+            if is_device_flow_allowed():
+                btn_dev = QPushButton("개발용 장치 코드")
+                btn_dev.setObjectName("btnGhost")
+                btn_dev.clicked.connect(self._pick_device)
+                lay.addWidget(btn_dev)
+
+        # Primary actions per step
+        nav = QHBoxLayout()
+        btn_cancel = QPushButton("취소")
+        btn_cancel.setObjectName("btnGhost")
+        btn_cancel.clicked.connect(self.reject)
+        nav.addWidget(btn_cancel)
+
+        if index > _STEP_START:
+            btn_back = QPushButton("← 이전")
+            btn_back.setObjectName("btnGhost")
+            btn_back.clicked.connect(lambda: self._go(index - 1))
+            nav.addWidget(btn_back)
+
+        nav.addStretch(1)
+
+        if index == _STEP_BROWSER:
+            btn_open = QPushButton("브라우저에서 만들기")
+            btn_open.setObjectName("btnPrimary")
+            btn_open.setDefault(True)
+            btn_open.setToolTip(
+                "Tokens (classic) 새 키 페이지를 엽니다. scopes=repo 가 미리 켜져 있습니다."
+            )
+            btn_open.clicked.connect(self._open_create_page)
+            nav.addWidget(btn_open)
+            # If they already opened the browser, allow skip ahead
+            btn_next = QPushButton("열었어요 →")
+            btn_next.setObjectName("btnSecondary")
+            btn_next.clicked.connect(lambda: self._go(_STEP_EXPIRY))
+            nav.addWidget(btn_next)
+        elif index == _STEP_COPY:
+            btn_next = QPushButton("복사했어요 →")
+            btn_next.setObjectName("btnPrimary")
+            btn_next.setDefault(True)
+            btn_next.clicked.connect(lambda: self._go(_STEP_PASTE))
+            nav.addWidget(btn_next)
+        else:
+            # START, EXPIRY, REPO, GENERATE
+            label = "다음 →" if index == _STEP_START else "했어요 →"
+            btn_next = QPushButton(label)
+            btn_next.setObjectName("btnPrimary")
+            btn_next.setDefault(True)
+            btn_next.clicked.connect(lambda: self._go(index + 1))
+            nav.addWidget(btn_next)
+
         lay.addLayout(nav)
         return w
 
-    def _page_paste(self) -> QWidget:
+    def _page_paste(self, title: str, body: str) -> QWidget:
         w = QWidget()
-        title = QLabel("키 붙여 넣기")
-        title.setObjectName("wizTitle")
+        head = QLabel(title)
+        head.setObjectName("wizTitle")
 
-        lead = QLabel(
-            "방금 복사한 초록 키를 아래 칸에 넣습니다.\n"
-            "「붙여넣기」를 누르거나 Ctrl+V 한 뒤, 「연결」을 누르세요."
-        )
+        lead = QLabel(body + "\n「붙여넣기」또는 Ctrl+V 를 사용할 수 있습니다.")
         lead.setObjectName("wizLead")
         lead.setWordWrap(True)
 
@@ -550,27 +628,36 @@ class ConnectGitHubWizard(QDialog):
             "키가 짧거나 앞뒤가 잘리면 연결이 안 됩니다. "
             "Generate 직후 화면에서 전체를 다시 복사하세요.\n"
             "「보기」로 칸 내용이 ghp_ 로 시작하는지 확인할 수 있습니다.\n"
-            "키는 비밀번호와 같습니다. 남에게 보내지 마세요."
+            "키는 비밀번호와 같습니다. 남에게 보내지 마세요.\n"
+            "세분 키로 들어온 경우에도 이 칸에 붙여 넣으면 됩니다."
         )
+
+        nav = QHBoxLayout()
+        btn_cancel = QPushButton("취소")
+        btn_cancel.setObjectName("btnGhost")
+        btn_cancel.clicked.connect(self.reject)
+        nav.addWidget(btn_cancel)
 
         btn_back = QPushButton("← 이전")
         btn_back.setObjectName("btnGhost")
-        btn_back.clicked.connect(lambda: self._go(0))
+
+        def _paste_back() -> None:
+            self._go(_STEP_START if self._via_fine else _STEP_COPY)
+
+        btn_back.clicked.connect(_paste_back)
+        nav.addWidget(btn_back)
+        nav.addStretch(1)
 
         btn_connect = QPushButton("연결")
         btn_connect.setObjectName("btnPrimary")
         btn_connect.setDefault(True)
         btn_connect.clicked.connect(self._finish)
-
-        nav = QHBoxLayout()
-        nav.addWidget(btn_back)
-        nav.addStretch(1)
         nav.addWidget(btn_connect)
 
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(8)
-        lay.addWidget(title)
+        lay.addWidget(head)
         lay.addWidget(lead)
         lay.addWidget(self._edit)
         lay.addLayout(tools)
