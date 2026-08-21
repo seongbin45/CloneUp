@@ -487,12 +487,26 @@ class ConnectGitHubWizard(QDialog):
         root.addWidget(self._progress)
         root.addWidget(self._stack)
         self._go(_STEP_START)
-        self._place_bottom_right()
+        # Until the browser opens: same centered placement as before.
+        self._place_center_on_anchor()
+
+    def _place_center_on_anchor(self) -> None:
+        if self._anchor is None:
+            return
+        try:
+            self.adjustSize()
+            ag = self._anchor.frameGeometry()
+            g = self.frameGeometry()
+            g.moveCenter(ag.center())
+            self.move(g.topLeft())
+        except Exception:
+            pass
 
     def _place_bottom_right(self) -> None:
-        """Default: bottom-right of the screen (taskbar-safe available area)."""
+        """After browser opens: bottom-right (taskbar-safe available area)."""
         margin = 24
         try:
+            self.adjustSize()
             screen = None
             if self._anchor is not None:
                 screen = self._anchor.screen()
@@ -501,13 +515,18 @@ class ConnectGitHubWizard(QDialog):
             if screen is None:
                 return
             avail = screen.availableGeometry()
-            self.adjustSize()
             g = self.frameGeometry()
             x = avail.right() - g.width() - margin + 1
             y = avail.bottom() - g.height() - margin + 1
             self.move(max(avail.left() + margin, x), max(avail.top() + margin, y))
         except Exception:
             pass
+
+    def _mark_browser_opened(self) -> None:
+        first = not self._browser_opened
+        self._browser_opened = True
+        if first:
+            self._place_bottom_right()
 
     def token(self) -> str:
         return self._token
@@ -546,13 +565,13 @@ class ConnectGitHubWizard(QDialog):
         # Classic + repo — required path for 「만들고 올리기」 (create repo).
         QDesktopServices.openUrl(QUrl(PAT_CREATE_URL))
         self._via_fine = False
-        self._browser_opened = True
+        self._mark_browser_opened()
         self._go(_STEP_SIGNIN)
 
     def _open_fine_and_paste(self) -> None:
         QDesktopServices.openUrl(QUrl(PAT_CREATE_URL_FINE))
         self._via_fine = True
-        self._browser_opened = True
+        self._mark_browser_opened()
         self._go(_STEP_SIGNIN)
 
     def _page_guide(self, index: int, title: str, body: str) -> QWidget:
@@ -636,7 +655,7 @@ class ConnectGitHubWizard(QDialog):
             nav.addWidget(btn_open)
 
             def _opened_manual() -> None:
-                self._browser_opened = True
+                self._mark_browser_opened()
                 self._go(_STEP_SIGNIN)
 
             btn_next = QPushButton("열었어요 →")
