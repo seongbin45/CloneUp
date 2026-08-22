@@ -6,7 +6,7 @@ Short pages, minimal copy. Extra tips stay collapsed under 「자세히」.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QDialog,
@@ -429,17 +429,29 @@ _STEPS: tuple[tuple[str, str], ...] = (
         "초록색으로 나온 긴 글자(ghp_ 로 시작)를 전부 복사합니다.\n"
         "\n"
         "이 화면을 닫으면 같은 키를 다시 볼 수 없습니다.\n"
-        "복사한 뒤 「복사했어요 →」를 누르세요.",
+        "복사하면 이 창이 붙여넣기 단계로 자동으로 넘어갑니다.\n"
+        "(안 되면 「복사했어요 →」를 누르세요.)",
     ),
     (
         "붙여넣기",
-        "방금 복사한 키를 아래에 넣고 「연결」을 누르세요.",
+        "키가 칸에 들어왔는지 확인한 뒤 「연결」을 누르세요.\n"
+        "(복사만 해도 이 단계로 올 수 있습니다.)",
     ),
 )
 
 
 # Only while guiding over the browser (not on 시작 / 붙여넣기).
 _CONNECT_GUIDE_OPACITY = 0.72
+
+# Clipboard auto-advance: detect a copied PAT without sniffing browser traffic.
+_TOKEN_PREFIXES = ("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")
+
+
+def _looks_like_github_token(text: str) -> bool:
+    t = (text or "").strip()
+    if len(t) < 20 or " " in t or "\n" in t:
+        return False
+    return any(t.startswith(p) for p in _TOKEN_PREFIXES)
 
 
 class ConnectGitHubWizard(QDialog):
@@ -458,6 +470,7 @@ class ConnectGitHubWizard(QDialog):
         self._reauth = reauth
         self._via_fine = False
         self._browser_opened = False
+        self._clip_seen = ""
         p = active_palette()
 
         self.setWindowTitle("GitHub 연결")
@@ -480,6 +493,10 @@ class ConnectGitHubWizard(QDialog):
                 self._stack.addWidget(self._page_paste(title, body))
             else:
                 self._stack.addWidget(self._page_guide(i, title, body))
+
+        self._clip_timer = QTimer(self)
+        self._clip_timer.setInterval(500)
+        self._clip_timer.timeout.connect(self._poll_clipboard_for_token)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 16, 18, 14)
@@ -527,6 +544,50 @@ class ConnectGitHubWizard(QDialog):
         self._browser_opened = True
         if first:
             self._place_bottom_right()
+        if not self._clip_timer.isActive():
+            self._clip_timer.start()
+
+    def _stop_clipboard_watch(self) -> None:
+        if self._clip_timer.isActive():
+            self._clip_timer.stop()
+
+    def _poll_clipboard_for_token(self) -> None:
+        """
+        When the user copies a GitHub PAT in the browser, jump to paste.
+
+        We do **not** inspect browser URLs or network traffic — only the
+        clipboard contents after the user has already copied the key.
+        """
+        if not self._browser_opened:
+            return
+        clip = QGuiApplication.clipboard()
+        if clip is None:
+            return
+        text = (clip.text() or "").strip()
+        if not _looks_like_github_token(text):
+            return
+        if text == self._clip_seen:
+            return
+        self._clip_seen = text
+        # Fill paste field and advance (opacity becomes solid on paste).
+        if hasattr(self, "_edit") and self._edit is not None:
+            self._edit.setText(text)
+        if self._stack.currentIndex() != _STEP_PASTE:
+            self._go(_STEP_PASTE)
+        self.raise_()
+        self.activateWindow()
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self._stop_clipboard_watch()
+        super().closeEvent(event)
+
+    def reject(self) -> None:
+        self._stop_clipboard_watch()
+        super().reject()
+
+    def accept(self) -> None:
+        self._stop_clipboard_watch()
+        super().accept()
 
     def token(self) -> str:
         return self._token

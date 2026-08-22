@@ -26,3 +26,13 @@ def test_connect_wizard_step_order() -> None:
     assert "처음" in signin_body
     assert "이미" in signin_body
     assert "패스키" in signin_body or "암호" in signin_body
+
+
+def test_looks_like_github_token() -> None:
+    from app.ui.login_dialog import _looks_like_github_token
+
+    assert _looks_like_github_token("ghp_" + "a" * 36)
+    assert _looks_like_github_token("github_pat_" + "x" * 40)
+    assert not _looks_like_github_token("short")
+    assert not _looks_like_github_token("ghp_ has spaces here_xxxxx")
+    assert not _looks_like_github_token("not_a_token_at_all_xxxxxxxxxx")
