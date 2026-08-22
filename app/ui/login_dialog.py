@@ -497,7 +497,13 @@ class ConnectGitHubWizard(QDialog):
             self._place_center_on_anchor()
 
     def _fit_web_dialog(self) -> None:
-        """Give the embedded GitHub page nearly full available screen space."""
+        """
+        Nearly fill the work area (taskbar stays visible).
+
+        Uses ``availableGeometry`` (excludes taskbar), keeps normal window
+        chrome so the title-bar close (X) remains. Not Qt FullScreen.
+        """
+        margin = 8  # small inset so edges are not flush against screen chrome
         try:
             screen = None
             if self._anchor is not None:
@@ -508,12 +514,11 @@ class ConnectGitHubWizard(QDialog):
                 self.resize(1100, 760)
                 return
             avail = screen.availableGeometry()
-            w = max(980, int(avail.width() * 0.92))
-            h = max(680, int(avail.height() * 0.90))
+            w = max(980, avail.width() - margin * 2)
+            h = max(680, avail.height() - margin * 2)
+            self.setMinimumSize(min(980, w), min(680, h))
             self.resize(w, h)
-            g = self.frameGeometry()
-            g.moveCenter(avail.center())
-            self.move(g.topLeft())
+            self.move(avail.x() + margin, avail.y() + margin)
         except Exception:
             self.resize(1100, 760)
 
