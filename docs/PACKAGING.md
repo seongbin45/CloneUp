@@ -37,6 +37,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 
 - 아이콘: `assets/icons/CloneUp.ico`
 - 포함: `ui/main_window.ui`, `assets/icons/*`, `legal/*`, 루트 `LICENSE`
+- **Qt WebEngine** (`PySide6-Addons`): 연결 마법사 앱 안 브라우저. Setup 용량이 커집니다.
 - Git / `.env` **미포함** — 첫 실행 DG1/DG2
 
 ## DG3 — 설치 관리자

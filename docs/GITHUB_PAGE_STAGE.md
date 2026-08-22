@@ -29,10 +29,12 @@
 **중요:** zip의 `github.com/settings/tokens.html`은 발급 직후 화면이 아니라 **목록**입니다.  
 발급 완료는 스크린샷의 copy-now 배너 + 토큰 문자열로만 `TOKEN_ISSUED`입니다.
 
-## 다음 (아직 안 함)
+## 연결 UI와의 연동
 
-- WebView 또는 동등한 관측 통로로 `PageSnapshot`을 채운 뒤 연결 안내 UI와 연결
-- OS 패스키 창은 OS API가 따로 필요
+- `app/ui/connect_webview.py` + `ConnectGitHubWizard` (WebEngine 있을 때)
+- `urlChanged` / `titleChanged` / `toHtml` → `PageSnapshot` → 안내 문구·체크리스트 갱신
+- WebEngine 없으면 외부 브라우저 + 클립보드 폴백
+- OS 패스키 창은 HTML로 안 보임 → 안내로 비밀번호·OTP 유도
 
 ## 테스트
 

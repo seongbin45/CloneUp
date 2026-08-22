@@ -419,9 +419,10 @@ def _looks_like_github_token(text: str) -> bool:
 
 class ConnectGitHubWizard(QDialog):
     """
-    Step-by-step PAT connect (independent window; translucent over browser).
+    PAT connect wizard.
 
-    Classic ``repo`` path is the default for 「만들고 올리기」.
+    Preferred: embedded Qt WebEngine + live page-stage guide.
+    Fallback: external browser + checklist (when WebEngine is missing).
     """
 
     def __init__(self, parent: QWidget | None = None, *, reauth: bool = False) -> None:
@@ -434,16 +435,24 @@ class ConnectGitHubWizard(QDialog):
         self._via_fine = False
         self._browser_opened = False
         self._clip_seen = ""
+        self._web_pane = None
+        from app.ui.connect_webview import webengine_available
+
+        self._use_web = webengine_available()
         p = active_palette()
 
         self.setWindowTitle("GitHub 연결")
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
-        # Stay above the browser so each next instruction remains visible.
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setWindowOpacity(1.0)
-        self.setMinimumWidth(440)
-        self.setMaximumWidth(520)
-        self.setMinimumHeight(0)
+        if self._use_web:
+            self.setMinimumWidth(960)
+            self.setMinimumHeight(640)
+            self.resize(1100, 720)
+        else:
+            self.setMinimumWidth(440)
+            self.setMaximumWidth(520)
+            self.setMinimumHeight(0)
         self.setStyleSheet(_dialog_style(p))
 
         self._progress = QLabel()
@@ -451,11 +460,22 @@ class ConnectGitHubWizard(QDialog):
         self._progress.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         self._stack = QStackedWidget()
-        for i, (title, body) in enumerate(_STEPS):
-            if i == _STEP_PASTE:
-                self._stack.addWidget(self._page_paste(title, body))
-            else:
-                self._stack.addWidget(self._page_guide(i, title, body))
+        if self._use_web:
+            # 0=start, 1=embedded GitHub + guide
+            self._stack.addWidget(
+                self._page_guide(_STEP_START, _STEPS[_STEP_START][0], _STEPS[_STEP_START][1])
+            )
+            self._stack.addWidget(self._page_web())
+            self._web_index = 1
+            self._paste_index = 1  # token field lives on web page
+        else:
+            for i, (title, body) in enumerate(_STEPS):
+                if i == _STEP_PASTE:
+                    self._stack.addWidget(self._page_paste(title, body))
+                else:
+                    self._stack.addWidget(self._page_guide(i, title, body))
+            self._web_index = -1
+            self._paste_index = _STEP_PASTE
 
         self._clip_timer = QTimer(self)
         self._clip_timer.setInterval(500)
@@ -465,9 +485,8 @@ class ConnectGitHubWizard(QDialog):
         root.setContentsMargins(18, 16, 18, 14)
         root.setSpacing(10)
         root.addWidget(self._progress)
-        root.addWidget(self._stack)
+        root.addWidget(self._stack, 1)
         self._go(_STEP_START)
-        # Until the browser opens: same centered placement as before.
         self._place_center_on_anchor()
 
     def _place_center_on_anchor(self) -> None:
@@ -532,11 +551,22 @@ class ConnectGitHubWizard(QDialog):
         if text == self._clip_seen:
             return
         self._clip_seen = text
-        # Fill paste field and advance (opacity becomes solid on paste).
+        self._apply_detected_token(text)
+
+    def _apply_detected_token(self, text: str) -> None:
         if hasattr(self, "_edit") and self._edit is not None:
             self._edit.setText(text)
-        if self._stack.currentIndex() != _STEP_PASTE:
-            self._go(_STEP_PASTE)
+        if self._use_web:
+            if self._stack.currentIndex() != self._web_index:
+                self._go_web()
+            self.setWindowOpacity(1.0)
+            if hasattr(self, "_web_hint") and self._web_hint is not None:
+                self._web_hint.setText(
+                    "키가 준비되었습니다. 「연결」을 눌러 주세요."
+                )
+        else:
+            if self._stack.currentIndex() != _STEP_PASTE:
+                self._go(_STEP_PASTE)
         self.raise_()
         self.activateWindow()
 
@@ -566,6 +596,17 @@ class ConnectGitHubWizard(QDialog):
         )
 
     def _go(self, index: int) -> None:
+        if self._use_web:
+            # Only start (0) and web (1) pages exist.
+            index = 0 if index <= 0 else self._web_index
+            self._stack.setCurrentIndex(index)
+            if index == 0:
+                self._progress.setText("1 / 2  ·  시작")
+                self.setWindowOpacity(1.0)
+            else:
+                self._progress.setText("2 / 2  ·  키 만들기")
+            self.adjustSize()
+            return
         n = len(_STEPS)
         index = max(0, min(index, n - 1))
         self._stack.setCurrentIndex(index)
@@ -576,18 +617,38 @@ class ConnectGitHubWizard(QDialog):
         if index == _STEP_PASTE:
             self._edit.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def _go_web(self) -> None:
+        self._stack.setCurrentIndex(self._web_index)
+        self._progress.setText("2 / 2  ·  키 만들기")
+        self.setWindowOpacity(1.0)
+
     def _open_create_page(self) -> None:
         # Classic + repo — required path for 「만들고 올리기」 (create repo).
-        QDesktopServices.openUrl(QUrl(PAT_CREATE_URL))
         self._via_fine = False
+        if self._use_web:
+            self._start_web(PAT_CREATE_URL)
+            return
+        QDesktopServices.openUrl(QUrl(PAT_CREATE_URL))
         self._mark_browser_opened()
         self._go(_STEP_WORK)
 
     def _open_fine_and_paste(self) -> None:
-        QDesktopServices.openUrl(QUrl(PAT_CREATE_URL_FINE))
         self._via_fine = True
+        if self._use_web:
+            self._start_web(PAT_CREATE_URL_FINE)
+            return
+        QDesktopServices.openUrl(QUrl(PAT_CREATE_URL_FINE))
         self._mark_browser_opened()
         self._go(_STEP_WORK)
+
+    def _start_web(self, url: str) -> None:
+        self._browser_opened = True
+        if not self._clip_timer.isActive():
+            self._clip_timer.start()
+        if self._web_pane is not None:
+            self._web_pane.load_url(url)
+        self._go_web()
+        self._place_center_on_anchor()
 
     def _page_guide(self, index: int, title: str, body: str) -> QWidget:
         w = QWidget()
@@ -687,14 +748,134 @@ class ConnectGitHubWizard(QDialog):
             nav.addWidget(btn_next)
         else:
             # START only
-            btn_next = QPushButton("다음 →")
-            btn_next.setObjectName("btnPrimary")
-            btn_next.setDefault(True)
-            btn_next.clicked.connect(lambda: self._go(index + 1))
-            nav.addWidget(btn_next)
+            if self._use_web:
+                btn_next = QPushButton("키 만들기 시작 →")
+                btn_next.setObjectName("btnPrimary")
+                btn_next.setDefault(True)
+                btn_next.clicked.connect(
+                    lambda: self._open_create_page()
+                    if not self._via_fine
+                    else self._open_fine_and_paste()
+                )
+                nav.addWidget(btn_next)
+            else:
+                btn_next = QPushButton("다음 →")
+                btn_next.setObjectName("btnPrimary")
+                btn_next.setDefault(True)
+                btn_next.clicked.connect(lambda: self._go(index + 1))
+                nav.addWidget(btn_next)
 
         lay.addLayout(nav)
         return w
+
+    def _page_web(self) -> QWidget:
+        """Embedded GitHub + live stage guide (WebEngine path)."""
+        from app.auth.github_page_stage import GitHubPageStage
+        from app.ui.connect_webview import (
+            GitHubConnectWebPane,
+            checklist_text,
+            guide_line_for_stage,
+        )
+
+        w = QWidget()
+        self._web_stage_title = QLabel("준비 중…")
+        self._web_stage_title.setObjectName("wizTitle")
+        self._web_stage_title.setWordWrap(True)
+
+        self._web_hint = QLabel(
+            "아래 화면에서 GitHub 로그인부터 키 만들기까지 진행하세요.\n"
+            "패스키 창이 막히면 비밀번호·인증 앱 코드를 쓰거나 "
+            "「외부 브라우저로 열기」를 누르세요."
+        )
+        self._web_hint.setObjectName("wizLead")
+        self._web_hint.setWordWrap(True)
+
+        self._web_check = QLabel(checklist_text(set(), GitHubPageStage.UNKNOWN))
+        self._web_check.setObjectName("wizBox")
+        self._web_check.setWordWrap(True)
+
+        self._web_pane = GitHubConnectWebPane(w)
+        self._web_pane.stage_changed.connect(self._on_web_stage)
+        self._web_pane.token_found.connect(self._apply_detected_token)
+        self._web_pane.load_failed.connect(self._on_web_load_failed)
+
+        self._edit = QLineEdit()
+        self._edit.setObjectName("patEdit")
+        self._edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._edit.setPlaceholderText("키가 여기 채워지거나, 직접 붙여 넣으세요")
+        self._edit.setClearButtonEnabled(True)
+
+        btn_paste = QPushButton("붙여넣기")
+        btn_paste.setObjectName("btnSecondary")
+        btn_paste.clicked.connect(self._paste_clipboard)
+        self._btn_toggle = QPushButton("보기")
+        self._btn_toggle.setObjectName("btnSecondary")
+        self._btn_toggle.setCheckable(True)
+        self._btn_toggle.toggled.connect(self._on_toggle_visible)
+        tools = QHBoxLayout()
+        tools.setSpacing(8)
+        tools.addWidget(btn_paste)
+        tools.addWidget(self._btn_toggle)
+        tools.addStretch(1)
+
+        btn_ext = QPushButton("외부 브라우저로 열기")
+        btn_ext.setObjectName("btnSecondary")
+        btn_ext.clicked.connect(self._open_external_from_web)
+
+        btn_back = QPushButton("← 이전")
+        btn_back.setObjectName("btnGhost")
+        btn_back.clicked.connect(lambda: self._go(0))
+        btn_cancel = QPushButton("취소")
+        btn_cancel.setObjectName("btnGhost")
+        btn_cancel.clicked.connect(self.reject)
+        btn_connect = QPushButton("연결")
+        btn_connect.setObjectName("btnPrimary")
+        btn_connect.setDefault(True)
+        btn_connect.clicked.connect(self._finish)
+
+        nav = QHBoxLayout()
+        nav.addWidget(btn_cancel)
+        nav.addWidget(btn_back)
+        nav.addWidget(btn_ext)
+        nav.addStretch(1)
+        nav.addWidget(btn_connect)
+
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+        lay.addWidget(self._web_stage_title)
+        lay.addWidget(self._web_hint)
+        lay.addWidget(self._web_check)
+        lay.addWidget(self._web_pane, 1)
+        lay.addWidget(self._edit)
+        lay.addLayout(tools)
+        lay.addLayout(nav)
+        return w
+
+    def _on_web_stage(self, stage: object) -> None:
+        from app.auth.github_page_stage import GitHubPageStage
+        from app.ui.connect_webview import checklist_text, guide_line_for_stage
+
+        st = stage if isinstance(stage, GitHubPageStage) else GitHubPageStage.UNKNOWN
+        self._web_stage_title.setText(guide_line_for_stage(st))
+        reached = self._web_pane.reached if self._web_pane else set()
+        self._web_check.setText(checklist_text(reached, st))
+
+    def _on_web_load_failed(self, _msg: str) -> None:
+        if self._web_hint is not None:
+            self._web_hint.setText(
+                "페이지를 불러오지 못했습니다. "
+                "「외부 브라우저로 열기」로 진행한 뒤 키를 복사하세요."
+            )
+
+    def _open_external_from_web(self) -> None:
+        url = PAT_CREATE_URL_FINE if self._via_fine else PAT_CREATE_URL
+        QDesktopServices.openUrl(QUrl(url))
+        if self._web_hint is not None:
+            self._web_hint.setText(
+                "외부 브라우저에서 키를 만든 뒤 복사하세요. "
+                "복사되면 아래 칸에 자동으로 들어올 수 있습니다."
+            )
 
     def _page_paste(self, title: str, body: str) -> QWidget:
         w = QWidget()

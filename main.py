@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 
 def main() -> int:
     try:
+        from PySide6.QtCore import Qt, QCoreApplication
         from PySide6.QtWidgets import QApplication
     except ImportError:
         print(
@@ -21,6 +22,14 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+
+    # Required before QApplication when Qt WebEngine may be used (connect wizard).
+    try:
+        QCoreApplication.setAttribute(
+            Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True
+        )
+    except Exception:
+        pass
 
     from app import __version__
     from app.ui.icons import load_app_icon
