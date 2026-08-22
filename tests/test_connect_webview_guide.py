@@ -17,8 +17,8 @@ def test_checklist_marks_reached() -> None:
         GitHubPageStage.AUTH_2FA,
     )
     assert "✓ 로그인" in text
-    assert "✓ 인증 코드" in text
-    assert "지금" in text
+    assert "【인증 코드】" in text
+    assert "→" in text
 
 
 def test_webengine_available_is_bool() -> None:

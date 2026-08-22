@@ -6,8 +6,8 @@ fall back to an external browser when ``webengine_available()`` is False.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QUrl, Signal, Slot
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtCore import QSize, QUrl, Signal, Slot
+from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from app.auth.github_page_stage import (
     GitHubPageStage,
@@ -96,13 +96,16 @@ def guide_line_for_stage(stage: GitHubPageStage) -> str:
 
 
 def checklist_text(reached: set[GitHubPageStage], current: GitHubPageStage) -> str:
-    """Multi-line checklist; reached stages stay checked."""
-    lines: list[str] = []
+    """One-line checklist (saves vertical space for the WebView)."""
+    parts: list[str] = []
     for st in _CHECKLIST_ORDER:
         mark = "✓" if st in reached else "○"
-        here = "  ← 지금" if st == current else ""
-        lines.append(f"{mark} {_CHECKLIST_LABEL[st]}{here}")
-    return "\n".join(lines)
+        label = _CHECKLIST_LABEL[st]
+        if st == current:
+            parts.append(f"{mark}【{label}】")
+        else:
+            parts.append(f"{mark} {label}")
+    return "  →  ".join(parts)
 
 
 class GitHubConnectWebPane(QWidget):
@@ -126,6 +129,15 @@ class GitHubConnectWebPane(QWidget):
         self._last_token = ""
 
         self._view = QWebEngineView(self)
+        # Default sizeHint is tiny (~100×30) and will collapse layouts.
+        self._view.setMinimumSize(720, 480)
+        self._view.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self.setMinimumSize(720, 480)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         try:
             self._view.page().profile().setHttpUserAgent(_CHROME_UA)
         except Exception:
@@ -140,7 +152,11 @@ class GitHubConnectWebPane(QWidget):
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(self._view)
+        lay.setSpacing(0)
+        lay.addWidget(self._view, 1)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(960, 560)
 
     @property
     def stage(self) -> GitHubPageStage:

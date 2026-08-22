@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -446,9 +447,9 @@ class ConnectGitHubWizard(QDialog):
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setWindowOpacity(1.0)
         if self._use_web:
-            self.setMinimumWidth(960)
-            self.setMinimumHeight(640)
-            self.resize(1100, 720)
+            self.setMinimumWidth(980)
+            self.setMinimumHeight(680)
+            # Do not call adjustSize() in web mode — it collapses QWebEngineView.
         else:
             self.setMinimumWidth(440)
             self.setMaximumWidth(520)
@@ -460,6 +461,9 @@ class ConnectGitHubWizard(QDialog):
         self._progress.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         self._stack = QStackedWidget()
+        self._stack.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
         if self._use_web:
             # 0=start, 1=embedded GitHub + guide
             self._stack.addWidget(
@@ -487,13 +491,38 @@ class ConnectGitHubWizard(QDialog):
         root.addWidget(self._progress)
         root.addWidget(self._stack, 1)
         self._go(_STEP_START)
-        self._place_center_on_anchor()
+        if self._use_web:
+            self._fit_web_dialog()
+        else:
+            self._place_center_on_anchor()
+
+    def _fit_web_dialog(self) -> None:
+        """Give the embedded GitHub page nearly full available screen space."""
+        try:
+            screen = None
+            if self._anchor is not None:
+                screen = self._anchor.screen()
+            if screen is None:
+                screen = QGuiApplication.primaryScreen()
+            if screen is None:
+                self.resize(1100, 760)
+                return
+            avail = screen.availableGeometry()
+            w = max(980, int(avail.width() * 0.92))
+            h = max(680, int(avail.height() * 0.90))
+            self.resize(w, h)
+            g = self.frameGeometry()
+            g.moveCenter(avail.center())
+            self.move(g.topLeft())
+        except Exception:
+            self.resize(1100, 760)
 
     def _place_center_on_anchor(self) -> None:
         if self._anchor is None:
             return
         try:
-            self.adjustSize()
+            if not self._use_web:
+                self.adjustSize()
             ag = self._anchor.frameGeometry()
             g = self.frameGeometry()
             g.moveCenter(ag.center())
@@ -605,7 +634,8 @@ class ConnectGitHubWizard(QDialog):
                 self.setWindowOpacity(1.0)
             else:
                 self._progress.setText("2 / 2  ·  키 만들기")
-            self.adjustSize()
+                self._fit_web_dialog()
+            # Never adjustSize() here — it shrinks the WebEngine view.
             return
         n = len(_STEPS)
         index = max(0, min(index, n - 1))
@@ -621,6 +651,7 @@ class ConnectGitHubWizard(QDialog):
         self._stack.setCurrentIndex(self._web_index)
         self._progress.setText("2 / 2  ·  키 만들기")
         self.setWindowOpacity(1.0)
+        self._fit_web_dialog()
 
     def _open_create_page(self) -> None:
         # Classic + repo — required path for 「만들고 올리기」 (create repo).
@@ -645,10 +676,9 @@ class ConnectGitHubWizard(QDialog):
         self._browser_opened = True
         if not self._clip_timer.isActive():
             self._clip_timer.start()
+        self._go_web()
         if self._web_pane is not None:
             self._web_pane.load_url(url)
-        self._go_web()
-        self._place_center_on_anchor()
 
     def _page_guide(self, index: int, title: str, body: str) -> QWidget:
         w = QWidget()
@@ -778,14 +808,15 @@ class ConnectGitHubWizard(QDialog):
         )
 
         w = QWidget()
+        w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
         self._web_stage_title = QLabel("준비 중…")
         self._web_stage_title.setObjectName("wizTitle")
         self._web_stage_title.setWordWrap(True)
 
         self._web_hint = QLabel(
-            "아래 화면에서 GitHub 로그인부터 키 만들기까지 진행하세요.\n"
-            "패스키 창이 막히면 비밀번호·인증 앱 코드를 쓰거나 "
-            "「외부 브라우저로 열기」를 누르세요."
+            "아래 화면에서 GitHub 로그인부터 키 만들기까지 진행하세요. "
+            "패스키가 막히면 비밀번호·인증 앱 코드 또는 「외부 브라우저로 열기」."
         )
         self._web_hint.setObjectName("wizLead")
         self._web_hint.setWordWrap(True)
@@ -814,9 +845,9 @@ class ConnectGitHubWizard(QDialog):
         self._btn_toggle.toggled.connect(self._on_toggle_visible)
         tools = QHBoxLayout()
         tools.setSpacing(8)
+        tools.addWidget(self._edit, 1)
         tools.addWidget(btn_paste)
         tools.addWidget(self._btn_toggle)
-        tools.addStretch(1)
 
         btn_ext = QPushButton("외부 브라우저로 열기")
         btn_ext.setObjectName("btnSecondary")
@@ -842,12 +873,11 @@ class ConnectGitHubWizard(QDialog):
 
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
+        lay.setSpacing(6)
         lay.addWidget(self._web_stage_title)
         lay.addWidget(self._web_hint)
         lay.addWidget(self._web_check)
-        lay.addWidget(self._web_pane, 1)
-        lay.addWidget(self._edit)
+        lay.addWidget(self._web_pane, 1)  # take remaining height
         lay.addLayout(tools)
         lay.addLayout(nav)
         return w
