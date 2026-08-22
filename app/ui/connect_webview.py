@@ -45,18 +45,16 @@ _JS_FIND_TOKEN = r"""
 })()
 """
 
-_CHECKLIST_ORDER: tuple[GitHubPageStage, ...] = (
-    GitHubPageStage.LOGIN,
-    GitHubPageStage.AUTH_2FA,
-    GitHubPageStage.TOKEN_CLASSIC_NEW,
-    GitHubPageStage.TOKEN_ISSUED,
-)
+# User-facing 4 steps (desin/CloneUp GitHub 연결.dc.html)
+UI_STEP_NAMES: tuple[str, ...] = ("로그인", "인증 코드", "키 만들기", "키 복사")
 
-_CHECKLIST_LABEL: dict[GitHubPageStage, str] = {
-    GitHubPageStage.LOGIN: "로그인",
-    GitHubPageStage.AUTH_2FA: "인증 코드",
-    GitHubPageStage.TOKEN_CLASSIC_NEW: "키 만들기",
-    GitHubPageStage.TOKEN_ISSUED: "키 복사",
+_STAGE_TO_UI: dict[GitHubPageStage, int] = {
+    GitHubPageStage.LOGIN: 0,
+    GitHubPageStage.AUTH_2FA: 1,
+    GitHubPageStage.TOKEN_CLASSIC_NEW: 2,
+    GitHubPageStage.TOKEN_FINE_NEW: 2,
+    GitHubPageStage.TOKEN_CLASSIC_LIST: 2,
+    GitHubPageStage.TOKEN_ISSUED: 3,
 }
 
 
@@ -69,42 +67,114 @@ def webengine_available() -> bool:
         return False
 
 
+def ui_index_for_stage(stage: GitHubPageStage) -> int | None:
+    """Map detector stage → 0..3, or None if not a connect-flow page."""
+    return _STAGE_TO_UI.get(stage)
+
+
 def guide_line_for_stage(stage: GitHubPageStage) -> str:
-    """One beginner-friendly line for the current page."""
+    """Title only — current task (no parenthetical alternatives)."""
+    i = ui_index_for_stage(stage)
+    if i is not None:
+        return step_copy(i)["title"]
     return {
-        GitHubPageStage.LOGIN: "GitHub에 로그인해 주세요. (패스키가 안 되면 비밀번호를 쓰세요.)",
-        GitHubPageStage.AUTH_2FA: "인증 앱 또는 이메일로 받은 코드를 입력해 주세요.",
-        GitHubPageStage.TOKEN_CLASSIC_NEW: (
-            "만료일을 고르고 「repo」가 켜져 있는지 확인한 뒤 "
-            "Generate token 을 누르세요."
-        ),
-        GitHubPageStage.TOKEN_FINE_NEW: (
-            "세분 키 화면입니다. 저장소와 Contents 권한을 정한 뒤 키를 만드세요."
-        ),
-        GitHubPageStage.TOKEN_ISSUED: (
-            "초록 키를 복사하세요. 이 화면을 닫으면 다시 볼 수 없습니다."
-        ),
-        GitHubPageStage.TOKEN_CLASSIC_LIST: (
-            "키 목록입니다. Generate new token (classic) 으로 새 키를 만드세요."
-        ),
         GitHubPageStage.UNKNOWN: "조금 더 진행해 주세요. 안내가 따라갑니다.",
-        GitHubPageStage.AUTH_PASSKEY_OS: (
-            "패스키 창이 떴을 수 있습니다. 취소 후 비밀번호로 진행해도 됩니다."
-        ),
-        GitHubPageStage.SUDO_OR_OTHER: "추가 확인 화면입니다. 안내에 따라 진행해 주세요.",
+        GitHubPageStage.AUTH_PASSKEY_OS: "패스키 확인이 필요할 수 있습니다",
+        GitHubPageStage.SUDO_OR_OTHER: "추가 확인 화면입니다",
     }.get(stage, stage_label_ko(stage))
 
 
+def step_copy(i: int) -> dict[str, str | bool]:
+    """Copy deck for UI step i (0..3), matching the design mock."""
+    steps: tuple[dict[str, str | bool], ...] = (
+        {
+            "stepName": "로그인",
+            "title": "GitHub에 로그인해 주세요",
+            "lead": (
+                "아래는 GitHub의 실제 로그인 화면입니다. "
+                "아이디와 비밀번호는 GitHub로 바로 전달되며, "
+                "클론업은 입력한 내용을 보지 않습니다."
+            ),
+            "watchTag": "기다리는 중",
+            "watchBody": (
+                "로그인이 끝나면 다음 단계로 저절로 넘어갑니다. "
+                "버튼을 누르지 않아도 됩니다. "
+                "패스키가 막히면 비밀번호로 로그인하세요."
+            ),
+            "ctaNote": "로그인하면 자동으로 진행됩니다",
+            "showKey": False,
+        },
+        {
+            "stepName": "인증 코드",
+            "title": "인증 코드를 입력해 주세요",
+            "lead": (
+                "GitHub가 한 번 더 확인을 요청했습니다. "
+                "인증 앱의 6자리 숫자나 문자로 받은 코드를 "
+                "아래 화면에 넣으세요."
+            ),
+            "watchTag": "기다리는 중",
+            "watchBody": (
+                "코드는 GitHub로 바로 갑니다. "
+                "클론업은 코드를 저장하거나 읽지 않습니다."
+            ),
+            "ctaNote": "인증되면 자동으로 진행됩니다",
+            "showKey": False,
+        },
+        {
+            "stepName": "키 만들기",
+            "title": "키를 만들어 주세요",
+            "lead": (
+                "필요한 항목은 미리 채워 두었습니다. "
+                "아래 화면을 내려 Generate token 버튼만 누르시면 됩니다."
+            ),
+            "watchTag": "확인",
+            "watchBody": (
+                "여기서 만드는 키는 이 앱이 저장소를 읽고 쓰는 데만 씁니다. "
+                "계정 설정을 바꾸는 권한은 들어 있지 않습니다."
+            ),
+            "ctaNote": "키가 만들어지면 자동으로 진행됩니다",
+            "showKey": False,
+        },
+        {
+            "stepName": "키 복사",
+            "title": "키를 아래 칸에 넣어 주세요",
+            "lead": (
+                "키가 만들어졌습니다. "
+                "아래 화면의 복사 버튼을 누르면 칸이 저절로 채워집니다. "
+                "채워지지 않으면 직접 붙여 넣으세요."
+            ),
+            "watchTag": "주의",
+            "watchBody": (
+                "이 키는 비밀번호와 같습니다. "
+                "다른 곳에 붙여 넣거나 남에게 보여주지 마세요. "
+                "클론업은 이 컴퓨터의 자격 증명 저장소에만 넣어 둡니다."
+            ),
+            "ctaNote": "",
+            "showKey": True,
+        },
+    )
+    return steps[max(0, min(i, 3))]
+
+
 def checklist_text(reached: set[GitHubPageStage], current: GitHubPageStage) -> str:
-    """One-line checklist (saves vertical space for the WebView)."""
+    """One-line summary for tests; UI uses track widgets (one current only)."""
+    ui = ui_index_for_stage(current)
+    if ui is None:
+        # Fall back to highest reached index
+        ui = 0
+        for st in reached:
+            idx = ui_index_for_stage(st)
+            if idx is not None:
+                ui = max(ui, idx)
     parts: list[str] = []
-    for st in _CHECKLIST_ORDER:
-        mark = "✓" if st in reached else "○"
-        label = _CHECKLIST_LABEL[st]
-        if st == current:
-            parts.append(f"{mark}【{label}】")
+    for n, label in enumerate(UI_STEP_NAMES):
+        if n < ui:
+            mark = "✓"
+        elif n == ui:
+            mark = "●"
         else:
-            parts.append(f"{mark} {label}")
+            mark = "○"
+        parts.append(f"{mark} {label}")
     return "  →  ".join(parts)
 
 
@@ -116,6 +186,7 @@ class GitHubConnectWebPane(QWidget):
     """
 
     stage_changed = Signal(object)  # GitHubPageStage
+    url_changed = Signal(str)
     token_found = Signal(str)
     load_failed = Signal(str)
 
@@ -203,7 +274,8 @@ class GitHubConnectWebPane(QWidget):
         self._apply_stage(detect_github_page_stage(snap))
 
     @Slot(QUrl)
-    def _on_url(self, _url: QUrl) -> None:
+    def _on_url(self, url: QUrl) -> None:
+        self.url_changed.emit(url.toString())
         self._refresh_stage()
 
     @Slot(str)

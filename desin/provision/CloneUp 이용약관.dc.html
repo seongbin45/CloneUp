@@ -56,8 +56,8 @@
 
   <h2 style="font-size: 15px; font-weight: 600; color: #232019; margin: 26px 0 8px;">제5조 (GitHub 계정 연동 및 권한 범위)</h2>
   <ol style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px; padding-left: 22px;">
-    <li>이 앱의 이용자 인증 방식은 <strong>개인 액세스 토큰(Personal Access Token) 입력</strong>입니다. 이용자가 GitHub 웹사이트에서 직접 토큰을 발급하여 이 앱에 입력하면, 이 앱은 그 토큰으로 GitHub API 및 Git 인증을 수행합니다.</li>
-    <li>이 앱은 이용자의 <strong>GitHub 아이디·비밀번호·2단계 인증 코드를 입력받거나 저장하지 않습니다.</strong> 로그인은 이용자가 GitHub 웹사이트에서 직접 수행합니다.</li>
+    <li>이 앱의 이용자 인증 방식은 <strong>개인 액세스 토큰(Personal Access Token)</strong> 입니다. 이용자가 GitHub에서 토큰을 발급하여 이 앱에 넣으면, 이 앱은 그 토큰으로 GitHub API 및 Git 인증을 수행합니다. 발급은 이 앱에 내장된 GitHub 웹 화면(github.com 주소만)에서 하거나, 이용자가 선택한 외부 브라우저에서 할 수 있습니다.</li>
+    <li>이 앱은 이용자의 <strong>GitHub 아이디·비밀번호·2단계 인증 코드를 입력받거나 저장하지 않습니다.</strong> 그러한 값은 GitHub 화면에서 GitHub로 직접 전달됩니다. 이 앱은 진행 안내를 위해 <strong>주소(URL) 변화만</strong> 보며, 입력란의 내용을 읽지 않습니다.</li>
     <li>권한 범위는 이용자가 토큰을 발급할 때 스스로 정합니다. 이 앱은 <strong>세분화된 토큰(fine-grained)</strong> 으로 사용할 저장소 하나에 대해 콘텐츠 읽기·쓰기 권한만 부여하는 방식을 권장합니다. 기존 방식(classic)의 토큰을 사용하는 경우에는 <span style="font-family: 'IBM Plex Mono', monospace; background: #f4f1e8;">repo</span> 범위가 필요하며, 이는 계정의 공개 및 비공개 저장소 전체에 대한 읽기·쓰기를 포함하는 넓은 범위입니다. 비공개 저장소를 만드는 기능이 이 범위를 요구하기 때문입니다.</li>
     <li>이 앱은 OAuth 장치 인증 방식(Device Authorization Grant)을 <strong>기본적으로 사용하지 않습니다.</strong> 프로그램에 포함되어 배포되는 OAuth 식별자(client_id)는 감출 수 없고, 이를 그대로 가져다 쓰는 다른 프로그램이 동일한 GitHub 승인 화면을 띄워 이용자의 토큰을 가로챌 수 있기 때문입니다. 이 경로는 유지보수자가 환경 변수 <span style="font-family: 'IBM Plex Mono', monospace;">CLONEUP_ALLOW_DEVICE_FLOW</span> 로만 켤 수 있는 실험 기능이며, 일반 이용자에게는 제공되지 않습니다.</li>
     <li>이용자는 GitHub 계정 설정의 토큰 목록에서 언제든지 해당 토큰을 삭제하여 이 앱의 접근 권한을 즉시 없앨 수 있습니다.</li>
@@ -165,7 +165,7 @@
     <tbody>
       <tr>
         <td style="padding: 8px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top;">제5조</td>
-        <td style="padding: 8px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">이용자 인증은 개인 액세스 토큰 입력 방식. 장치 인증은 <span style="font-family: 'IBM Plex Mono', monospace;">is_device_flow_allowed()</span> 가 환경 변수로만 참이 되며 기본은 거짓. 아이디·비밀번호는 받지 않음. 기존 방식 토큰의 기대 범위는 <span style="font-family: 'IBM Plex Mono', monospace;">repo</span>.</td>
+        <td style="padding: 8px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">이용자 인증은 개인 액세스 토큰. 발급은 앱 내 github.com 웹 화면 또는 외부 브라우저. 앱은 URL만 보고 비밀번호·2FA는 받지 않음. 장치 인증은 env로만 켜짐(기본 끔). classic 기대 범위는 <span style="font-family: 'IBM Plex Mono', monospace;">repo</span>.</td>
         <td style="padding: 8px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; font-family: 'IBM Plex Mono', monospace; font-size: 11px; line-height: 1.6;">auth/device_flow.py<br>config.py</td>
       </tr>
       <tr>

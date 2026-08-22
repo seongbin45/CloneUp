@@ -17,8 +17,28 @@ def test_checklist_marks_reached() -> None:
         GitHubPageStage.AUTH_2FA,
     )
     assert "✓ 로그인" in text
-    assert "【인증 코드】" in text
+    assert "● 인증 코드" in text
+    assert "○ 키 만들기" in text
+    assert "○ 키 복사" in text
     assert "→" in text
+
+
+def test_step_copy_four_steps() -> None:
+    from app.ui.connect_webview import step_copy, UI_STEP_NAMES
+
+    assert len(UI_STEP_NAMES) == 4
+    assert step_copy(0)["showKey"] is False
+    assert step_copy(3)["showKey"] is True
+    assert "패스키" not in str(step_copy(0)["title"])
+
+
+def test_ui_index_for_stage() -> None:
+    from app.ui.connect_webview import ui_index_for_stage
+
+    assert ui_index_for_stage(GitHubPageStage.LOGIN) == 0
+    assert ui_index_for_stage(GitHubPageStage.AUTH_2FA) == 1
+    assert ui_index_for_stage(GitHubPageStage.TOKEN_CLASSIC_NEW) == 2
+    assert ui_index_for_stage(GitHubPageStage.TOKEN_ISSUED) == 3
 
 
 def test_webengine_available_is_bool() -> None:

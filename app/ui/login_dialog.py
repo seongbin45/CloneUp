@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -437,6 +438,13 @@ class ConnectGitHubWizard(QDialog):
         self._browser_opened = False
         self._clip_seen = ""
         self._web_pane = None
+        self._ui_now = 0
+        self._ui_max = 0
+        self._key_row: QWidget | None = None
+        self._web_cta: QPushButton | None = None
+        self._web_cta_note: QLabel | None = None
+        self._web_url: QLineEdit | None = None
+        self._track_host: QWidget | None = None
         from app.ui.connect_webview import webengine_available
 
         self._use_web = webengine_available()
@@ -594,10 +602,10 @@ class ConnectGitHubWizard(QDialog):
             if self._stack.currentIndex() != self._web_index:
                 self._go_web()
             self.setWindowOpacity(1.0)
-            if hasattr(self, "_web_hint") and self._web_hint is not None:
-                self._web_hint.setText(
-                    "키가 준비되었습니다. 「연결」을 눌러 주세요."
-                )
+            # Jump guide to step 4 (키 복사) and reveal the key field.
+            self._ui_max = 3
+            self._paint_web_guide(3)
+            self._sync_web_cta()
         else:
             if self._stack.currentIndex() != _STEP_PASTE:
                 self._go(_STEP_PASTE)
@@ -635,10 +643,11 @@ class ConnectGitHubWizard(QDialog):
             index = 0 if index <= 0 else self._web_index
             self._stack.setCurrentIndex(index)
             if index == 0:
-                self._progress.setText("1 / 2  ·  시작")
+                self._progress.setText("시작")
                 self.setWindowOpacity(1.0)
             else:
-                self._progress.setText("2 / 2  ·  키 만들기")
+                # 1/4 … 4/4 comes from _paint_web_guide / live stage
+                self._paint_web_guide(self._ui_now)
                 self._fit_web_dialog()
             # Never adjustSize() here — it shrinks the WebEngine view.
             return
@@ -654,8 +663,11 @@ class ConnectGitHubWizard(QDialog):
 
     def _go_web(self) -> None:
         self._stack.setCurrentIndex(self._web_index)
-        self._progress.setText("2 / 2  ·  키 만들기")
         self.setWindowOpacity(1.0)
+        if self._ui_now == 0 and self._ui_max == 0:
+            self._paint_web_guide(0)
+        else:
+            self._paint_web_guide(self._ui_now)
         self._fit_web_dialog()
 
     def _open_create_page(self) -> None:
@@ -804,43 +816,79 @@ class ConnectGitHubWizard(QDialog):
         return w
 
     def _page_web(self) -> QWidget:
-        """Embedded GitHub + live stage guide (WebEngine path)."""
-        from app.auth.github_page_stage import GitHubPageStage
-        from app.ui.connect_webview import (
-            GitHubConnectWebPane,
-            checklist_text,
-            guide_line_for_stage,
-        )
+        """Embedded GitHub + 4-step guide (desin/CloneUp GitHub 연결)."""
+        from app.ui.connect_webview import GitHubConnectWebPane, step_copy
 
         w = QWidget()
         w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        self._web_stage_title = QLabel("준비 중…")
+        # Progress: 1 / 4 · 로그인
+        prog_row = QHBoxLayout()
+        prog_row.setSpacing(9)
+        self._web_counter = QLabel("1 / 4")
+        self._web_counter.setObjectName("wizProgress")
+        self._web_step_name = QLabel("로그인")
+        self._web_step_name.setObjectName("wizLead")
+        prog_row.addWidget(self._web_counter)
+        prog_row.addWidget(self._web_step_name)
+        prog_row.addStretch(1)
+
+        self._web_stage_title = QLabel(str(step_copy(0)["title"]))
         self._web_stage_title.setObjectName("wizTitle")
         self._web_stage_title.setWordWrap(True)
 
-        self._web_hint = QLabel(
-            "아래 화면에서 GitHub 로그인부터 키 만들기까지 진행하세요. "
-            "패스키가 막히면 비밀번호·인증 앱 코드 또는 「외부 브라우저로 열기」."
-        )
+        self._web_hint = QLabel(str(step_copy(0)["lead"]))
         self._web_hint.setObjectName("wizLead")
         self._web_hint.setWordWrap(True)
 
-        self._web_check = QLabel(checklist_text(set(), GitHubPageStage.UNKNOWN))
-        self._web_check.setObjectName("wizBox")
-        self._web_check.setWordWrap(True)
+        # Track: past ✓ / current ring / future gray
+        self._track_host = QFrame()
+        self._track_host.setObjectName("wizBox")
+        self._track_lay = QHBoxLayout(self._track_host)
+        self._track_lay.setContentsMargins(10, 8, 10, 8)
+        self._track_lay.setSpacing(4)
+        self._rebuild_track(0)
+
+        # Address chrome (phishing defense)
+        addr = QFrame()
+        addr.setObjectName("wizBox")
+        addr_lay = QHBoxLayout(addr)
+        addr_lay.setContentsMargins(8, 6, 8, 6)
+        addr_lay.setSpacing(8)
+        lock = QLabel("🔒")
+        self._web_url = QLineEdit()
+        self._web_url.setReadOnly(True)
+        self._web_url.setObjectName("patEdit")
+        self._web_url.setText("https://github.com/")
+        self._web_url.setCursorPosition(0)
+        only = QLabel("github.com에서만 열립니다")
+        only.setObjectName("wizLead")
+        addr_lay.addWidget(lock)
+        addr_lay.addWidget(self._web_url, 1)
+        addr_lay.addWidget(only)
 
         self._web_pane = GitHubConnectWebPane(w)
         self._web_pane.stage_changed.connect(self._on_web_stage)
+        self._web_pane.url_changed.connect(self._on_web_url)
         self._web_pane.token_found.connect(self._apply_detected_token)
         self._web_pane.load_failed.connect(self._on_web_load_failed)
 
+        # Watch banner
+        self._web_watch = QLabel()
+        self._web_watch.setObjectName("wizBox")
+        self._web_watch.setWordWrap(True)
+
+        # Key row — only on step 4 (키 복사)
+        self._key_row = QWidget()
+        key_lay = QHBoxLayout(self._key_row)
+        key_lay.setContentsMargins(0, 0, 0, 0)
+        key_lay.setSpacing(8)
         self._edit = QLineEdit()
         self._edit.setObjectName("patEdit")
         self._edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._edit.setPlaceholderText("키가 여기 채워지거나, 직접 붙여 넣으세요")
         self._edit.setClearButtonEnabled(True)
-
+        self._edit.textChanged.connect(lambda _t: self._sync_web_cta())
         btn_paste = QPushButton("붙여넣기")
         btn_paste.setObjectName("btnSecondary")
         btn_paste.clicked.connect(self._paste_clipboard)
@@ -848,53 +896,189 @@ class ConnectGitHubWizard(QDialog):
         self._btn_toggle.setObjectName("btnSecondary")
         self._btn_toggle.setCheckable(True)
         self._btn_toggle.toggled.connect(self._on_toggle_visible)
-        tools = QHBoxLayout()
-        tools.setSpacing(8)
-        tools.addWidget(self._edit, 1)
-        tools.addWidget(btn_paste)
-        tools.addWidget(self._btn_toggle)
+        key_lay.addWidget(self._edit, 1)
+        key_lay.addWidget(btn_paste)
+        key_lay.addWidget(self._btn_toggle)
+        self._key_row.hide()
+
+        self._key_note = QLabel("")
+        self._key_note.setObjectName("wizLead")
+        self._key_note.setWordWrap(True)
+        self._key_note.hide()
+
+        privacy = QLabel(
+            "앱이 감지하는 것: 주소 변화만 봅니다. "
+            "입력란의 내용(비밀번호·인증 코드)은 읽지 않으며 GitHub로 바로 갑니다."
+        )
+        privacy.setObjectName("wizLead")
+        privacy.setWordWrap(True)
 
         btn_ext = QPushButton("외부 브라우저로 열기")
         btn_ext.setObjectName("btnSecondary")
         btn_ext.clicked.connect(self._open_external_from_web)
-
         btn_back = QPushButton("← 이전")
         btn_back.setObjectName("btnGhost")
         btn_back.clicked.connect(lambda: self._go(0))
         btn_cancel = QPushButton("취소")
         btn_cancel.setObjectName("btnGhost")
         btn_cancel.clicked.connect(self.reject)
-        btn_connect = QPushButton("연결")
-        btn_connect.setObjectName("btnPrimary")
-        btn_connect.setDefault(True)
-        btn_connect.clicked.connect(self._finish)
+
+        self._web_cta_note = QLabel("로그인하면 자동으로 진행됩니다")
+        self._web_cta_note.setObjectName("wizLead")
+        self._web_cta = QPushButton("다음")
+        self._web_cta.setObjectName("btnSecondary")
+        self._web_cta.setEnabled(False)
+        self._web_cta.clicked.connect(self._on_web_cta)
 
         nav = QHBoxLayout()
         nav.addWidget(btn_cancel)
         nav.addWidget(btn_back)
         nav.addWidget(btn_ext)
         nav.addStretch(1)
-        nav.addWidget(btn_connect)
+        nav.addWidget(self._web_cta_note)
+        nav.addWidget(self._web_cta)
 
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
+        lay.setSpacing(8)
+        lay.addLayout(prog_row)
         lay.addWidget(self._web_stage_title)
         lay.addWidget(self._web_hint)
-        lay.addWidget(self._web_check)
-        lay.addWidget(self._web_pane, 1)  # take remaining height
-        lay.addLayout(tools)
+        lay.addWidget(self._track_host)
+        lay.addWidget(addr)
+        lay.addWidget(self._web_pane, 1)
+        lay.addWidget(self._web_watch)
+        lay.addWidget(self._key_row)
+        lay.addWidget(self._key_note)
+        lay.addWidget(privacy)
         lay.addLayout(nav)
+        self._paint_web_guide(0)
         return w
+
+    def _rebuild_track(self, now: int) -> None:
+        from app.ui.connect_webview import UI_STEP_NAMES
+
+        if self._track_lay is None:
+            return
+        while self._track_lay.count():
+            item = self._track_lay.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        for n, label in enumerate(UI_STEP_NAMES):
+            done = n < now
+            cur = n == now
+            cell = QFrame()
+            hl = QHBoxLayout(cell)
+            hl.setContentsMargins(7 if cur else 5, 5, 11 if cur else 7, 5)
+            hl.setSpacing(7)
+            mark = QLabel("✓" if done else "")
+            mark.setFixedSize(15, 15)
+            mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            if done:
+                mark.setStyleSheet(
+                    "background:#1f6f5c;color:#fbfaf8;border-radius:8px;"
+                    "font-size:9px;font-weight:700;border:1px solid #1f6f5c;"
+                )
+            elif cur:
+                mark.setStyleSheet(
+                    "background:#fbfaf8;border-radius:8px;"
+                    "border:1px solid #1f6f5c;"
+                )
+            else:
+                mark.setStyleSheet(
+                    "background:transparent;border-radius:8px;"
+                    "border:1px solid #cdc8bf;"
+                )
+            lab = QLabel(label)
+            if cur:
+                lab.setStyleSheet("color:#1f6f5c;font-weight:600;font-size:12.5px;")
+                cell.setStyleSheet(
+                    "background:#fbfaf8;border-radius:5px;"
+                )
+            elif done:
+                lab.setStyleSheet("color:#4a453b;font-size:12.5px;")
+            else:
+                lab.setStyleSheet("color:#8b8477;font-size:12.5px;")
+            hl.addWidget(mark)
+            hl.addWidget(lab)
+            self._track_lay.addWidget(cell)
+            if n < len(UI_STEP_NAMES) - 1:
+                ar = QLabel("→")
+                ar.setStyleSheet("color:#b7b1a5;font-size:11px;")
+                ar.setFixedWidth(18)
+                ar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self._track_lay.addWidget(ar)
+        self._track_lay.addStretch(1)
+
+    def _paint_web_guide(self, now: int) -> None:
+        from app.ui.connect_webview import step_copy
+
+        now = max(0, min(now, 3))
+        self._ui_now = now
+        copy = step_copy(now)
+        self._web_counter.setText(f"{now + 1} / 4")
+        self._web_step_name.setText(str(copy["stepName"]))
+        self._progress.setText(f"{now + 1} / 4  ·  {copy['stepName']}")
+        self._web_stage_title.setText(str(copy["title"]))
+        self._web_hint.setText(str(copy["lead"]))
+        self._web_watch.setText(f"{copy['watchTag']} — {copy['watchBody']}")
+        self._rebuild_track(now)
+        show_key = bool(copy["showKey"])
+        if self._key_row is not None:
+            self._key_row.setVisible(show_key)
+        if self._key_note is not None:
+            self._key_note.setVisible(show_key)
+            if show_key:
+                self._key_note.setText(
+                    "복사 버튼을 누르면 이 칸이 채워집니다. "
+                    "화면을 떠나면 키를 다시 볼 수 없습니다."
+                )
+        self._sync_web_cta()
+
+    def _sync_web_cta(self) -> None:
+        if self._web_cta is None or self._web_cta_note is None:
+            return
+        from app.ui.connect_webview import step_copy
+
+        copy = step_copy(self._ui_now)
+        if self._ui_now < 3:
+            self._web_cta.setText("다음")
+            self._web_cta.setEnabled(False)
+            self._web_cta.setObjectName("btnSecondary")
+            self._web_cta_note.setText(str(copy["ctaNote"]))
+        else:
+            has = bool((self._edit.text() or "").strip()) if hasattr(self, "_edit") else False
+            self._web_cta.setText("연결")
+            self._web_cta.setEnabled(has)
+            self._web_cta.setObjectName("btnPrimary" if has else "btnSecondary")
+            self._web_cta_note.setText(
+                "" if has else "키를 칸에 넣으면 연결할 수 있습니다"
+            )
+        # Re-apply stylesheet for objectName change
+        self._web_cta.style().unpolish(self._web_cta)
+        self._web_cta.style().polish(self._web_cta)
+
+    def _on_web_cta(self) -> None:
+        if self._ui_now >= 3:
+            self._finish()
+
+    def _on_web_url(self, url: str) -> None:
+        if self._web_url is not None:
+            self._web_url.setText(url or "https://github.com/")
+            self._web_url.setCursorPosition(0)
 
     def _on_web_stage(self, stage: object) -> None:
         from app.auth.github_page_stage import GitHubPageStage
-        from app.ui.connect_webview import checklist_text, guide_line_for_stage
+        from app.ui.connect_webview import ui_index_for_stage
 
         st = stage if isinstance(stage, GitHubPageStage) else GitHubPageStage.UNKNOWN
-        self._web_stage_title.setText(guide_line_for_stage(st))
-        reached = self._web_pane.reached if self._web_pane else set()
-        self._web_check.setText(checklist_text(reached, st))
+        ui = ui_index_for_stage(st)
+        if ui is None:
+            return
+        # Advance sticky max; current follows live page
+        self._ui_max = max(self._ui_max, ui)
+        self._paint_web_guide(ui)
 
     def _on_web_load_failed(self, _msg: str) -> None:
         if self._web_hint is not None:
@@ -909,7 +1093,7 @@ class ConnectGitHubWizard(QDialog):
         if self._web_hint is not None:
             self._web_hint.setText(
                 "외부 브라우저에서 키를 만든 뒤 복사하세요. "
-                "복사되면 아래 칸에 자동으로 들어올 수 있습니다."
+                "복사되면 키 칸에 자동으로 들어올 수 있습니다."
             )
 
     def _page_paste(self, title: str, body: str) -> QWidget:
