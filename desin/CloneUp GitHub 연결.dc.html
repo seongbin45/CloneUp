@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #e8e6e1; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 36px; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; overflow-x: auto;">
+
+  <div style="width: 1020px; flex-shrink: 0; margin-inline: auto; display: flex; align-items: center; gap: 12px;">
+    <div style="font-size: 12px; color: #6d675c;">단계</div>
+    <div style="display: flex; gap: 6px;">
+      <sc-for list="{{ picker }}" as="p" hint-placeholder-count="4">
+        <div onClick="{{ p.go }}" style="padding: 7px 13px; border-radius: 5px; cursor: pointer; font-size: 12.5px; border: 1px solid {{ p.border }}; background: {{ p.bg }}; color: {{ p.fg }}; font-weight: {{ p.weight }};">{{ p.label }}</div>
+      </sc-for>
+    </div>
+    <div style="margin-left: auto; font-size: 11.5px; color: #6d675c;">웹 화면은 앱이 감지해 단계를 스스로 넘깁니다</div>
+  </div>
+
+  <div style="width: 1020px; flex-shrink: 0; margin-inline: auto; box-sizing: border-box; background: #fbfaf8; border: 1px solid #c9c5bd; border-radius: 10px; box-shadow: 0 18px 48px rgba(40,36,30,.18); overflow: hidden; display: flex; flex-direction: column;">
+
+    <div style="display: flex; align-items: center; gap: 11px; padding: 11px 16px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+      <img src="assets/icon-32.png" alt="클론업" style="width: 17px; height: 17px; display: block;">
+      <div style="font-size: 13px; font-weight: 600; color: #3d382f;">GitHub 연결</div>
+      <div style="margin-left: auto; font-size: 15px; color: #8b8477; cursor: pointer;" style-hover="color: #3d382f;">✕</div>
+    </div>
+
+    <div style="padding: 18px 22px 14px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: baseline; gap: 9px;">
+        <span style="font-size: 12.5px; font-weight: 600; color: #1f6f5c; font-family: 'IBM Plex Mono', monospace;">{{ st.counter }}</span>
+        <span style="font-size: 12.5px; color: #6d675c;">{{ st.stepName }}</span>
+      </div>
+      <div style="font-size: 17px; font-weight: 600; color: #232019; line-height: 1.45;">{{ st.title }}</div>
+      <div style="font-size: 13px; color: #4a453b; line-height: 1.65; max-width: 780px;">{{ st.lead }}</div>
+    </div>
+
+    <div style="margin: 0 22px 14px; padding: 11px 14px; background: #f2efe9; border: 1px solid #e6e1d8; border-radius: 7px; display: flex; align-items: center; gap: 4px;">
+      <sc-for list="{{ track }}" as="t" hint-placeholder-count="7">
+        <div style="display: flex; align-items: center; gap: 7px; padding: {{ t.pad }}; border-radius: 5px; background: {{ t.bg }}; flex-shrink: 0;">
+          <span style="width: 15px; height: 15px; flex-shrink: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: {{ t.markFg }}; background: {{ t.markBg }}; border: 1px solid {{ t.markBorder }};">{{ t.mark }}</span>
+          <span style="font-size: 12.5px; color: {{ t.fg }}; font-weight: {{ t.weight }}; white-space: nowrap;">{{ t.label }}</span>
+        </div>
+        <sc-if value="{{ t.arrow }}" hint-placeholder-val="{{ false }}">
+          <div style="width: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #b7b1a5;">→</div>
+        </sc-if>
+      </sc-for>
+    </div>
+
+    <div style="margin: 0 22px; border: 1px solid #cdc8bf; border-radius: 7px; overflow: hidden; display: flex; flex-direction: column;">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+        <div style="display: flex; gap: 5px; flex-shrink: 0;">
+          <div style="width: 18px; height: 18px; border-radius: 4px; background: #fbfaf8; border: 1px solid #cdc8bf; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #6d675c;">←</div>
+          <div style="width: 18px; height: 18px; border-radius: 4px; background: #fbfaf8; border: 1px solid #cdc8bf; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #b7b1a5;">→</div>
+        </div>
+        <div style="flex: 1; min-width: 0; height: 24px; padding: 0 10px; display: flex; align-items: center; gap: 8px; background: #fbfaf8; border: 1px solid #cdc8bf; border-radius: 4px;">
+          <span style="font-size: 10px; color: #1f6f5c; flex-shrink: 0;">🔒</span>
+          <span style="font-size: 11.5px; color: #4a453b; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ st.url }}</span>
+        </div>
+        <div style="flex-shrink: 0; font-size: 11px; color: #6d675c;">github.com 에서만 열립니다</div>
+      </div>
+
+      <div style="height: 300px; background: #fff; display: flex; align-items: center; justify-content: center; padding: 24px;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 13px; max-width: 420px; text-align: center;">
+          <div style="width: 46px; height: 46px; border-radius: 50%; border: 2px dashed #cdc8bf; display: flex; align-items: center; justify-content: center; font-size: 17px; color: #b7b1a5;">↓</div>
+          <div style="font-size: 13.5px; font-weight: 600; color: #4a453b;">{{ st.webTitle }}</div>
+          <div style="font-size: 12.5px; color: #6d675c; line-height: 1.65;">{{ st.webBody }}</div>
+          <div style="margin-top: 4px; padding: 6px 12px; background: #f2efe9; border-radius: 20px; font-size: 11px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">GitHub 실제 화면 영역</div>
+        </div>
+      </div>
+    </div>
+
+    <sc-if value="{{ st.showWatch }}" hint-placeholder-val="{{ true }}">
+      <div style="margin: 14px 22px 0; padding: 11px 14px; background: {{ st.watchBg }}; border-left: 3px solid {{ st.watchBar }}; border-radius: 0 6px 6px 0; display: flex; align-items: flex-start; gap: 11px;">
+        <div style="font-size: 12.5px; font-weight: 600; color: {{ st.watchBar }}; flex-shrink: 0;">{{ st.watchTag }}</div>
+        <div style="font-size: 12.5px; color: #4a453b; line-height: 1.65;">{{ st.watchBody }}</div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ st.showKey }}" hint-placeholder-val="{{ false }}">
+      <div style="margin: 14px 22px 0; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="flex: 1; min-width: 0; height: 40px; padding: 0 13px; display: flex; align-items: center; background: {{ st.keyBg }}; border: 1px solid {{ st.keyBorder }}; border-radius: 6px; font-size: 13px; color: {{ st.keyFg }}; font-family: 'IBM Plex Mono', monospace; overflow: hidden; white-space: nowrap;">{{ st.keyText }}</div>
+          <div style="height: 40px; padding: 0 16px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 6px; font-size: 12.5px; color: #4a453b; cursor: pointer; flex-shrink: 0;" style-hover="background: #e9e5dd;">붙여넣기</div>
+          <div style="height: 40px; padding: 0 16px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 6px; font-size: 12.5px; color: #4a453b; cursor: pointer; flex-shrink: 0;" style-hover="background: #e9e5dd;">보기</div>
+        </div>
+        <div style="font-size: 11.5px; color: {{ st.keyNoteFg }}; line-height: 1.6;">{{ st.keyNote }}</div>
+      </div>
+    </sc-if>
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 16px 22px; margin-top: 16px; border-top: 1px solid #e6e1d8; background: #f2efe9;">
+      <div style="font-size: 12.5px; color: #6d675c; cursor: pointer;" style-hover="color: #3d382f;">취소</div>
+      <div style="font-size: 12.5px; color: {{ st.backFg }}; cursor: {{ st.backCursor }};">← 이전</div>
+      <div style="height: 36px; padding: 0 16px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer;" style-hover="background: #f4f1e8;">외부 브라우저로 열기</div>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 12px;">
+        <div style="font-size: 11.5px; color: #6d675c;">{{ st.ctaNote }}</div>
+        <div style="height: 40px; padding: 0 26px; display: flex; align-items: center; border-radius: 6px; font-size: 13.5px; font-weight: 600; cursor: {{ st.ctaCursor }}; border: 1px solid {{ st.ctaBorder }}; background: {{ st.ctaBg }}; color: {{ st.ctaFg }};">{{ st.cta }}</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="width: 1020px; flex-shrink: 0; margin-inline: auto; box-sizing: border-box; padding: 16px 20px; background: #fbfaf8; border: 1px solid #cdc8bf; border-radius: 8px; display: flex; flex-direction: column; gap: 11px;">
+    <div style="font-size: 12.5px; font-weight: 600; color: #232019;">앱이 감지하는 것</div>
+    <div style="font-size: 12.5px; color: #4a453b; line-height: 1.7;">주소 변화만 봅니다. <span style="font-family: 'IBM Plex Mono', monospace;">/login</span> → <span style="font-family: 'IBM Plex Mono', monospace;">/sessions/two-factor</span> → <span style="font-family: 'IBM Plex Mono', monospace;">/settings/tokens/new</span> → 발급 완료 페이지. 입력란의 내용은 읽지 않으며, 비밀번호와 인증 코드는 앱을 거치지 않고 GitHub로 바로 갑니다.</div>
+    <div style="font-size: 12.5px; color: #4a453b; line-height: 1.7;">키는 발급 완료 페이지에서 <strong style="color: #232019;">한 번만</strong> 보입니다. 그래서 그 화면에 닿는 순간 아래 칸이 열리고, 이 창을 닫기 전에 키를 넣도록 유도합니다.</div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1108,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = { i: 0 };
+
+  renderVals() {
+    const names = ["로그인", "인증 코드", "키 만들기", "키 복사"];
+    const i = Math.max(0, Math.min(this.state.i, 3));
+
+    const track = [];
+    names.forEach((label, n) => {
+      const done = n < i, now = n === i;
+      track.push({
+        label,
+        mark: done ? "✓" : (now ? "" : ""),
+        markFg: done ? "#fbfaf8" : "#8b8477",
+        markBg: done ? "#1f6f5c" : (now ? "#fbfaf8" : "transparent"),
+        markBorder: done ? "#1f6f5c" : (now ? "#1f6f5c" : "#cdc8bf"),
+        fg: now ? "#1f6f5c" : (done ? "#4a453b" : "#8b8477"),
+        weight: now ? "600" : "400",
+        bg: now ? "#fbfaf8" : "transparent",
+        pad: now ? "5px 11px" : "5px 7px",
+        arrow: n < 3,
+      });
+    });
+
+    const states = [
+      {
+        stepName: "로그인",
+        title: "GitHub에 로그인해 주세요",
+        lead: "아래는 GitHub의 실제 로그인 화면입니다. 아이디와 비밀번호는 GitHub로 바로 전달되며, 클론업은 입력한 내용을 보지 않습니다.",
+        url: "https://github.com/login",
+        webTitle: "GitHub 로그인 화면",
+        webBody: "패스키를 쓰시면 더 빠릅니다. 패스키가 막히면 비밀번호로 로그인하세요.",
+        showWatch: true, watchTag: "기다리는 중",
+        watchBody: "로그인이 끝나면 다음 단계로 저절로 넘어갑니다. 버튼을 누르지 않아도 됩니다.",
+        watchBg: "#f4f1e8", watchBar: "#1f6f5c",
+        showKey: false,
+        ctaNote: "로그인하면 자동으로 진행됩니다",
+        cta: "다음", ctaBg: "#f2efe9", ctaFg: "#b3ac9e", ctaBorder: "#ddd8d0", ctaCursor: "default",
+        backFg: "#b3ac9e", backCursor: "default",
+      },
+      {
+        stepName: "인증 코드",
+        title: "인증 코드를 입력해 주세요",
+        lead: "GitHub가 한 번 더 확인을 요청했습니다. 인증 앱의 6자리 숫자나 문자로 받은 코드를 아래 화면에 넣으세요.",
+        url: "https://github.com/sessions/two-factor",
+        webTitle: "2단계 인증 화면",
+        webBody: "코드가 오지 않으면 아래 화면의 다른 방법 링크를 쓰거나, 외부 브라우저로 여세요.",
+        showWatch: true, watchTag: "기다리는 중",
+        watchBody: "코드는 GitHub로 바로 갑니다. 클론업은 코드를 저장하거나 읽지 않습니다.",
+        watchBg: "#f4f1e8", watchBar: "#1f6f5c",
+        showKey: false,
+        ctaNote: "인증되면 자동으로 진행됩니다",
+        cta: "다음", ctaBg: "#f2efe9", ctaFg: "#b3ac9e", ctaBorder: "#ddd8d0", ctaCursor: "default",
+        backFg: "#3d382f", backCursor: "pointer",
+      },
+      {
+        stepName: "키 만들기",
+        title: "키를 만들어 주세요",
+        lead: "필요한 항목은 미리 채워 두었습니다. 아래 화면을 내려 Generate token 버튼만 누르시면 됩니다.",
+        url: "https://github.com/settings/tokens/new",
+        webTitle: "키 발급 화면",
+        webBody: "이름은 CloneUp, 권한은 저장소 하나에 대한 읽기·쓰기로 채워져 있습니다. 기간은 90일을 권합니다.",
+        showWatch: true, watchTag: "확인",
+        watchBody: "여기서 만드는 키는 이 앱이 저장소를 읽고 쓰는 데만 씁니다. 계정 설정을 바꾸는 권한은 들어 있지 않습니다.",
+        watchBg: "#f4f1e8", watchBar: "#1f6f5c",
+        showKey: false,
+        ctaNote: "키가 만들어지면 자동으로 진행됩니다",
+        cta: "다음", ctaBg: "#f2efe9", ctaFg: "#b3ac9e", ctaBorder: "#ddd8d0", ctaCursor: "default",
+        backFg: "#3d382f", backCursor: "pointer",
+      },
+      {
+        stepName: "키 복사",
+        title: "키를 아래 칸에 넣어 주세요",
+        lead: "키가 만들어졌습니다. 아래 화면의 복사 버튼을 누르면 칸이 저절로 채워집니다. 채워지지 않으면 직접 붙여 넣으세요.",
+        url: "https://github.com/settings/tokens?highlight=new",
+        webTitle: "발급 완료 화면",
+        webBody: "이 화면을 떠나면 키를 다시 볼 수 없습니다. 지금 넣어 두세요.",
+        showWatch: true, watchTag: "주의",
+        watchBody: "이 키는 비밀번호와 같습니다. 다른 곳에 붙여 넣거나 남에게 보여주지 마세요. 클론업은 이 컴퓨터의 자격 증명 저장소에만 넣어 둡니다.",
+        watchBg: "#fbf6ee", watchBar: "#8a6d12",
+        showKey: true,
+        keyText: "github_pat_11ABCDE0 ································",
+        keyBg: "#fff", keyBorder: "#1f6f5c", keyFg: "#2f2b24",
+        keyNote: "복사 버튼을 누르면 이 칸이 채워집니다. 화면에는 앞자리만 보입니다.",
+        keyNoteFg: "#6d675c",
+        ctaNote: "",
+        cta: "연결", ctaBg: "#1f6f5c", ctaFg: "#fff", ctaBorder: "#1f6f5c", ctaCursor: "pointer",
+        backFg: "#3d382f", backCursor: "pointer",
+      },
+    ];
+
+    const st = states[i];
+    return {
+      track,
+      st: { ...st, counter: (i + 1) + " / 4" },
+      picker: names.map((label, n) => ({
+        label,
+        bg: n === i ? "#fbfaf8" : "transparent",
+        fg: n === i ? "#1f6f5c" : "#6d675c",
+        border: n === i ? "#1f6f5c" : "#cdc8bf",
+        weight: n === i ? "600" : "400",
+        go: () => this.setState({ i: n }),
+      })),
+    };
+  }
+}
+</script>
+</body>
+</html>
