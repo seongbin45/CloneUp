@@ -623,7 +623,7 @@ class ConnectGitHubWizard(QDialog):
         if self._use_web:
             self.setObjectName("connectWebDialog")
             # Floor only — opens maximized; user may restore and resize.
-            self.setMinimumSize(900, 600)
+            self.setMinimumSize(900, 720)
             # Do not call adjustSize() in web mode — it collapses QWebEngineView.
         else:
             self.setMinimumWidth(440)
@@ -700,15 +700,16 @@ class ConnectGitHubWizard(QDialog):
         if screen is None:
             screen = QGuiApplication.primaryScreen()
         if screen is None:
-            return QRect(80, 60, 1100, 760)
+            return QRect(60, 40, 1200, 900)
         avail = screen.availableGeometry()
-        # ~72% of work area, floored at usable mins, capped so it feels smaller
-        w = max(980, min(1200, int(avail.width() * 0.72)))
-        h = max(680, min(820, int(avail.height() * 0.78)))
-        w = min(w, avail.width() - 40)
-        h = min(h, avail.height() - 40)
-        x = avail.x() + (avail.width() - w) // 2
-        y = avail.y() + (avail.height() - h) // 2
+        # Narrower than maximized, but tall enough that footer/watch are not clipped.
+        # (Earlier 0.78× + 820px cap cut off the bottom on common displays.)
+        w = max(1000, min(1280, int(avail.width() * 0.78)))
+        h = max(800, int(avail.height() * 0.92))
+        w = min(w, max(900, avail.width() - 48))
+        h = min(h, max(720, avail.height() - 24))
+        x = avail.x() + max(0, (avail.width() - w) // 2)
+        y = avail.y() + max(0, (avail.height() - h) // 2)
         return QRect(x, y, w, h)
 
     def _fit_web_dialog(self) -> None:
@@ -720,7 +721,8 @@ class ConnectGitHubWizard(QDialog):
         ``_normal_web_geometry()`` (smaller centered window).
         """
         try:
-            self.setMinimumSize(900, 600)
+            # Floor high enough that restore/resize cannot clip the footer bar
+            self.setMinimumSize(900, 720)
             # Never FullScreen (would hide X / taskbar)
             if self.windowState() & Qt.WindowState.WindowFullScreen:
                 self.setWindowState(
@@ -730,7 +732,7 @@ class ConnectGitHubWizard(QDialog):
             self.setGeometry(self._normal_web_geometry())
             self.showMaximized()
         except Exception:
-            self.resize(1100, 760)
+            self.resize(1200, 900)
 
     def _place_center_on_anchor(self) -> None:
         if self._anchor is None:
