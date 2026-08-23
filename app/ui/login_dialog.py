@@ -322,6 +322,14 @@ def _dialog_style(p: Palette) -> str:
         border: 1px solid #e6e1d8;
         border-radius: 7px;
     }}
+    QFrame#connGuideCard {{
+        background: #fbfaf8;
+        border: 1px solid #c9c5bd;
+        border-radius: 10px;
+    }}
+    QWidget#connGuideOuter {{
+        background: #fbfaf8;
+    }}
     QFrame#connBrowser {{
         background: #ffffff;
         border: 1px solid #cdc8bf;
@@ -876,7 +884,14 @@ class ConnectGitHubWizard(QDialog):
             self._web_pane.load_url(url)
 
     def _page_guide(self, index: int, title: str, body: str) -> QWidget:
-        w = QWidget()
+        # Inner column — when web dialog is maximized, center a readable card
+        # so title/body are not stuck to the top-left corner.
+        inner = QWidget()
+        inner.setObjectName("connGuideInner")
+        if self._use_web and index == _STEP_START:
+            inner.setMaximumWidth(520)
+            inner.setMinimumWidth(400)
+
         head = QLabel(
             ("새 키로 다시 연결" if self._reauth else title)
             if index == _STEP_START
@@ -884,14 +899,20 @@ class ConnectGitHubWizard(QDialog):
         )
         head.setObjectName("wizTitle")
         head.setWordWrap(True)
+        head.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
         lead = QLabel(body)
         lead.setObjectName("wizLead")
         lead.setWordWrap(True)
+        lead.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
+        lay = QVBoxLayout(inner)
+        if self._use_web and index == _STEP_START:
+            lay.setContentsMargins(28, 24, 28, 24)
+            lay.setSpacing(14)
+        else:
+            lay.setContentsMargins(4, 4, 4, 4)
+            lay.setSpacing(8)
         lay.addWidget(head)
         lay.addWidget(lead)
 
@@ -932,6 +953,7 @@ class ConnectGitHubWizard(QDialog):
 
         # Primary actions per step
         nav = QHBoxLayout()
+        nav.setSpacing(10)
         btn_cancel = QPushButton("취소")
         btn_cancel.setObjectName("btnGhost")
         btn_cancel.clicked.connect(self.reject)
@@ -990,8 +1012,36 @@ class ConnectGitHubWizard(QDialog):
                 btn_next.clicked.connect(lambda: self._go(index + 1))
                 nav.addWidget(btn_next)
 
+        lay.addSpacing(8)
         lay.addLayout(nav)
-        return w
+
+        if self._use_web and index == _STEP_START:
+            # Center the start card in the maximized dialog
+            outer = QWidget()
+            outer.setObjectName("connGuideOuter")
+            shell = QVBoxLayout(outer)
+            shell.setContentsMargins(0, 0, 0, 0)
+            shell.setSpacing(0)
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.addStretch(1)
+            # Soft card frame so content is visually grouped
+            card = QFrame()
+            card.setObjectName("connGuideCard")
+            card.setSizePolicy(
+                QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum
+            )
+            card_lay = QVBoxLayout(card)
+            card_lay.setContentsMargins(0, 0, 0, 0)
+            card_lay.addWidget(inner)
+            row.addWidget(card, 0, Qt.AlignmentFlag.AlignCenter)
+            row.addStretch(1)
+            shell.addStretch(1)
+            shell.addLayout(row)
+            shell.addStretch(1)
+            return outer
+
+        return inner
 
     def _page_web(self) -> QWidget:
         """시안 본문: 카운터·제목·트랙·브라우저·안내·푸터.
@@ -1058,8 +1108,12 @@ class ConnectGitHubWizard(QDialog):
         tw.setSpacing(0)
         self._track_host = QFrame()
         self._track_host.setObjectName("connTrack")
+        self._track_host.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self._track_host.setFixedHeight(46)
         self._track_lay = QHBoxLayout(self._track_host)
-        self._track_lay.setContentsMargins(14, 11, 14, 11)
+        self._track_lay.setContentsMargins(14, 8, 14, 8)
         self._track_lay.setSpacing(4)
         self._rebuild_track(0)
         tw.addWidget(self._track_host)
@@ -1274,35 +1328,59 @@ class ConnectGitHubWizard(QDialog):
             item = self._track_lay.takeAt(0)
             w = item.widget()
             if w is not None:
+                w.setParent(None)
                 w.deleteLater()
+        self._track_lay.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._track_lay.setSpacing(4)
         for n, label in enumerate(UI_STEP_NAMES):
             done = n < now
             cur = n == now
             cell = QFrame()
+            cell.setSizePolicy(
+                QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
+            )
+            cell.setFixedHeight(28)
             hl = QHBoxLayout(cell)
-            hl.setContentsMargins(7 if cur else 5, 5, 11 if cur else 7, 5)
+            # 시안: current pad 5px 11px, else 5px 7px
+            hl.setContentsMargins(11 if cur else 7, 0, 11 if cur else 7, 0)
             hl.setSpacing(7)
             mark = self._track_mark(done, cur)
             lab = QLabel(label)
+            lab.setWordWrap(False)
+            lab.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
+            lab.setSizePolicy(
+                QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
+            )
+            # Keep Korean step names on one line (no "인증" / "코드" wrap)
+            fm = lab.fontMetrics()
+            lab.setMinimumWidth(fm.horizontalAdvance(label) + 4)
             if cur:
                 lab.setStyleSheet(
                     "color:#1f6f5c;font-weight:600;font-size:12.5px;"
                     "background:transparent;border:none;"
                 )
-                cell.setStyleSheet("background:#fbfaf8;border-radius:5px;")
+                cell.setStyleSheet(
+                    "QFrame { background:#fbfaf8; border-radius:5px; border:none; }"
+                )
             elif done:
                 lab.setStyleSheet(
                     "color:#4a453b;font-size:12.5px;"
                     "background:transparent;border:none;"
                 )
+                cell.setStyleSheet("QFrame { background:transparent; border:none; }")
             else:
                 lab.setStyleSheet(
                     "color:#8b8477;font-size:12.5px;"
                     "background:transparent;border:none;"
                 )
+                cell.setStyleSheet("QFrame { background:transparent; border:none; }")
             hl.addWidget(mark, 0, Qt.AlignmentFlag.AlignVCenter)
-            hl.addWidget(lab)
-            self._track_lay.addWidget(cell)
+            hl.addWidget(lab, 0, Qt.AlignmentFlag.AlignVCenter)
+            self._track_lay.addWidget(
+                cell, 0, Qt.AlignmentFlag.AlignVCenter
+            )
             if n < len(UI_STEP_NAMES) - 1:
                 ar = QLabel("→")
                 ar.setStyleSheet(
@@ -1310,8 +1388,11 @@ class ConnectGitHubWizard(QDialog):
                     "background:transparent;border:none;"
                 )
                 ar.setFixedWidth(18)
+                ar.setFixedHeight(28)
                 ar.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                self._track_lay.addWidget(ar)
+                self._track_lay.addWidget(
+                    ar, 0, Qt.AlignmentFlag.AlignVCenter
+                )
         self._track_lay.addStretch(1)
 
     def _paint_web_guide(self, now: int) -> None:
