@@ -9,6 +9,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -694,69 +695,94 @@ class ConnectGitHubWizard(QDialog):
             screen = QGuiApplication.primaryScreen()
         return screen
 
-    def _frame_chrome(self) -> tuple[int, int]:
-        """Title-bar / border size (frame − client)."""
-        if self.isVisible() and self.height() > 0 and self.width() > 0:
-            fg = self.frameGeometry()
-            return (
-                max(0, fg.width() - self.width()),
-                max(0, fg.height() - self.height()),
-            )
-        return (16, 32)
+    def _fit_frame_in_available(self, width: int, height: int) -> None:
+        """Resize/move so the *window frame* sits inside the work area.
 
-    def _normal_web_geometry(self):
-        """Restored size for the title-bar □ button.
-
-        Narrower than maximized, but height stays inside ``availableGeometry``
-        so the footer is not clipped by the taskbar. ``sizeHint`` previously
-        grew the window past the work area after setGeometry — callers must
-        also cap ``maximumHeight``.
+        Inner widget tree is untouched. On Windows ``setGeometry`` sets the
+        *client* rect — the title bar sits above it — so we convert through
+        frame chrome before calling setGeometry.
         """
-        from PySide6.QtCore import QRect
-
         screen = self._screen_for_dialog()
         if screen is None:
-            return QRect(60, 40, 1200, 860)
+            self.resize(width, height)
+            return
         avail = screen.availableGeometry()
-        chrome_w, chrome_h = self._frame_chrome()
-        margin = 10
-        # Client size whose FRAME fits entirely in the work area
-        max_client_w = max(900, avail.width() - chrome_w - 2 * margin)
-        max_client_h = max(720, avail.height() - chrome_h - 2 * margin)
-        # □ = clearly smaller width; height almost fills work area (no bottom clip)
-        w = min(max(1000, int(avail.width() * 0.84)), max_client_w)
-        h = max_client_h  # use full usable client height
-        x = avail.x() + margin + max(0, (avail.width() - 2 * margin - chrome_w - w) // 2)
-        y = avail.y() + margin
-        return QRect(x, y, w, h)
+        self.setMaximumSize(16777215, 16777215)
+        self.resize(width, height)
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
 
-    def _apply_normal_web_geometry(self) -> None:
-        """Restore to normal size and keep height from exceeding the work area."""
-        g = self._normal_web_geometry()
-        # Prevent sizeHint (often ~900+) from stretching past the taskbar
-        self.setMaximumHeight(g.height())
-        self.setMaximumWidth(16777215)
-        self.setGeometry(g)
+        fg = self.frameGeometry()
+        geo = self.geometry()
+        # Chrome around the client area (title bar is usually chrome_t)
+        chrome_l = max(0, geo.x() - fg.x())
+        chrome_t = max(0, geo.y() - fg.y())
+        chrome_r = max(0, fg.right() - geo.right())
+        chrome_b = max(0, fg.bottom() - geo.bottom())
+
+        max_cw = max(900, avail.width() - chrome_l - chrome_r - 8)
+        max_ch = max(720, avail.height() - chrome_t - chrome_b - 8)
+        cw = min(max(width, 900), max_cw)
+        ch = min(max(height, 720), max_ch)
+        if cw != self.width() or ch != self.height():
+            self.resize(cw, ch)
+            if app is not None:
+                app.processEvents()
+            fg = self.frameGeometry()
+            geo = self.geometry()
+            chrome_l = max(0, geo.x() - fg.x())
+            chrome_t = max(0, geo.y() - fg.y())
+            chrome_r = max(0, fg.right() - geo.right())
+            chrome_b = max(0, fg.bottom() - geo.bottom())
+            cw, ch = self.width(), self.height()
+
+        frame_w = cw + chrome_l + chrome_r
+        frame_h = ch + chrome_t + chrome_b
+        frame_x = avail.x() + max(0, (avail.width() - frame_w) // 2)
+        frame_y = avail.y() + max(0, (avail.height() - frame_h) // 2)
+        if frame_x + frame_w - 1 > avail.right():
+            frame_x = avail.right() - frame_w + 1
+        if frame_y + frame_h - 1 > avail.bottom():
+            frame_y = avail.bottom() - frame_h + 1
+        frame_x = max(frame_x, avail.left())
+        frame_y = max(frame_y, avail.top())
+
+        # setGeometry = client rect on Windows
+        self.setGeometry(frame_x + chrome_l, frame_y + chrome_t, cw, ch)
+        # Lock height so sizeHint cannot push the footer under the taskbar
+        self.setMaximumHeight(ch)
+
+    def _place_normal_web_size(self) -> None:
+        """Geometry Windows will restore to when the user clicks □."""
+        screen = self._screen_for_dialog()
+        if screen is None:
+            self.resize(1200, 860)
+            return
+        avail = screen.availableGeometry()
+        w = max(980, min(1280, int(avail.width() * 0.88)))
+        h = max(760, int(avail.height() * 0.94))
+        self._fit_frame_in_available(w, h)
 
     def _fit_web_dialog(self) -> None:
         """
-        Open maximized to the work area (e.g. 1920×1080 minus taskbar).
+        Open maximized. □ restores to ``_place_normal_web_size()``.
 
-        Uses ``showMaximized`` — **not** FullScreen/frameless — so title-bar
-        close (X) stays. The □ restore button returns to
-        ``_normal_web_geometry()`` (narrower, full usable height).
+        Window chrome only — does not change inner layout.
+        Must ``showNormal`` before placing, otherwise a second ``_fit`` while
+        already maximized would shrink the window and leave it there.
         """
         try:
             self.setMinimumSize(900, 720)
-            # Clear caps so maximize can fill the work area
             self.setMaximumSize(16777215, 16777215)
-            # Never FullScreen (would hide X / taskbar)
             if self.windowState() & Qt.WindowState.WindowFullScreen:
                 self.setWindowState(
                     self.windowState() & ~Qt.WindowState.WindowFullScreen
                 )
-            # Remember normal geometry for □, then maximize
-            self.setGeometry(self._normal_web_geometry())
+            # Establish □ restore geometry, then maximize
+            self.showNormal()
+            self._place_normal_web_size()
+            self.setMaximumSize(16777215, 16777215)
             self.showMaximized()
         except Exception:
             self.resize(1200, 860)
@@ -766,15 +792,19 @@ class ConnectGitHubWizard(QDialog):
         if not self._use_web:
             return
         from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QWindowStateChangeEvent
 
         if event.type() != QEvent.Type.WindowStateChange:
             return
-        # After user clicks □ to leave maximized, re-clamp into the work area
-        if self.isMinimized() or self.isMaximized():
-            if self.isMaximized():
-                self.setMaximumSize(16777215, 16777215)
-            return
-        QTimer.singleShot(0, self._apply_normal_web_geometry)
+        # Only when leaving maximized via □ — not while entering maximize
+        old = Qt.WindowState.WindowNoState
+        if isinstance(event, QWindowStateChangeEvent):
+            old = event.oldState()
+        leaving_max = bool(old & Qt.WindowState.WindowMaximized) and not bool(
+            self.windowState() & Qt.WindowState.WindowMaximized
+        )
+        if leaving_max and not self.isMinimized():
+            QTimer.singleShot(50, self._place_normal_web_size)
 
     def _place_center_on_anchor(self) -> None:
         if self._anchor is None:
@@ -858,7 +888,6 @@ class ConnectGitHubWizard(QDialog):
         """Bring the dialog back after external-browser yield / token detect."""
         if self.isMinimized():
             if self._use_web:
-                self.setMaximumSize(16777215, 16777215)
                 self.showMaximized()
             else:
                 self.showNormal()
