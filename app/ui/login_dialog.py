@@ -684,14 +684,7 @@ class ConnectGitHubWizard(QDialog):
             self._web_sized = True
             QTimer.singleShot(0, self._fit_web_dialog)
 
-    def _normal_web_geometry(self):
-        """Smaller restored size for the title-bar □ (maximize/restore) button.
-
-        Windows remembers this geometry while maximized; clicking □ restores
-        here instead of staying near-fullscreen.
-        """
-        from PySide6.QtCore import QRect
-
+    def _screen_for_dialog(self):
         screen = None
         if self._anchor is not None:
             screen = self._anchor.screen()
@@ -699,18 +692,51 @@ class ConnectGitHubWizard(QDialog):
             screen = self.screen()
         if screen is None:
             screen = QGuiApplication.primaryScreen()
+        return screen
+
+    def _frame_chrome(self) -> tuple[int, int]:
+        """Title-bar / border size (frame − client)."""
+        if self.isVisible() and self.height() > 0 and self.width() > 0:
+            fg = self.frameGeometry()
+            return (
+                max(0, fg.width() - self.width()),
+                max(0, fg.height() - self.height()),
+            )
+        return (16, 32)
+
+    def _normal_web_geometry(self):
+        """Restored size for the title-bar □ button.
+
+        Narrower than maximized, but height stays inside ``availableGeometry``
+        so the footer is not clipped by the taskbar. ``sizeHint`` previously
+        grew the window past the work area after setGeometry — callers must
+        also cap ``maximumHeight``.
+        """
+        from PySide6.QtCore import QRect
+
+        screen = self._screen_for_dialog()
         if screen is None:
-            return QRect(60, 40, 1200, 900)
+            return QRect(60, 40, 1200, 860)
         avail = screen.availableGeometry()
-        # Narrower than maximized, but tall enough that footer/watch are not clipped.
-        # (Earlier 0.78× + 820px cap cut off the bottom on common displays.)
-        w = max(1000, min(1280, int(avail.width() * 0.78)))
-        h = max(800, int(avail.height() * 0.92))
-        w = min(w, max(900, avail.width() - 48))
-        h = min(h, max(720, avail.height() - 24))
-        x = avail.x() + max(0, (avail.width() - w) // 2)
-        y = avail.y() + max(0, (avail.height() - h) // 2)
+        chrome_w, chrome_h = self._frame_chrome()
+        margin = 10
+        # Client size whose FRAME fits entirely in the work area
+        max_client_w = max(900, avail.width() - chrome_w - 2 * margin)
+        max_client_h = max(720, avail.height() - chrome_h - 2 * margin)
+        # □ = clearly smaller width; height almost fills work area (no bottom clip)
+        w = min(max(1000, int(avail.width() * 0.84)), max_client_w)
+        h = max_client_h  # use full usable client height
+        x = avail.x() + margin + max(0, (avail.width() - 2 * margin - chrome_w - w) // 2)
+        y = avail.y() + margin
         return QRect(x, y, w, h)
+
+    def _apply_normal_web_geometry(self) -> None:
+        """Restore to normal size and keep height from exceeding the work area."""
+        g = self._normal_web_geometry()
+        # Prevent sizeHint (often ~900+) from stretching past the taskbar
+        self.setMaximumHeight(g.height())
+        self.setMaximumWidth(16777215)
+        self.setGeometry(g)
 
     def _fit_web_dialog(self) -> None:
         """
@@ -718,21 +744,37 @@ class ConnectGitHubWizard(QDialog):
 
         Uses ``showMaximized`` — **not** FullScreen/frameless — so title-bar
         close (X) stays. The □ restore button returns to
-        ``_normal_web_geometry()`` (smaller centered window).
+        ``_normal_web_geometry()`` (narrower, full usable height).
         """
         try:
-            # Floor high enough that restore/resize cannot clip the footer bar
             self.setMinimumSize(900, 720)
+            # Clear caps so maximize can fill the work area
+            self.setMaximumSize(16777215, 16777215)
             # Never FullScreen (would hide X / taskbar)
             if self.windowState() & Qt.WindowState.WindowFullScreen:
                 self.setWindowState(
                     self.windowState() & ~Qt.WindowState.WindowFullScreen
                 )
-            # Set normal geometry FIRST so □ restores to a smaller window
+            # Remember normal geometry for □, then maximize
             self.setGeometry(self._normal_web_geometry())
             self.showMaximized()
         except Exception:
-            self.resize(1200, 900)
+            self.resize(1200, 860)
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if not self._use_web:
+            return
+        from PySide6.QtCore import QEvent
+
+        if event.type() != QEvent.Type.WindowStateChange:
+            return
+        # After user clicks □ to leave maximized, re-clamp into the work area
+        if self.isMinimized() or self.isMaximized():
+            if self.isMaximized():
+                self.setMaximumSize(16777215, 16777215)
+            return
+        QTimer.singleShot(0, self._apply_normal_web_geometry)
 
     def _place_center_on_anchor(self) -> None:
         if self._anchor is None:
@@ -816,6 +858,7 @@ class ConnectGitHubWizard(QDialog):
         """Bring the dialog back after external-browser yield / token detect."""
         if self.isMinimized():
             if self._use_web:
+                self.setMaximumSize(16777215, 16777215)
                 self.showMaximized()
             else:
                 self.showNormal()
