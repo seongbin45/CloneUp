@@ -684,37 +684,53 @@ class ConnectGitHubWizard(QDialog):
             self._web_sized = True
             QTimer.singleShot(0, self._fit_web_dialog)
 
+    def _normal_web_geometry(self):
+        """Smaller restored size for the title-bar □ (maximize/restore) button.
+
+        Windows remembers this geometry while maximized; clicking □ restores
+        here instead of staying near-fullscreen.
+        """
+        from PySide6.QtCore import QRect
+
+        screen = None
+        if self._anchor is not None:
+            screen = self._anchor.screen()
+        if screen is None:
+            screen = self.screen()
+        if screen is None:
+            screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return QRect(80, 60, 1100, 760)
+        avail = screen.availableGeometry()
+        # ~72% of work area, floored at usable mins, capped so it feels smaller
+        w = max(980, min(1200, int(avail.width() * 0.72)))
+        h = max(680, min(820, int(avail.height() * 0.78)))
+        w = min(w, avail.width() - 40)
+        h = min(h, avail.height() - 40)
+        x = avail.x() + (avail.width() - w) // 2
+        y = avail.y() + (avail.height() - h) // 2
+        return QRect(x, y, w, h)
+
     def _fit_web_dialog(self) -> None:
         """
-        Fill the display work area (e.g. 1920×1080 minus taskbar).
+        Open maximized to the work area (e.g. 1920×1080 minus taskbar).
 
-        Uses ``showMaximized`` / ``availableGeometry`` — **not**
-        ``WindowFullScreen`` and **not** frameless — so the OS title bar
-        and close (X) stay. User can restore and resize (min 900×600).
+        Uses ``showMaximized`` — **not** FullScreen/frameless — so title-bar
+        close (X) stays. The □ restore button returns to
+        ``_normal_web_geometry()`` (smaller centered window).
         """
         try:
-            screen = None
-            if self._anchor is not None:
-                screen = self._anchor.screen()
-            if screen is None:
-                screen = self.screen()
-            if screen is None:
-                screen = QGuiApplication.primaryScreen()
             self.setMinimumSize(900, 600)
             # Never FullScreen (would hide X / taskbar)
             if self.windowState() & Qt.WindowState.WindowFullScreen:
                 self.setWindowState(
                     self.windowState() & ~Qt.WindowState.WindowFullScreen
                 )
-            if screen is None:
-                self.resize(1920, 1040)
-                return
-            avail = screen.availableGeometry()
-            self.setGeometry(avail)
-            # Maximized = work-area fill with title-bar X kept
+            # Set normal geometry FIRST so □ restores to a smaller window
+            self.setGeometry(self._normal_web_geometry())
             self.showMaximized()
         except Exception:
-            self.resize(1920, 1040)
+            self.resize(1100, 760)
 
     def _place_center_on_anchor(self) -> None:
         if self._anchor is None:
