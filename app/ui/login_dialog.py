@@ -262,14 +262,30 @@ def _dialog_style(p: Palette) -> str:
     QDialog {{
         background: {p.bg_window};
     }}
+    QDialog#connectWebDialog {{
+        background: {p.bg_app};
+    }}
+    QWidget#connOuter {{
+        background: {p.bg_app};
+    }}
     QLabel#wizTitle {{
         color: {p.text};
-        font-size: 16px;
-        font-weight: 700;
+        font-size: 17px;
+        font-weight: 600;
+        background: transparent;
+        border: none;
     }}
     QLabel#wizLead {{
-        color: {p.text_muted};
+        color: #4a453b;
+        font-size: 13px;
+        background: transparent;
+        border: none;
+    }}
+    QLabel#wizMeta {{
+        color: #6d675c;
         font-size: 12.5px;
+        background: transparent;
+        border: none;
     }}
     QLabel#wizBox {{
         color: {p.text_secondary};
@@ -281,57 +297,184 @@ def _dialog_style(p: Palette) -> str:
     }}
     QLabel#wizProgress {{
         color: {p.primary};
-        font-size: 12px;
+        font-size: 12.5px;
         font-weight: 600;
+        font-family: "IBM Plex Mono", Consolas, monospace;
+        background: transparent;
+        border: none;
     }}
     QLabel#wizDetail {{
         color: {p.text_muted};
         font-size: 12px;
         padding: 4px 2px;
     }}
-    QLineEdit#patEdit {{
-        padding: 10px 12px;
-        font-size: 13.5px;
-        border: 1px solid {p.border_input};
+    QFrame#connCard {{
+        background: #fbfaf8;
+        border: 1px solid #c9c5bd;
+        border-radius: 10px;
+    }}
+    QFrame#connHeader {{
+        background: #f2efe9;
+        border: none;
+        border-bottom: 1px solid #ddd8d0;
+        border-top-left-radius: 10px;
+        border-top-right-radius: 10px;
+    }}
+    QFrame#connTrack {{
+        background: #f2efe9;
+        border: 1px solid #e6e1d8;
+        border-radius: 7px;
+    }}
+    QFrame#connBrowser {{
+        background: #ffffff;
+        border: 1px solid #cdc8bf;
+        border-radius: 7px;
+    }}
+    QFrame#connAddrBar {{
+        background: #f2efe9;
+        border: none;
+        border-bottom: 1px solid #ddd8d0;
+    }}
+    QFrame#connUrlBox {{
+        background: #fbfaf8;
+        border: 1px solid #cdc8bf;
+        border-radius: 4px;
+        min-height: 24px;
+        max-height: 24px;
+    }}
+    QLineEdit#connUrlInner {{
+        background: transparent;
+        border: none;
+        padding: 0;
+        font-size: 11.5px;
+        color: #4a453b;
+        font-family: "IBM Plex Mono", Consolas, monospace;
+        min-height: 20px;
+        max-height: 22px;
+    }}
+    QLineEdit#connUrl {{
+        background: #fbfaf8;
+        border: 1px solid #cdc8bf;
+        border-radius: 4px;
+        padding: 2px 10px;
+        font-size: 11.5px;
+        color: #4a453b;
+        font-family: "IBM Plex Mono", Consolas, monospace;
+        min-height: 22px;
+        max-height: 24px;
+    }}
+    QFrame#connWatch {{
+        background: #f4f1e8;
+        border-left: 3px solid #1f6f5c;
+        border-top: none;
+        border-right: none;
+        border-bottom: none;
+        border-radius: 0 6px 6px 0;
+    }}
+    QFrame#connWatchWarn {{
+        background: #fbf6ee;
+        border-left: 3px solid #8a6d12;
+        border-top: none;
+        border-right: none;
+        border-bottom: none;
+        border-radius: 0 6px 6px 0;
+    }}
+    QLabel#connWatchTag {{
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #1f6f5c;
+        background: transparent;
+        border: none;
+    }}
+    QLabel#connWatchTagWarn {{
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #8a6d12;
+        background: transparent;
+        border: none;
+    }}
+    QFrame#connFooter {{
+        background: #f2efe9;
+        border: none;
+        border-top: 1px solid #e6e1d8;
+        border-bottom-left-radius: 10px;
+        border-bottom-right-radius: 10px;
+    }}
+    QFrame#connPrivacy {{
+        background: #fbfaf8;
+        border: 1px solid #cdc8bf;
         border-radius: 8px;
-        background: {p.bg_input};
-        color: {p.text};
+    }}
+    QPushButton#connNavMini {{
+        background: #fbfaf8;
+        border: 1px solid #cdc8bf;
+        border-radius: 4px;
+        min-width: 18px;
+        max-width: 18px;
+        min-height: 18px;
+        max-height: 18px;
+        padding: 0;
+        font-size: 10px;
+        color: #6d675c;
+    }}
+    QPushButton#connNavMini:disabled {{
+        color: #b7b1a5;
+    }}
+    QLineEdit#patEdit {{
+        padding: 10px 13px;
+        font-size: 13px;
+        border: 1px solid #cdc8bf;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #2f2b24;
+        font-family: "IBM Plex Mono", Consolas, monospace;
+        min-height: 40px;
     }}
     QPushButton#btnPrimary {{
         background: {p.primary};
         color: {p.text_on_primary};
-        border: none;
-        border-radius: 8px;
-        padding: 8px 16px;
+        border: 1px solid {p.primary};
+        border-radius: 6px;
+        padding: 8px 26px;
         font-weight: 600;
-        font-size: 13px;
-        min-height: 32px;
+        font-size: 13.5px;
+        min-height: 40px;
     }}
     QPushButton#btnPrimary:hover {{
         background: {p.primary_hover};
     }}
+    QPushButton#btnPrimary:disabled {{
+        background: #f2efe9;
+        color: #b3ac9e;
+        border: 1px solid #ddd8d0;
+    }}
     QPushButton#btnSecondary {{
-        background: {p.bg_muted};
-        color: {p.text};
-        border: 1px solid {p.border_input};
-        border-radius: 8px;
-        padding: 8px 12px;
-        font-weight: 600;
+        background: #fbfaf8;
+        color: #3d382f;
+        border: 1px solid #b7b1a5;
+        border-radius: 5px;
+        padding: 8px 16px;
+        font-weight: 500;
         font-size: 12.5px;
-        min-height: 32px;
+        min-height: 36px;
     }}
     QPushButton#btnSecondary:hover {{
-        background: {p.hover_muted};
+        background: #f4f1e8;
+    }}
+    QPushButton#btnSecondary:disabled {{
+        background: #f2efe9;
+        color: #b3ac9e;
+        border: 1px solid #ddd8d0;
     }}
     QPushButton#btnGhost {{
         background: transparent;
-        color: {p.text_muted};
+        color: #6d675c;
         border: none;
         padding: 4px 6px;
-        font-size: 12px;
+        font-size: 12.5px;
     }}
     QPushButton#btnGhost:hover {{
-        color: {p.primary};
+        color: #3d382f;
     }}
     """
 
@@ -441,10 +584,19 @@ class ConnectGitHubWizard(QDialog):
         self._ui_now = 0
         self._ui_max = 0
         self._key_row: QWidget | None = None
+        self._key_note: QLabel | None = None
         self._web_cta: QPushButton | None = None
         self._web_cta_note: QLabel | None = None
         self._web_url: QLineEdit | None = None
         self._track_host: QWidget | None = None
+        self._track_lay: QHBoxLayout | None = None
+        self._web_watch: QFrame | None = None
+        self._web_watch_tag: QLabel | None = None
+        self._web_watch_body: QLabel | None = None
+        self._web_counter: QLabel | None = None
+        self._web_step_name: QLabel | None = None
+        self._web_stage_title: QLabel | None = None
+        self._web_hint: QLabel | None = None
         from app.ui.connect_webview import webengine_available
 
         self._use_web = webengine_available()
@@ -455,6 +607,7 @@ class ConnectGitHubWizard(QDialog):
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setWindowOpacity(1.0)
         if self._use_web:
+            self.setObjectName("connectWebDialog")
             self.setMinimumWidth(980)
             self.setMinimumHeight(680)
             # Do not call adjustSize() in web mode — it collapses QWebEngineView.
@@ -473,13 +626,14 @@ class ConnectGitHubWizard(QDialog):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         if self._use_web:
-            # 0=start, 1=embedded GitHub + guide
+            # 0=start, 1=embedded GitHub + guide (시안 카드)
             self._stack.addWidget(
                 self._page_guide(_STEP_START, _STEPS[_STEP_START][0], _STEPS[_STEP_START][1])
             )
             self._stack.addWidget(self._page_web())
             self._web_index = 1
             self._paste_index = 1  # token field lives on web page
+            self._progress.hide()  # counter lives inside the card
         else:
             for i, (title, body) in enumerate(_STEPS):
                 if i == _STEP_PASTE:
@@ -494,8 +648,13 @@ class ConnectGitHubWizard(QDialog):
         self._clip_timer.timeout.connect(self._poll_clipboard_for_token)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 16, 18, 14)
-        root.setSpacing(10)
+        if self._use_web:
+            # 시안: 바깥 회색(#e8e6e1) + 카드 주변 여백
+            root.setContentsMargins(0, 0, 0, 0)
+            root.setSpacing(0)
+        else:
+            root.setContentsMargins(18, 16, 18, 14)
+            root.setSpacing(10)
         root.addWidget(self._progress)
         root.addWidget(self._stack, 1)
         self._go(_STEP_START)
@@ -816,78 +975,187 @@ class ConnectGitHubWizard(QDialog):
         return w
 
     def _page_web(self) -> QWidget:
-        """Embedded GitHub + 4-step guide (desin/CloneUp GitHub 연결)."""
+        """시안 카드: 회색 배경 위 카드(헤더·본문·트랙·브라우저·안내·푸터).
+
+        Structure mirrors ``desin/CloneUp GitHub 연결.dc.html``:
+        outer gray → caption → card → privacy note.
+        """
         from app.ui.connect_webview import GitHubConnectWebPane, step_copy
+        from app.ui.icons import load_app_icon
 
-        w = QWidget()
-        w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        outer = QWidget()
+        outer.setObjectName("connOuter")
+        outer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        # Progress: 1 / 4 · 로그인
+        # --- top caption row (시안: 단계 힌트) ---
+        top_row = QWidget()
+        top_lay = QHBoxLayout(top_row)
+        top_lay.setContentsMargins(0, 0, 0, 0)
+        top_lay.setSpacing(12)
+        top_lab = QLabel("단계")
+        top_lab.setObjectName("wizMeta")
+        top_hint = QLabel("웹 화면은 앱이 감지해 단계를 스스로 넘깁니다")
+        top_hint.setObjectName("wizMeta")
+        top_lay.addWidget(top_lab)
+        top_lay.addStretch(1)
+        top_lay.addWidget(top_hint)
+
+        # --- main card ---
+        card = QFrame()
+        card.setObjectName("connCard")
+        card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        card_lay = QVBoxLayout(card)
+        card_lay.setContentsMargins(0, 0, 0, 0)
+        card_lay.setSpacing(0)
+
+        # header bar
+        header = QFrame()
+        header.setObjectName("connHeader")
+        header.setFixedHeight(42)
+        hdr = QHBoxLayout(header)
+        hdr.setContentsMargins(16, 0, 16, 0)
+        hdr.setSpacing(11)
+        icon = QLabel()
+        ic = load_app_icon()
+        if not ic.isNull():
+            icon.setPixmap(ic.pixmap(17, 17))
+        title_bar = QLabel("GitHub 연결")
+        title_bar.setStyleSheet("font-size:13px;font-weight:600;color:#3d382f;border:none;")
+        hdr.addWidget(icon)
+        hdr.addWidget(title_bar)
+        hdr.addStretch(1)
+
+        # title block — padding 18 22 14
+        title_block = QWidget()
+        tb = QVBoxLayout(title_block)
+        tb.setContentsMargins(22, 18, 22, 14)
+        tb.setSpacing(8)
         prog_row = QHBoxLayout()
         prog_row.setSpacing(9)
         self._web_counter = QLabel("1 / 4")
         self._web_counter.setObjectName("wizProgress")
         self._web_step_name = QLabel("로그인")
-        self._web_step_name.setObjectName("wizLead")
+        self._web_step_name.setObjectName("wizMeta")
         prog_row.addWidget(self._web_counter)
         prog_row.addWidget(self._web_step_name)
         prog_row.addStretch(1)
-
         self._web_stage_title = QLabel(str(step_copy(0)["title"]))
         self._web_stage_title.setObjectName("wizTitle")
         self._web_stage_title.setWordWrap(True)
-
         self._web_hint = QLabel(str(step_copy(0)["lead"]))
         self._web_hint.setObjectName("wizLead")
         self._web_hint.setWordWrap(True)
+        self._web_hint.setMaximumWidth(780)
+        tb.addLayout(prog_row)
+        tb.addWidget(self._web_stage_title)
+        tb.addWidget(self._web_hint)
 
-        # Track: past ✓ / current ring / future gray
+        # track — margin 0 22 14
+        track_wrap = QWidget()
+        tw = QVBoxLayout(track_wrap)
+        tw.setContentsMargins(22, 0, 22, 14)
+        tw.setSpacing(0)
         self._track_host = QFrame()
-        self._track_host.setObjectName("wizBox")
+        self._track_host.setObjectName("connTrack")
         self._track_lay = QHBoxLayout(self._track_host)
-        self._track_lay.setContentsMargins(10, 8, 10, 8)
+        self._track_lay.setContentsMargins(14, 11, 14, 11)
         self._track_lay.setSpacing(4)
         self._rebuild_track(0)
+        tw.addWidget(self._track_host)
 
-        # Address chrome (phishing defense)
+        # browser chrome — margin 0 22
+        browser_wrap = QWidget()
+        bw = QVBoxLayout(browser_wrap)
+        bw.setContentsMargins(22, 0, 22, 0)
+        bw.setSpacing(0)
+        browser = QFrame()
+        browser.setObjectName("connBrowser")
+        browser.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        br_lay = QVBoxLayout(browser)
+        br_lay.setContentsMargins(0, 0, 0, 0)
+        br_lay.setSpacing(0)
+
         addr = QFrame()
-        addr.setObjectName("wizBox")
+        addr.setObjectName("connAddrBar")
+        addr.setFixedHeight(40)
         addr_lay = QHBoxLayout(addr)
-        addr_lay.setContentsMargins(8, 6, 8, 6)
-        addr_lay.setSpacing(8)
+        addr_lay.setContentsMargins(12, 0, 12, 0)
+        addr_lay.setSpacing(10)
+        btn_back_nav = QPushButton("←")
+        btn_back_nav.setObjectName("connNavMini")
+        btn_back_nav.setEnabled(False)
+        btn_fwd_nav = QPushButton("→")
+        btn_fwd_nav.setObjectName("connNavMini")
+        btn_fwd_nav.setEnabled(False)
+        # URL field group: lock inside bar (시안)
+        url_box = QFrame()
+        url_box.setObjectName("connUrlBox")
+        url_box_lay = QHBoxLayout(url_box)
+        url_box_lay.setContentsMargins(10, 0, 10, 0)
+        url_box_lay.setSpacing(8)
         lock = QLabel("🔒")
+        lock.setStyleSheet("font-size:10px;color:#1f6f5c;border:none;background:transparent;")
         self._web_url = QLineEdit()
         self._web_url.setReadOnly(True)
-        self._web_url.setObjectName("patEdit")
+        self._web_url.setObjectName("connUrlInner")
         self._web_url.setText("https://github.com/")
         self._web_url.setCursorPosition(0)
-        only = QLabel("github.com에서만 열립니다")
-        only.setObjectName("wizLead")
-        addr_lay.addWidget(lock)
-        addr_lay.addWidget(self._web_url, 1)
+        self._web_url.setFrame(False)
+        url_box_lay.addWidget(lock)
+        url_box_lay.addWidget(self._web_url, 1)
+        only = QLabel("github.com 에서만 열립니다")
+        only.setObjectName("wizMeta")
+        only.setStyleSheet("font-size:11px;color:#6d675c;border:none;")
+        addr_lay.addWidget(btn_back_nav)
+        addr_lay.addWidget(btn_fwd_nav)
+        addr_lay.addWidget(url_box, 1)
         addr_lay.addWidget(only)
 
-        self._web_pane = GitHubConnectWebPane(w)
+        self._web_pane = GitHubConnectWebPane(browser)
         self._web_pane.stage_changed.connect(self._on_web_stage)
         self._web_pane.url_changed.connect(self._on_web_url)
         self._web_pane.token_found.connect(self._apply_detected_token)
         self._web_pane.load_failed.connect(self._on_web_load_failed)
+        br_lay.addWidget(addr)
+        br_lay.addWidget(self._web_pane, 1)
+        bw.addWidget(browser, 1)
 
-        # Watch banner
-        self._web_watch = QLabel()
-        self._web_watch.setObjectName("wizBox")
-        self._web_watch.setWordWrap(True)
+        # watch banner — margin 14 22 0
+        watch_wrap = QWidget()
+        ww = QVBoxLayout(watch_wrap)
+        ww.setContentsMargins(22, 14, 22, 0)
+        ww.setSpacing(0)
+        self._web_watch = QFrame()
+        self._web_watch.setObjectName("connWatch")
+        watch_lay = QHBoxLayout(self._web_watch)
+        watch_lay.setContentsMargins(14, 11, 14, 11)
+        watch_lay.setSpacing(11)
+        self._web_watch_tag = QLabel("기다리는 중")
+        self._web_watch_tag.setObjectName("connWatchTag")
+        self._web_watch_body = QLabel("")
+        self._web_watch_body.setObjectName("wizLead")
+        self._web_watch_body.setWordWrap(True)
+        watch_lay.addWidget(self._web_watch_tag, 0, Qt.AlignmentFlag.AlignTop)
+        watch_lay.addWidget(self._web_watch_body, 1)
+        ww.addWidget(self._web_watch)
 
-        # Key row — only on step 4 (키 복사)
+        # key row — margin 14 22 0, step 4 only
+        key_wrap = QWidget()
+        kw = QVBoxLayout(key_wrap)
+        kw.setContentsMargins(22, 14, 22, 0)
+        kw.setSpacing(8)
         self._key_row = QWidget()
         key_lay = QHBoxLayout(self._key_row)
         key_lay.setContentsMargins(0, 0, 0, 0)
-        key_lay.setSpacing(8)
+        key_lay.setSpacing(10)
         self._edit = QLineEdit()
         self._edit.setObjectName("patEdit")
         self._edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._edit.setPlaceholderText("키가 여기 채워지거나, 직접 붙여 넣으세요")
         self._edit.setClearButtonEnabled(True)
+        self._edit.setMinimumHeight(40)
         self._edit.textChanged.connect(lambda _t: self._sync_web_cta())
         btn_paste = QPushButton("붙여넣기")
         btn_paste.setObjectName("btnSecondary")
@@ -899,61 +1167,98 @@ class ConnectGitHubWizard(QDialog):
         key_lay.addWidget(self._edit, 1)
         key_lay.addWidget(btn_paste)
         key_lay.addWidget(self._btn_toggle)
-        self._key_row.hide()
-
         self._key_note = QLabel("")
-        self._key_note.setObjectName("wizLead")
+        self._key_note.setObjectName("wizMeta")
         self._key_note.setWordWrap(True)
-        self._key_note.hide()
+        kw.addWidget(self._key_row)
+        kw.addWidget(self._key_note)
+        key_wrap.hide()  # shown only on step 4 via _paint_web_guide
+        self._key_wrap = key_wrap
 
-        privacy = QLabel(
-            "앱이 감지하는 것: 주소 변화만 봅니다. "
-            "입력란의 내용(비밀번호·인증 코드)은 읽지 않으며 GitHub로 바로 갑니다."
-        )
-        privacy.setObjectName("wizLead")
-        privacy.setWordWrap(True)
-
-        btn_ext = QPushButton("외부 브라우저로 열기")
-        btn_ext.setObjectName("btnSecondary")
-        btn_ext.clicked.connect(self._open_external_from_web)
-        btn_back = QPushButton("← 이전")
-        btn_back.setObjectName("btnGhost")
-        btn_back.clicked.connect(lambda: self._go(0))
+        # footer — padding 16 22, margin-top 16 via spacer feel
+        footer = QFrame()
+        footer.setObjectName("connFooter")
+        footer.setFixedHeight(68)
+        foot = QHBoxLayout(footer)
+        foot.setContentsMargins(22, 0, 22, 0)
+        foot.setSpacing(12)
         btn_cancel = QPushButton("취소")
         btn_cancel.setObjectName("btnGhost")
         btn_cancel.clicked.connect(self.reject)
-
+        btn_back = QPushButton("← 이전")
+        btn_back.setObjectName("btnGhost")
+        btn_back.clicked.connect(lambda: self._go(0))
+        btn_ext = QPushButton("외부 브라우저로 열기")
+        btn_ext.setObjectName("btnSecondary")
+        btn_ext.clicked.connect(self._open_external_from_web)
         self._web_cta_note = QLabel("로그인하면 자동으로 진행됩니다")
-        self._web_cta_note.setObjectName("wizLead")
+        self._web_cta_note.setObjectName("wizMeta")
         self._web_cta = QPushButton("다음")
-        self._web_cta.setObjectName("btnSecondary")
+        self._web_cta.setObjectName("btnPrimary")
         self._web_cta.setEnabled(False)
         self._web_cta.clicked.connect(self._on_web_cta)
+        foot.addWidget(btn_cancel)
+        foot.addWidget(btn_back)
+        foot.addWidget(btn_ext)
+        foot.addStretch(1)
+        foot.addWidget(self._web_cta_note)
+        foot.addWidget(self._web_cta)
 
-        nav = QHBoxLayout()
-        nav.addWidget(btn_cancel)
-        nav.addWidget(btn_back)
-        nav.addWidget(btn_ext)
-        nav.addStretch(1)
-        nav.addWidget(self._web_cta_note)
-        nav.addWidget(self._web_cta)
+        card_lay.addWidget(header)
+        card_lay.addWidget(title_block, 0)
+        card_lay.addWidget(track_wrap, 0)
+        card_lay.addWidget(browser_wrap, 1)
+        card_lay.addWidget(watch_wrap, 0)
+        card_lay.addWidget(key_wrap, 0)
+        card_lay.addSpacing(16)
+        card_lay.addWidget(footer)
 
-        lay = QVBoxLayout(w)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
-        lay.addLayout(prog_row)
-        lay.addWidget(self._web_stage_title)
-        lay.addWidget(self._web_hint)
-        lay.addWidget(self._track_host)
-        lay.addWidget(addr)
-        lay.addWidget(self._web_pane, 1)
-        lay.addWidget(self._web_watch)
-        lay.addWidget(self._key_row)
-        lay.addWidget(self._key_note)
-        lay.addWidget(privacy)
-        lay.addLayout(nav)
+        # privacy card under main card
+        privacy = QFrame()
+        privacy.setObjectName("connPrivacy")
+        privacy.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
+        priv_lay = QVBoxLayout(privacy)
+        priv_lay.setContentsMargins(20, 12, 20, 12)
+        priv_lay.setSpacing(6)
+        priv_title = QLabel("앱이 감지하는 것")
+        priv_title.setStyleSheet(
+            "font-size:12.5px;font-weight:600;color:#232019;border:none;"
+        )
+        priv_body = QLabel(
+            "주소 변화만 봅니다. /login → /sessions/two-factor → "
+            "/settings/tokens/new → 발급 완료 페이지. "
+            "입력란·비밀번호·인증 코드는 읽지 않습니다. "
+            "키는 발급 완료 화면에서 한 번만 보이므로, "
+            "그 순간 아래 칸이 열립니다."
+        )
+        priv_body.setObjectName("wizLead")
+        priv_body.setWordWrap(True)
+        priv_lay.addWidget(priv_title)
+        priv_lay.addWidget(priv_body)
+
+        # Card column fills width; outer margins leave gray frame (시안 구조).
+        # (고정 1100px 중앙 정렬은 넓은 화면에서 양쪽 빈 여백이 과도함.)
+        col = QWidget()
+        col.setMinimumWidth(920)
+        col.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        col_lay = QVBoxLayout(col)
+        col_lay.setContentsMargins(0, 0, 0, 0)
+        col_lay.setSpacing(14)
+        col_lay.addWidget(top_row)
+        col_lay.addWidget(card, 1)
+        col_lay.addWidget(privacy, 0)
+
+        out = QVBoxLayout(outer)
+        out.setContentsMargins(24, 18, 24, 18)
+        out.setSpacing(0)
+        out.addWidget(col, 1)
+
         self._paint_web_guide(0)
-        return w
+        return outer
 
     def _rebuild_track(self, now: int) -> None:
         from app.ui.connect_webview import UI_STEP_NAMES
@@ -1017,22 +1322,46 @@ class ConnectGitHubWizard(QDialog):
         now = max(0, min(now, 3))
         self._ui_now = now
         copy = step_copy(now)
-        self._web_counter.setText(f"{now + 1} / 4")
-        self._web_step_name.setText(str(copy["stepName"]))
+        if self._web_counter is not None:
+            self._web_counter.setText(f"{now + 1} / 4")
+        if self._web_step_name is not None:
+            self._web_step_name.setText(str(copy["stepName"]))
         self._progress.setText(f"{now + 1} / 4  ·  {copy['stepName']}")
-        self._web_stage_title.setText(str(copy["title"]))
-        self._web_hint.setText(str(copy["lead"]))
-        self._web_watch.setText(f"{copy['watchTag']} — {copy['watchBody']}")
+        if self._web_stage_title is not None:
+            self._web_stage_title.setText(str(copy["title"]))
+        if self._web_hint is not None:
+            self._web_hint.setText(str(copy["lead"]))
+
+        # Watch banner: tag + body as separate widgets (시안)
+        warn = bool(copy.get("watchWarn", False)) or str(copy["watchTag"]) == "주의"
+        if self._web_watch is not None:
+            self._web_watch.setObjectName("connWatchWarn" if warn else "connWatch")
+            self._web_watch.style().unpolish(self._web_watch)
+            self._web_watch.style().polish(self._web_watch)
+            self._web_watch.update()
+        if self._web_watch_tag is not None:
+            self._web_watch_tag.setText(str(copy["watchTag"]))
+            self._web_watch_tag.setObjectName(
+                "connWatchTagWarn" if warn else "connWatchTag"
+            )
+            self._web_watch_tag.style().unpolish(self._web_watch_tag)
+            self._web_watch_tag.style().polish(self._web_watch_tag)
+        if self._web_watch_body is not None:
+            self._web_watch_body.setText(str(copy["watchBody"]))
+
         self._rebuild_track(now)
         show_key = bool(copy["showKey"])
-        if self._key_row is not None:
+        key_wrap = getattr(self, "_key_wrap", None)
+        if key_wrap is not None:
+            key_wrap.setVisible(show_key)
+        elif self._key_row is not None:
             self._key_row.setVisible(show_key)
         if self._key_note is not None:
             self._key_note.setVisible(show_key)
             if show_key:
                 self._key_note.setText(
                     "복사 버튼을 누르면 이 칸이 채워집니다. "
-                    "화면을 떠나면 키를 다시 볼 수 없습니다."
+                    "화면에는 앞자리만 보입니다."
                 )
         self._sync_web_cta()
 
@@ -1042,20 +1371,19 @@ class ConnectGitHubWizard(QDialog):
         from app.ui.connect_webview import step_copy
 
         copy = step_copy(self._ui_now)
+        # CTA always uses btnPrimary — disabled QSS matches 시안 gray next
+        self._web_cta.setObjectName("btnPrimary")
         if self._ui_now < 3:
             self._web_cta.setText("다음")
             self._web_cta.setEnabled(False)
-            self._web_cta.setObjectName("btnSecondary")
             self._web_cta_note.setText(str(copy["ctaNote"]))
         else:
             has = bool((self._edit.text() or "").strip()) if hasattr(self, "_edit") else False
             self._web_cta.setText("연결")
             self._web_cta.setEnabled(has)
-            self._web_cta.setObjectName("btnPrimary" if has else "btnSecondary")
             self._web_cta_note.setText(
                 "" if has else "키를 칸에 넣으면 연결할 수 있습니다"
             )
-        # Re-apply stylesheet for objectName change
         self._web_cta.style().unpolish(self._web_cta)
         self._web_cta.style().polish(self._web_cta)
 

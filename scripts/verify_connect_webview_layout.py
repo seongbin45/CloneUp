@@ -53,9 +53,9 @@ def main() -> int:
         print(f"dialog={dw}x{dh} pane={pw}x{ph} view={vw}x{vh}")
         if dw < 900 or dh < 600:
             errors.append(f"dialog too small: {dw}x{dh}")
-        if vw < 640 or vh < 400:
+        if vw < 560 or vh < 280:
             errors.append(f"webview clipped/collapsed: {vw}x{vh}")
-        if ph < 400:
+        if ph < 280:
             errors.append(f"web pane height too small: {ph}")
         # Nearly work-area sized (taskbar excluded via availableGeometry)
         screen = wiz.screen() or __import__(
@@ -79,6 +79,61 @@ def main() -> int:
         hint = pane.sizeHint() if pane is not None else None
         if hint is not None and (hint.width() < 400 or hint.height() < 300):
             errors.append(f"pane sizeHint still tiny: {hint.width()}x{hint.height()}")
+
+        # 시안 카드 구조: gray outer + card chrome + step guide
+        if wiz.objectName() != "connectWebDialog":
+            errors.append(f"dialog objectName={wiz.objectName()!r}")
+        from PySide6.QtWidgets import QFrame
+
+        card = wiz.findChild(QFrame, "connCard")
+        if card is None:
+            errors.append("missing connCard")
+        else:
+            print(f"card={card.width()}x{card.height()}")
+            if card.width() < 900:
+                errors.append(f"card too narrow: {card.width()}")
+            # Card should nearly fill dialog width (gray frame ~24px each side)
+            if dw - card.width() > 80:
+                errors.append(
+                    f"card not filling dialog (gutters too large): "
+                    f"dialog={dw} card={card.width()}"
+                )
+        if wiz.findChild(QFrame, "connHeader") is None:
+            errors.append("missing connHeader")
+        if wiz.findChild(QFrame, "connFooter") is None:
+            errors.append("missing connFooter")
+        if wiz.findChild(QFrame, "connTrack") is None:
+            errors.append("missing connTrack")
+        if wiz.findChild(QFrame, "connBrowser") is None:
+            errors.append("missing connBrowser")
+        if wiz.findChild(QFrame, "connPrivacy") is None:
+            errors.append("missing connPrivacy")
+        if wiz.findChild(QFrame, "connWatch") is None:
+            errors.append("missing connWatch")
+
+        # Step 1 defaults: key hidden, CTA disabled "다음"
+        wiz._paint_web_guide(0)
+        key_wrap = getattr(wiz, "_key_wrap", None)
+        if key_wrap is not None and key_wrap.isVisible():
+            errors.append("key row visible on step 1")
+        if wiz._web_cta is None or wiz._web_cta.isEnabled():
+            errors.append("CTA should be disabled on step 1")
+        if wiz._web_cta is not None and wiz._web_cta.text() != "다음":
+            errors.append(f"CTA text on step1={wiz._web_cta.text()!r}")
+        if wiz._web_counter is not None and wiz._web_counter.text() != "1 / 4":
+            errors.append(f"counter={wiz._web_counter.text()!r}")
+
+        # Step 4: key visible, warn watch, CTA "연결"
+        wiz._paint_web_guide(3)
+        if key_wrap is not None and not key_wrap.isVisible():
+            errors.append("key row hidden on step 4")
+        if wiz._web_watch is not None and wiz._web_watch.objectName() != "connWatchWarn":
+            errors.append(f"watch on step4={wiz._web_watch.objectName()!r}")
+        if wiz._web_cta is not None and wiz._web_cta.text() != "연결":
+            errors.append(f"CTA text on step4={wiz._web_cta.text()!r}")
+        if wiz._web_counter is not None and wiz._web_counter.text() != "4 / 4":
+            errors.append(f"counter step4={wiz._web_counter.text()!r}")
+
         wiz.close()
         app.quit()
 

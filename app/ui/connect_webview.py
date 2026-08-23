@@ -98,9 +98,9 @@ def step_copy(i: int) -> dict[str, str | bool]:
             "watchTag": "기다리는 중",
             "watchBody": (
                 "로그인이 끝나면 다음 단계로 저절로 넘어갑니다. "
-                "버튼을 누르지 않아도 됩니다. "
-                "패스키가 막히면 비밀번호로 로그인하세요."
+                "버튼을 누르지 않아도 됩니다."
             ),
+            "watchWarn": False,
             "ctaNote": "로그인하면 자동으로 진행됩니다",
             "showKey": False,
         },
@@ -117,6 +117,7 @@ def step_copy(i: int) -> dict[str, str | bool]:
                 "코드는 GitHub로 바로 갑니다. "
                 "클론업은 코드를 저장하거나 읽지 않습니다."
             ),
+            "watchWarn": False,
             "ctaNote": "인증되면 자동으로 진행됩니다",
             "showKey": False,
         },
@@ -132,6 +133,7 @@ def step_copy(i: int) -> dict[str, str | bool]:
                 "여기서 만드는 키는 이 앱이 저장소를 읽고 쓰는 데만 씁니다. "
                 "계정 설정을 바꾸는 권한은 들어 있지 않습니다."
             ),
+            "watchWarn": False,
             "ctaNote": "키가 만들어지면 자동으로 진행됩니다",
             "showKey": False,
         },
@@ -149,6 +151,7 @@ def step_copy(i: int) -> dict[str, str | bool]:
                 "다른 곳에 붙여 넣거나 남에게 보여주지 마세요. "
                 "클론업은 이 컴퓨터의 자격 증명 저장소에만 넣어 둡니다."
             ),
+            "watchWarn": True,
             "ctaNote": "",
             "showKey": True,
         },
@@ -201,11 +204,12 @@ class GitHubConnectWebPane(QWidget):
 
         self._view = QWebEngineView(self)
         # Default sizeHint is tiny (~100×30) and will collapse layouts.
-        self._view.setMinimumSize(720, 480)
+        # Prefer expanding; keep a usable floor without forcing the card to overflow.
+        self._view.setMinimumSize(640, 320)
         self._view.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        self.setMinimumSize(720, 480)
+        self.setMinimumSize(640, 320)
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
