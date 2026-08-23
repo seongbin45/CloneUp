@@ -57,24 +57,32 @@ def main() -> int:
             errors.append(f"webview clipped/collapsed: {vw}x{vh}")
         if ph < 280:
             errors.append(f"web pane height too small: {ph}")
-        # Nearly work-area sized (taskbar excluded via availableGeometry)
+        # Fill work area (1920×1080 etc.); taskbar excluded via availableGeometry
+        from PySide6.QtCore import Qt as _Qt
+
         screen = wiz.screen() or __import__(
             "PySide6.QtGui", fromlist=["QGuiApplication"]
         ).QGuiApplication.primaryScreen()
         if screen is not None:
             avail = screen.availableGeometry()
-            if dw < int(avail.width() * 0.85) or dh < int(avail.height() * 0.85):
+            print(
+                f"avail={avail.width()}x{avail.height()} "
+                f"maximized={bool(wiz.windowState() & _Qt.WindowState.WindowMaximized)}"
+            )
+            if dw < int(avail.width() * 0.92) or dh < int(avail.height() * 0.92):
                 errors.append(
-                    f"dialog not near work-area: {dw}x{dh} vs avail {avail.width()}x{avail.height()}"
+                    f"dialog not filling work-area: {dw}x{dh} vs avail "
+                    f"{avail.width()}x{avail.height()}"
                 )
         # Must keep normal window chrome (close button), not frameless fullscreen
         flags = int(wiz.windowFlags())
-        from PySide6.QtCore import Qt as _Qt
 
         if wiz.windowState() & _Qt.WindowState.WindowFullScreen:
             errors.append("must not use WindowFullScreen (taskbar/X would go away)")
         if flags & int(_Qt.WindowType.FramelessWindowHint):
             errors.append("must not be frameless (need title-bar X)")
+        if not (flags & int(_Qt.WindowType.WindowCloseButtonHint)):
+            errors.append("WindowCloseButtonHint missing (need title-bar X)")
         # sizeHint must not be the infamous tiny default
         hint = pane.sizeHint() if pane is not None else None
         if hint is not None and (hint.width() < 400 or hint.height() < 300):
@@ -150,7 +158,8 @@ def main() -> int:
         wiz.close()
         app.quit()
 
-    QTimer.singleShot(200, _check)
+    # Allow showEvent → showMaximized to settle before measuring
+    QTimer.singleShot(400, _check)
     app.exec()
     if errors:
         print("FAIL:")

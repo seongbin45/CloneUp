@@ -594,8 +594,16 @@ class ConnectGitHubWizard(QDialog):
 
         self.setWindowTitle("CloneUp — GitHub 연결")
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setWindowOpacity(1.0)
+        # Normal chrome: title bar + close (X). Never frameless / FullScreen.
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowSystemMenuHint
+            | Qt.WindowType.WindowMinMaxButtonsHint
+            | Qt.WindowType.WindowCloseButtonHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
         try:
             from app.ui.icons import load_app_icon
 
@@ -606,7 +614,7 @@ class ConnectGitHubWizard(QDialog):
             pass
         if self._use_web:
             self.setObjectName("connectWebDialog")
-            # Floor only — initial size is near work-area; user may resize.
+            # Floor only — opens maximized; user may restore and resize.
             self.setMinimumSize(900, 600)
             # Do not call adjustSize() in web mode — it collapses QWebEngineView.
         else:
@@ -661,33 +669,44 @@ class ConnectGitHubWizard(QDialog):
         else:
             self._place_center_on_anchor()
 
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        # Maximize after the window is actually shown so WM applies it.
+        if self._use_web and not getattr(self, "_web_sized", False):
+            self._web_sized = True
+            QTimer.singleShot(0, self._fit_web_dialog)
+
     def _fit_web_dialog(self) -> None:
         """
-        Nearly fill the work area (taskbar stays visible).
+        Fill the display work area (e.g. 1920×1080 minus taskbar).
 
-        Uses ``availableGeometry`` (excludes taskbar), keeps normal window
-        chrome so the title-bar close (X) remains. Not Qt FullScreen.
-        Minimum size stays modest so the user can resize freely.
+        Uses ``showMaximized`` / ``availableGeometry`` — **not**
+        ``WindowFullScreen`` and **not** frameless — so the OS title bar
+        and close (X) stay. User can restore and resize (min 900×600).
         """
-        margin = 8  # small inset so edges are not flush against screen chrome
         try:
             screen = None
             if self._anchor is not None:
                 screen = self._anchor.screen()
             if screen is None:
-                screen = QGuiApplication.primaryScreen()
+                screen = self.screen()
             if screen is None:
-                self.resize(1100, 760)
+                screen = QGuiApplication.primaryScreen()
+            self.setMinimumSize(900, 600)
+            # Never FullScreen (would hide X / taskbar)
+            if self.windowState() & Qt.WindowState.WindowFullScreen:
+                self.setWindowState(
+                    self.windowState() & ~Qt.WindowState.WindowFullScreen
+                )
+            if screen is None:
+                self.resize(1920, 1040)
                 return
             avail = screen.availableGeometry()
-            w = max(980, avail.width() - margin * 2)
-            h = max(680, avail.height() - margin * 2)
-            # Keep a resizable floor; do NOT lock min to near-fullscreen size.
-            self.setMinimumSize(900, 600)
-            self.resize(w, h)
-            self.move(avail.x() + margin, avail.y() + margin)
+            self.setGeometry(avail)
+            # Maximized = work-area fill with title-bar X kept
+            self.showMaximized()
         except Exception:
-            self.resize(1100, 760)
+            self.resize(1920, 1040)
 
     def _place_center_on_anchor(self) -> None:
         if self._anchor is None:
