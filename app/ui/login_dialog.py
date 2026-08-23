@@ -781,6 +781,30 @@ class ConnectGitHubWizard(QDialog):
         self._clip_seen = text
         self._apply_detected_token(text)
 
+    def _open_url_in_external_browser(self, url: str) -> None:
+        """Open ``url`` in the OS browser and yield the screen (minimize).
+
+        ``WindowStaysOnTopHint`` otherwise keeps this dialog over Chrome/Edge.
+        Clipboard watch stays on so a copied key can restore the dialog.
+        """
+        QDesktopServices.openUrl(QUrl(url))
+        self._browser_opened = True
+        if not self._clip_timer.isActive():
+            self._clip_timer.start()
+        # Let the browser take the foreground
+        self.showMinimized()
+
+    def _restore_from_yield(self) -> None:
+        """Bring the dialog back after external-browser yield / token detect."""
+        if self.isMinimized():
+            if self._use_web:
+                self.showMaximized()
+            else:
+                self.showNormal()
+        self.setWindowOpacity(1.0)
+        self.raise_()
+        self.activateWindow()
+
     def _apply_detected_token(self, text: str) -> None:
         if hasattr(self, "_edit") and self._edit is not None:
             self._edit.setText(text)
@@ -795,8 +819,7 @@ class ConnectGitHubWizard(QDialog):
         else:
             if self._stack.currentIndex() != _STEP_PASTE:
                 self._go(_STEP_PASTE)
-        self.raise_()
-        self.activateWindow()
+        self._restore_from_yield()
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._stop_clipboard_watch()
@@ -936,9 +959,12 @@ class ConnectGitHubWizard(QDialog):
             btn_fine.clicked.connect(self._open_fine_and_paste)
             btn_list = QPushButton("키 목록")
             btn_list.setObjectName("btnSecondary")
-            btn_list.setToolTip("GitHub에 이미 있는 키 목록을 엽니다.")
+            btn_list.setToolTip(
+                "GitHub에 이미 있는 키 목록을 엽니다. "
+                "연결 창은 잠시 최소화됩니다."
+            )
             btn_list.clicked.connect(
-                lambda: QDesktopServices.openUrl(QUrl(PAT_LIST_URL))
+                lambda: self._open_url_in_external_browser(PAT_LIST_URL)
             )
             side.addWidget(btn_fine)
             side.addWidget(btn_list)
@@ -1496,12 +1522,13 @@ class ConnectGitHubWizard(QDialog):
 
     def _open_external_from_web(self) -> None:
         url = PAT_CREATE_URL_FINE if self._via_fine else PAT_CREATE_URL
-        QDesktopServices.openUrl(QUrl(url))
         if self._web_hint is not None:
             self._web_hint.setText(
                 "외부 브라우저에서 키를 만든 뒤 복사하세요. "
-                "복사되면 키 칸에 자동으로 들어올 수 있습니다."
+                "복사되면 키 칸에 자동으로 들어올 수 있습니다. "
+                "연결 창은 작업 표시줄로 잠시 내려 두었습니다."
             )
+        self._open_url_in_external_browser(url)
 
     def _page_paste(self, title: str, body: str) -> QWidget:
         w = QWidget()
