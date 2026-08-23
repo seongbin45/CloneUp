@@ -1205,6 +1205,47 @@ class ConnectGitHubWizard(QDialog):
         self._paint_web_guide(0)
         return outer
 
+    @staticmethod
+    def _track_mark(done: bool, cur: bool) -> QWidget:
+        """시안: 15×15 circle (border-radius: 50%)."""
+
+        class _CircleMark(QWidget):
+            def __init__(self, *, done: bool, cur: bool) -> None:
+                super().__init__()
+                self._done = done
+                self._cur = cur
+                self.setFixedSize(15, 15)
+                self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+            def paintEvent(self, event) -> None:  # noqa: N802
+                from PySide6.QtGui import QColor, QPainter, QPen
+
+                p = QPainter(self)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                # Inset 0.5 so the 1px stroke sits fully inside the 15×15 box
+                rect = self.rect().adjusted(1, 1, -1, -1)
+                if self._done:
+                    p.setBrush(QColor("#1f6f5c"))
+                    p.setPen(QPen(QColor("#1f6f5c"), 1))
+                    p.drawEllipse(rect)
+                    p.setPen(QColor("#fbfaf8"))
+                    font = p.font()
+                    font.setPixelSize(9)
+                    font.setBold(True)
+                    p.setFont(font)
+                    p.drawText(self.rect(), int(Qt.AlignmentFlag.AlignCenter), "✓")
+                elif self._cur:
+                    p.setBrush(QColor("#fbfaf8"))
+                    p.setPen(QPen(QColor("#1f6f5c"), 1))
+                    p.drawEllipse(rect)
+                else:
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.setPen(QPen(QColor("#cdc8bf"), 1))
+                    p.drawEllipse(rect)
+                p.end()
+
+        return _CircleMark(done=done, cur=cur)
+
     def _rebuild_track(self, now: int) -> None:
         from app.ui.connect_webview import UI_STEP_NAMES
 
@@ -1222,40 +1263,33 @@ class ConnectGitHubWizard(QDialog):
             hl = QHBoxLayout(cell)
             hl.setContentsMargins(7 if cur else 5, 5, 11 if cur else 7, 5)
             hl.setSpacing(7)
-            mark = QLabel("✓" if done else "")
-            mark.setFixedSize(15, 15)
-            mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            if done:
-                mark.setStyleSheet(
-                    "background:#1f6f5c;color:#fbfaf8;border-radius:8px;"
-                    "font-size:9px;font-weight:700;border:1px solid #1f6f5c;"
-                )
-            elif cur:
-                mark.setStyleSheet(
-                    "background:#fbfaf8;border-radius:8px;"
-                    "border:1px solid #1f6f5c;"
-                )
-            else:
-                mark.setStyleSheet(
-                    "background:transparent;border-radius:8px;"
-                    "border:1px solid #cdc8bf;"
-                )
+            mark = self._track_mark(done, cur)
             lab = QLabel(label)
             if cur:
-                lab.setStyleSheet("color:#1f6f5c;font-weight:600;font-size:12.5px;")
-                cell.setStyleSheet(
-                    "background:#fbfaf8;border-radius:5px;"
+                lab.setStyleSheet(
+                    "color:#1f6f5c;font-weight:600;font-size:12.5px;"
+                    "background:transparent;border:none;"
                 )
+                cell.setStyleSheet("background:#fbfaf8;border-radius:5px;")
             elif done:
-                lab.setStyleSheet("color:#4a453b;font-size:12.5px;")
+                lab.setStyleSheet(
+                    "color:#4a453b;font-size:12.5px;"
+                    "background:transparent;border:none;"
+                )
             else:
-                lab.setStyleSheet("color:#8b8477;font-size:12.5px;")
-            hl.addWidget(mark)
+                lab.setStyleSheet(
+                    "color:#8b8477;font-size:12.5px;"
+                    "background:transparent;border:none;"
+                )
+            hl.addWidget(mark, 0, Qt.AlignmentFlag.AlignVCenter)
             hl.addWidget(lab)
             self._track_lay.addWidget(cell)
             if n < len(UI_STEP_NAMES) - 1:
                 ar = QLabel("→")
-                ar.setStyleSheet("color:#b7b1a5;font-size:11px;")
+                ar.setStyleSheet(
+                    "color:#b7b1a5;font-size:11px;"
+                    "background:transparent;border:none;"
+                )
                 ar.setFixedWidth(18)
                 ar.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 self._track_lay.addWidget(ar)
