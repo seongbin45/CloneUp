@@ -623,8 +623,8 @@ class ConnectGitHubWizard(QDialog):
             pass
         if self._use_web:
             self.setObjectName("connectWebDialog")
-            # Floor only — opens maximized; user may restore and resize.
-            self.setMinimumSize(900, 720)
+            # Floor only — opens maximized; □ restores to 16:9 (min 960×540).
+            self.setMinimumSize(960, 540)
             # Do not call adjustSize() in web mode — it collapses QWebEngineView.
         else:
             self.setMinimumWidth(440)
@@ -721,10 +721,23 @@ class ConnectGitHubWizard(QDialog):
         chrome_r = max(0, fg.right() - geo.right())
         chrome_b = max(0, fg.bottom() - geo.bottom())
 
-        max_cw = max(900, avail.width() - chrome_l - chrome_r - 8)
-        max_ch = max(720, avail.height() - chrome_t - chrome_b - 8)
-        cw = min(max(width, 900), max_cw)
-        ch = min(max(height, 720), max_ch)
+        max_cw = max(960, avail.width() - chrome_l - chrome_r - 8)
+        max_ch = max(540, avail.height() - chrome_t - chrome_b - 8)
+        cw = min(width, max_cw)
+        ch = min(height, max_ch)
+        # Keep 16:9 if the caller asked for it (don't stretch height and leave a bottom gap)
+        if width > 0 and height > 0 and abs((width / height) - (16 / 9)) < 0.08:
+            if cw / max(ch, 1) > 16 / 9:
+                cw = max(960, int(ch * 16 / 9))
+            else:
+                ch = max(540, int(cw * 9 / 16))
+            cw = min(cw, max_cw)
+            ch = min(ch, max_ch)
+            # Re-fit after clamp so ratio survives both caps
+            if cw / max(ch, 1) > 16 / 9:
+                cw = int(ch * 16 / 9)
+            else:
+                ch = int(cw * 9 / 16)
         if cw != self.width() or ch != self.height():
             self.resize(cw, ch)
             if app is not None:
@@ -750,30 +763,38 @@ class ConnectGitHubWizard(QDialog):
 
         # setGeometry = client rect on Windows
         self.setGeometry(frame_x + chrome_l, frame_y + chrome_t, cw, ch)
-        # Lock height so sizeHint cannot push the footer under the taskbar
+        # Lock height so sizeHint cannot reintroduce a tall empty bottom band
         self.setMaximumHeight(ch)
 
     def _place_normal_web_size(self) -> None:
-        """Geometry Windows will restore to when the user clicks □."""
+        """□ restore size: 16:9 client, centered in the work area."""
         screen = self._screen_for_dialog()
         if screen is None:
-            self.resize(1200, 860)
+            self.resize(1280, 720)
             return
         avail = screen.availableGeometry()
-        w = max(980, min(1280, int(avail.width() * 0.88)))
-        h = max(760, int(avail.height() * 0.94))
+        # Largest 16:9 that fits with a small inset (avoids tall window + empty bottom)
+        box_w = max(960, int(avail.width() * 0.90))
+        box_h = max(540, int(avail.height() * 0.90))
+        if box_w / box_h >= 16 / 9:
+            h = box_h
+            w = int(h * 16 / 9)
+        else:
+            w = box_w
+            h = int(w * 9 / 16)
         self._fit_frame_in_available(w, h)
 
     def _fit_web_dialog(self) -> None:
         """
-        Open maximized. □ restores to ``_place_normal_web_size()``.
+        Open maximized. □ restores to 16:9 via ``_place_normal_web_size()``.
 
         Window chrome only — does not change inner layout.
         Must ``showNormal`` before placing, otherwise a second ``_fit`` while
         already maximized would shrink the window and leave it there.
         """
         try:
-            self.setMinimumSize(900, 720)
+            # 16:9 floor (960×540); user can still resize after □
+            self.setMinimumSize(960, 540)
             self.setMaximumSize(16777215, 16777215)
             if self.windowState() & Qt.WindowState.WindowFullScreen:
                 self.setWindowState(
@@ -785,7 +806,7 @@ class ConnectGitHubWizard(QDialog):
             self.setMaximumSize(16777215, 16777215)
             self.showMaximized()
         except Exception:
-            self.resize(1200, 860)
+            self.resize(1280, 720)
 
     def changeEvent(self, event) -> None:  # noqa: N802
         super().changeEvent(event)
