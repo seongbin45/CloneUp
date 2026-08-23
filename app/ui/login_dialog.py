@@ -263,10 +263,10 @@ def _dialog_style(p: Palette) -> str:
         background: {p.bg_window};
     }}
     QDialog#connectWebDialog {{
-        background: {p.bg_app};
+        background: #fbfaf8;
     }}
     QWidget#connOuter {{
-        background: {p.bg_app};
+        background: #fbfaf8;
     }}
     QLabel#wizTitle {{
         color: {p.text};
@@ -310,15 +310,12 @@ def _dialog_style(p: Palette) -> str:
     }}
     QFrame#connCard {{
         background: #fbfaf8;
-        border: 1px solid #c9c5bd;
-        border-radius: 10px;
+        border: none;
     }}
     QFrame#connHeader {{
         background: #f2efe9;
         border: none;
         border-bottom: 1px solid #ddd8d0;
-        border-top-left-radius: 10px;
-        border-top-right-radius: 10px;
     }}
     QFrame#connTrack {{
         background: #f2efe9;
@@ -397,13 +394,6 @@ def _dialog_style(p: Palette) -> str:
         background: #f2efe9;
         border: none;
         border-top: 1px solid #e6e1d8;
-        border-bottom-left-radius: 10px;
-        border-bottom-right-radius: 10px;
-    }}
-    QFrame#connPrivacy {{
-        background: #fbfaf8;
-        border: 1px solid #cdc8bf;
-        border-radius: 8px;
     }}
     QPushButton#connNavMini {{
         background: #fbfaf8;
@@ -602,14 +592,22 @@ class ConnectGitHubWizard(QDialog):
         self._use_web = webengine_available()
         p = active_palette()
 
-        self.setWindowTitle("GitHub 연결")
+        self.setWindowTitle("CloneUp — GitHub 연결")
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setWindowOpacity(1.0)
+        try:
+            from app.ui.icons import load_app_icon
+
+            ic = load_app_icon()
+            if not ic.isNull():
+                self.setWindowIcon(ic)
+        except Exception:
+            pass
         if self._use_web:
             self.setObjectName("connectWebDialog")
-            self.setMinimumWidth(980)
-            self.setMinimumHeight(680)
+            # Floor only — initial size is near work-area; user may resize.
+            self.setMinimumSize(900, 600)
             # Do not call adjustSize() in web mode — it collapses QWebEngineView.
         else:
             self.setMinimumWidth(440)
@@ -669,6 +667,7 @@ class ConnectGitHubWizard(QDialog):
 
         Uses ``availableGeometry`` (excludes taskbar), keeps normal window
         chrome so the title-bar close (X) remains. Not Qt FullScreen.
+        Minimum size stays modest so the user can resize freely.
         """
         margin = 8  # small inset so edges are not flush against screen chrome
         try:
@@ -683,7 +682,8 @@ class ConnectGitHubWizard(QDialog):
             avail = screen.availableGeometry()
             w = max(980, avail.width() - margin * 2)
             h = max(680, avail.height() - margin * 2)
-            self.setMinimumSize(min(980, w), min(680, h))
+            # Keep a resizable floor; do NOT lock min to near-fullscreen size.
+            self.setMinimumSize(900, 600)
             self.resize(w, h)
             self.move(avail.x() + margin, avail.y() + margin)
         except Exception:
@@ -975,13 +975,12 @@ class ConnectGitHubWizard(QDialog):
         return w
 
     def _page_web(self) -> QWidget:
-        """시안 카드: 회색 배경 위 카드(헤더·본문·트랙·브라우저·안내·푸터).
+        """시안 본문: 카운터·제목·트랙·브라우저·안내·푸터.
 
-        Structure mirrors ``desin/CloneUp GitHub 연결.dc.html``:
-        outer gray → caption → card → privacy note.
+        창 제목/아이콘만 OS 타이틀바에 두고, 바깥 회색·카드 헤더 로고·
+        하단 「앱이 감지하는 것」 박스는 넣지 않습니다.
         """
         from app.ui.connect_webview import GitHubConnectWebPane, step_copy
-        from app.ui.icons import load_app_icon
 
         outer = QWidget()
         outer.setObjectName("connOuter")
@@ -990,7 +989,7 @@ class ConnectGitHubWizard(QDialog):
         # --- top caption row (시안: 단계 힌트) ---
         top_row = QWidget()
         top_lay = QHBoxLayout(top_row)
-        top_lay.setContentsMargins(0, 0, 0, 0)
+        top_lay.setContentsMargins(22, 12, 22, 0)
         top_lay.setSpacing(12)
         top_lab = QLabel("단계")
         top_lab.setObjectName("wizMeta")
@@ -1000,7 +999,7 @@ class ConnectGitHubWizard(QDialog):
         top_lay.addStretch(1)
         top_lay.addWidget(top_hint)
 
-        # --- main card ---
+        # --- main body (no logo header; fills window cream bg) ---
         card = QFrame()
         card.setObjectName("connCard")
         card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -1008,27 +1007,10 @@ class ConnectGitHubWizard(QDialog):
         card_lay.setContentsMargins(0, 0, 0, 0)
         card_lay.setSpacing(0)
 
-        # header bar
-        header = QFrame()
-        header.setObjectName("connHeader")
-        header.setFixedHeight(42)
-        hdr = QHBoxLayout(header)
-        hdr.setContentsMargins(16, 0, 16, 0)
-        hdr.setSpacing(11)
-        icon = QLabel()
-        ic = load_app_icon()
-        if not ic.isNull():
-            icon.setPixmap(ic.pixmap(17, 17))
-        title_bar = QLabel("GitHub 연결")
-        title_bar.setStyleSheet("font-size:13px;font-weight:600;color:#3d382f;border:none;")
-        hdr.addWidget(icon)
-        hdr.addWidget(title_bar)
-        hdr.addStretch(1)
-
         # title block — padding 18 22 14
         title_block = QWidget()
         tb = QVBoxLayout(title_block)
-        tb.setContentsMargins(22, 18, 22, 14)
+        tb.setContentsMargins(22, 14, 22, 14)
         tb.setSpacing(8)
         prog_row = QHBoxLayout()
         prog_row.setSpacing(9)
@@ -1096,7 +1078,9 @@ class ConnectGitHubWizard(QDialog):
         url_box_lay.setContentsMargins(10, 0, 10, 0)
         url_box_lay.setSpacing(8)
         lock = QLabel("🔒")
-        lock.setStyleSheet("font-size:10px;color:#1f6f5c;border:none;background:transparent;")
+        lock.setStyleSheet(
+            "font-size:10px;color:#1f6f5c;border:none;background:transparent;"
+        )
         self._web_url = QLineEdit()
         self._web_url.setReadOnly(True)
         self._web_url.setObjectName("connUrlInner")
@@ -1175,7 +1159,7 @@ class ConnectGitHubWizard(QDialog):
         key_wrap.hide()  # shown only on step 4 via _paint_web_guide
         self._key_wrap = key_wrap
 
-        # footer — padding 16 22, margin-top 16 via spacer feel
+        # footer
         footer = QFrame()
         footer.setObjectName("connFooter")
         footer.setFixedHeight(68)
@@ -1204,7 +1188,6 @@ class ConnectGitHubWizard(QDialog):
         foot.addWidget(self._web_cta_note)
         foot.addWidget(self._web_cta)
 
-        card_lay.addWidget(header)
         card_lay.addWidget(title_block, 0)
         card_lay.addWidget(track_wrap, 0)
         card_lay.addWidget(browser_wrap, 1)
@@ -1213,49 +1196,11 @@ class ConnectGitHubWizard(QDialog):
         card_lay.addSpacing(16)
         card_lay.addWidget(footer)
 
-        # privacy card under main card
-        privacy = QFrame()
-        privacy.setObjectName("connPrivacy")
-        privacy.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
-        priv_lay = QVBoxLayout(privacy)
-        priv_lay.setContentsMargins(20, 12, 20, 12)
-        priv_lay.setSpacing(6)
-        priv_title = QLabel("앱이 감지하는 것")
-        priv_title.setStyleSheet(
-            "font-size:12.5px;font-weight:600;color:#232019;border:none;"
-        )
-        priv_body = QLabel(
-            "주소 변화만 봅니다. /login → /sessions/two-factor → "
-            "/settings/tokens/new → 발급 완료 페이지. "
-            "입력란·비밀번호·인증 코드는 읽지 않습니다. "
-            "키는 발급 완료 화면에서 한 번만 보이므로, "
-            "그 순간 아래 칸이 열립니다."
-        )
-        priv_body.setObjectName("wizLead")
-        priv_body.setWordWrap(True)
-        priv_lay.addWidget(priv_title)
-        priv_lay.addWidget(priv_body)
-
-        # Card column fills width; outer margins leave gray frame (시안 구조).
-        # (고정 1100px 중앙 정렬은 넓은 화면에서 양쪽 빈 여백이 과도함.)
-        col = QWidget()
-        col.setMinimumWidth(920)
-        col.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-        col_lay = QVBoxLayout(col)
-        col_lay.setContentsMargins(0, 0, 0, 0)
-        col_lay.setSpacing(14)
-        col_lay.addWidget(top_row)
-        col_lay.addWidget(card, 1)
-        col_lay.addWidget(privacy, 0)
-
         out = QVBoxLayout(outer)
-        out.setContentsMargins(24, 18, 24, 18)
+        out.setContentsMargins(0, 0, 0, 0)
         out.setSpacing(0)
-        out.addWidget(col, 1)
+        out.addWidget(top_row, 0)
+        out.addWidget(card, 1)
 
         self._paint_web_guide(0)
         return outer

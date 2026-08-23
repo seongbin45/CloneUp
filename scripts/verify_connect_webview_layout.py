@@ -80,9 +80,11 @@ def main() -> int:
         if hint is not None and (hint.width() < 400 or hint.height() < 300):
             errors.append(f"pane sizeHint still tiny: {hint.width()}x{hint.height()}")
 
-        # 시안 카드 구조: gray outer + card chrome + step guide
+        # Body structure (no outer gray, no in-card logo header, no privacy box)
         if wiz.objectName() != "connectWebDialog":
             errors.append(f"dialog objectName={wiz.objectName()!r}")
+        if "CloneUp" not in (wiz.windowTitle() or ""):
+            errors.append(f"window title should include app name: {wiz.windowTitle()!r}")
         from PySide6.QtWidgets import QFrame
 
         card = wiz.findChild(QFrame, "connCard")
@@ -92,24 +94,35 @@ def main() -> int:
             print(f"card={card.width()}x{card.height()}")
             if card.width() < 900:
                 errors.append(f"card too narrow: {card.width()}")
-            # Card should nearly fill dialog width (gray frame ~24px each side)
-            if dw - card.width() > 80:
+            # Content fills dialog (no gray outer gutters)
+            if dw - card.width() > 40:
                 errors.append(
-                    f"card not filling dialog (gutters too large): "
+                    f"card not filling dialog (unexpected gutters): "
                     f"dialog={dw} card={card.width()}"
                 )
-        if wiz.findChild(QFrame, "connHeader") is None:
-            errors.append("missing connHeader")
+        if wiz.findChild(QFrame, "connHeader") is not None:
+            errors.append("connHeader must not exist (logo/name only in window title)")
+        if wiz.findChild(QFrame, "connPrivacy") is not None:
+            errors.append("connPrivacy must not exist (no gray explanation box)")
         if wiz.findChild(QFrame, "connFooter") is None:
             errors.append("missing connFooter")
         if wiz.findChild(QFrame, "connTrack") is None:
             errors.append("missing connTrack")
         if wiz.findChild(QFrame, "connBrowser") is None:
             errors.append("missing connBrowser")
-        if wiz.findChild(QFrame, "connPrivacy") is None:
-            errors.append("missing connPrivacy")
         if wiz.findChild(QFrame, "connWatch") is None:
             errors.append("missing connWatch")
+
+        # Resizable: minimum must be well below current near-fullscreen size
+        min_sz = wiz.minimumSize()
+        print(f"min={min_sz.width()}x{min_sz.height()}")
+        if min_sz.width() >= dw - 20 or min_sz.height() >= dh - 20:
+            errors.append(
+                f"minimum size locks near-fullscreen (not resizable): "
+                f"min={min_sz.width()}x{min_sz.height()} dialog={dw}x{dh}"
+            )
+        if wiz.maximumWidth() < 100000 and wiz.maximumWidth() <= dw:
+            errors.append(f"maximumWidth caps resize: {wiz.maximumWidth()}")
 
         # Step 1 defaults: key hidden, CTA disabled "다음"
         wiz._paint_web_guide(0)
