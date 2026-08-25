@@ -171,7 +171,7 @@ def away_from_flow_guide_copy() -> tuple[str, str, str]:
     """title, lead, verify — soft, non-coercive (user may stay elsewhere)."""
     return (
         "지금은 GitHub 작업 화면이 아니에요",
-        "괜찮아요. 원하시면 이전 작업으로 돌아와도 됩니다.",
+        "괜찮아요. 원하시면 마지막 페이지로 돌아와도 됩니다.",
         "검증: GitHub 연계 주소가 아님",
     )
 
@@ -431,9 +431,9 @@ class ExternalBrowserPatGuide(QDialog):
         self._btn_open_tokens.clicked.connect(self._on_open_token_page_clicked)
         self._btn_open_tokens.hide()
 
-        self._btn_return_flow = QPushButton("이전 작업으로 돌아가기")
+        self._btn_return_flow = QPushButton("마지막으로 열었던 페이지로 돌아가기")
         self._btn_return_flow.setToolTip(
-            "직전에 보던 GitHub·로그인 연계 화면을 엽니다. "
+            "직전에 열었던 GitHub·로그인 연계 페이지를 다시 엽니다. "
             "원하지 않으면 누르지 않아도 됩니다."
         )
         self._btn_return_flow.clicked.connect(self._on_return_to_flow_clicked)
@@ -718,7 +718,7 @@ class ExternalBrowserPatGuide(QDialog):
         )
         self._status.setText(
             "다른 탭을 보셔도 됩니다. 준비가 되면 "
-            "「이전 작업으로 돌아가기」를 눌러 주세요."
+            "「마지막으로 열었던 페이지로 돌아가기」를 눌러 주세요."
         )
         self._btn_return_flow.show()
         # Don't hide token/reopen buttons aggressively — user may still want them
@@ -738,7 +738,7 @@ class ExternalBrowserPatGuide(QDialog):
             "font-size:11.5px;color:#1f6f5c;border:none;"
         )
         self._status.setText(
-            "이전 작업 화면을 열었어요. 이어서 진행해 주세요."
+            "마지막으로 열었던 페이지를 열었어요. 이어서 진행해 주세요."
         )
 
     def _reopen_github_login(self) -> None:
