@@ -712,7 +712,7 @@ class ConnectGitHubWizard(QDialog):
         place_normal_16x9(self, anchor=self._anchor)
 
     def _fit_choice_dialog(self) -> None:
-        """Compact, centered window for the path-choice card (not maximized)."""
+        """Compact, content-height window for the path-choice card (not maximized)."""
         from app.util.screen_fit import (
             clear_size_locks,
             fit_client_in_available,
@@ -734,21 +734,24 @@ class ConnectGitHubWizard(QDialog):
                 )
             self.showNormal()
             clear_size_locks(self)
-            self.setMinimumSize(440, 320)
-            # Card ~520 wide + chrome; height from hint with padding
+            # Hug content — do not force a tall minimum (that stretched the bottom)
+            self.setMinimumSize(440, 280)
+            self.setMaximumHeight(16777215)
+            self.adjustSize()
             hint = self.sizeHint()
-            w = max(520, min(560, hint.width() or 520))
-            h = max(380, min(520, (hint.height() or 400) + 24))
+            w = max(480, min(560, hint.width() or 520))
+            # Prefer actual hint height; only a small pad for chrome
+            h = max(300, (hint.height() or 340) + 8)
             info = read_screen_info(screen_for_widget(self, anchor=self._anchor))
             if info is not None:
                 w = min(w, max(400, info.available_w - 48))
-                h = min(h, max(320, info.available_h - 48))
+                h = min(h, max(280, info.available_h - 48))
             fit_client_in_available(
-                self, w, h, anchor=self._anchor, keep_16x9=False, lock_height=False
+                self, w, h, anchor=self._anchor, keep_16x9=False, lock_height=True
             )
             self._place_center_on_anchor()
         except Exception:
-            self.resize(520, 420)
+            self.resize(520, 360)
             self._place_center_on_anchor()
 
     def _fit_web_dialog(self) -> None:
@@ -1103,11 +1106,11 @@ class ConnectGitHubWizard(QDialog):
 
     def _page_choice(self) -> QWidget:
         """First screen: pick WebView (Path A) or external browser (Path B)."""
-        # Compact dialog: card fills the window (no huge gray empty shell)
+        # Height follows content — no Expanding/stretch (avoids elongated bottom)
         card = QFrame()
         card.setObjectName("connGuideCard")
         card.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
 
         head = QLabel(
@@ -1127,8 +1130,8 @@ class ConnectGitHubWizard(QDialog):
         lead.setWordWrap(True)
 
         lay = QVBoxLayout(card)
-        lay.setContentsMargins(28, 24, 28, 24)
-        lay.setSpacing(14)
+        lay.setContentsMargins(28, 24, 28, 20)
+        lay.setSpacing(12)
         lay.addWidget(head)
         lay.addWidget(lead)
 
@@ -1148,7 +1151,6 @@ class ConnectGitHubWizard(QDialog):
 
         lay.addWidget(btn_web)
         lay.addWidget(btn_ext)
-        lay.addStretch(1)
 
         nav = QHBoxLayout()
         nav.setSpacing(10)
@@ -1157,6 +1159,7 @@ class ConnectGitHubWizard(QDialog):
         btn_cancel.clicked.connect(self.reject)
         nav.addWidget(btn_cancel)
         nav.addStretch(1)
+        lay.addSpacing(4)
         lay.addLayout(nav)
         return card
 
