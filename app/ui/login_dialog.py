@@ -1765,15 +1765,22 @@ class ConnectGitHubWizard(QDialog):
         """
         Google blocks sign-in inside Qt WebEngine.
 
-        Close this large wizard UI, open the OS browser, and show a small
-        bottom-right translucent guide (checklist + paste + connect).
-        No GitHub OAuth app token exchange — still PAT via clipboard.
+        Close this large wizard UI, open a *fresh* GitHub login in the OS
+        browser (never the rejected Google URL), and show a small
+        bottom-right guide with checklist cross-checks.
         """
+        from app.ui.connect_webview import is_google_signin_rejected
         from app.ui.external_pat_guide import ExternalBrowserPatGuide
 
-        handoff = (url or "").strip() or (
-            PAT_CREATE_URL_FINE if self._via_fine else PAT_CREATE_URL
-        )
+        raw = (url or "").strip()
+        # Cross-check: do not reopen signin/rejected — start GitHub login fresh
+        if not raw or is_google_signin_rejected(raw):
+            handoff = "https://github.com/login"
+        elif "accounts.google.com" in raw.lower():
+            # Real Chrome can complete Google from GitHub's login page
+            handoff = "https://github.com/login"
+        else:
+            handoff = raw
         QDesktopServices.openUrl(QUrl(handoff))
         self._browser_opened = True
         self._stop_clipboard_watch()

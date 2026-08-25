@@ -22,13 +22,14 @@ from PySide6.QtWidgets import (
 )
 
 from app.auth.github_page_stage import GitHubPageStage, PageSnapshot, detect_github_page_stage
-from app.ui.connect_webview import is_google_oauth_url
+from app.ui.connect_webview import is_google_oauth_url, is_google_signin_rejected
 from app.util.browser_address import browser_address_available, read_browser_address_bar
 
 _GUIDE_OPACITY = 0.90
 _ADDR_POLL_MS = 3000
 _CLIP_POLL_MS = 500
 _TOKEN_PREFIXES = ("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")
+_GITHUB_LOGIN = "https://github.com/login"
 
 # Friendly checklist (high-school plain language)
 _CHECKLIST = (
@@ -46,26 +47,37 @@ def _looks_like_token(text: str) -> bool:
     return any(t.startswith(p) for p in _TOKEN_PREFIXES)
 
 
-def checklist_index_for_url(url: str) -> int | None:
-    """Map a browser URL to checklist index 0..3, or None if unknown."""
+def classify_browser_url(url: str) -> tuple[str, int | None]:
+    """
+    Cross-check omnibox URL → (kind, checklist_index).
+
+    kind:
+      - ``rejected``: Google insecure-browser / signin rejected (NOT success)
+      - ``current``: this step is in progress (do not mark prior as done alone)
+      - ``reached``: user has reached this step (sticky progress OK)
+      - ``unknown``: cannot classify
+    """
     u = (url or "").strip()
     if not u:
-        return None
+        return ("unknown", None)
+    # 1) Google error page must win over generic accounts.google.com
+    if is_google_signin_rejected(u):
+        return ("rejected", 0)
     if is_google_oauth_url(u):
-        return 0
+        # On Google, but not rejected yet — still signing in
+        return ("current", 0)
     st = detect_github_page_stage(PageSnapshot(url=u))
     if st == GitHubPageStage.TOKEN_ISSUED:
-        return 3
+        return ("reached", 3)
     if st in (
         GitHubPageStage.TOKEN_CLASSIC_NEW,
         GitHubPageStage.TOKEN_FINE_NEW,
         GitHubPageStage.TOKEN_CLASSIC_LIST,
         GitHubPageStage.TOKEN_FINE_LIST,
     ):
-        return 2
+        return ("reached", 2)
     if st in (GitHubPageStage.LOGIN, GitHubPageStage.AUTH_2FA):
-        return 1
-    # Any other github.com page after leaving Google ≈ back on GitHub
+        return ("reached", 1)
     try:
         from urllib.parse import urlparse
 
@@ -73,8 +85,16 @@ def checklist_index_for_url(url: str) -> int | None:
     except Exception:
         host = ""
     if host == "github.com" or host.endswith(".github.com"):
-        return 1
-    return None
+        return ("reached", 1)
+    return ("unknown", None)
+
+
+def checklist_index_for_url(url: str) -> int | None:
+    """Backward-compatible helper — rejected Google does **not** count as step 0 done."""
+    kind, idx = classify_browser_url(url)
+    if kind == "rejected":
+        return None
+    return idx
 
 
 class ExternalBrowserPatGuide(QDialog):
@@ -89,6 +109,8 @@ class ExternalBrowserPatGuide(QDialog):
         self._clip_seen = ""
         self._done = False
         self._reached = -1  # highest checklist index marked done
+        self._current: int | None = None  # in-progress step (●)
+        self._google_rejected = False
         self._check_labels: list[QLabel] = []
         self._last_url = ""
 
@@ -99,18 +121,18 @@ class ExternalBrowserPatGuide(QDialog):
         self.setMinimumWidth(380)
         self.setMaximumWidth(440)
 
-        title = QLabel("브라우저에서 이어서 하세요")
-        title.setStyleSheet(
+        self._title = QLabel("브라우저에서 이어서 하세요")
+        self._title.setStyleSheet(
             "font-size:15px;font-weight:600;color:#232019;border:none;"
         )
-        title.setWordWrap(True)
+        self._title.setWordWrap(True)
 
-        lead = QLabel(
+        self._lead = QLabel(
             "앱 안에서는 Google 로그인이 막혀 있어요. "
             "열린 브라우저에서 로그인한 다음, 키를 만들어 복사해 주세요."
         )
-        lead.setWordWrap(True)
-        lead.setStyleSheet("font-size:12.5px;color:#4a453b;border:none;")
+        self._lead.setWordWrap(True)
+        self._lead.setStyleSheet("font-size:12.5px;color:#4a453b;border:none;")
 
         self._url_lab = QLabel("주소: (아직 읽지 못함)")
         self._url_lab.setWordWrap(True)
@@ -122,6 +144,12 @@ class ExternalBrowserPatGuide(QDialog):
             self._url_lab.setText(
                 "주소: (uiautomation 없음 — pip install uiautomation)"
             )
+
+        self._verify_lab = QLabel("검증: 주소를 확인하는 중…")
+        self._verify_lab.setWordWrap(True)
+        self._verify_lab.setStyleSheet(
+            "font-size:11.5px;color:#6d675c;border:none;"
+        )
 
         steps_box = QWidget()
         steps_lay = QVBoxLayout(steps_box)
@@ -162,6 +190,13 @@ class ExternalBrowserPatGuide(QDialog):
         self._status.setWordWrap(True)
         self._status.setStyleSheet("font-size:11.5px;color:#1f6f5c;border:none;")
 
+        self._btn_reopen = QPushButton("GitHub 로그인 다시 열기")
+        self._btn_reopen.setToolTip(
+            "Google 오류 화면이면 이 버튼으로 GitHub 로그인을 새로 여세요."
+        )
+        self._btn_reopen.clicked.connect(self._reopen_github_login)
+        self._btn_reopen.hide()
+
         btn_cancel = QPushButton("취소")
         btn_cancel.clicked.connect(self._on_cancel)
         self._btn_connect = QPushButton("연결")
@@ -177,10 +212,12 @@ class ExternalBrowserPatGuide(QDialog):
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 12, 14, 12)
         root.setSpacing(8)
-        root.addWidget(title)
-        root.addWidget(lead)
+        root.addWidget(self._title)
+        root.addWidget(self._lead)
         root.addWidget(self._url_lab)
+        root.addWidget(self._verify_lab)
         root.addWidget(steps_box)
+        root.addWidget(self._btn_reopen)
         root.addLayout(key_row)
         root.addWidget(self._status)
         root.addLayout(nav)
@@ -236,6 +273,8 @@ class ExternalBrowserPatGuide(QDialog):
         has = bool((text or "").strip())
         self._btn_connect.setEnabled(has)
         if _looks_like_token(text or ""):
+            self._google_rejected = False
+            self._btn_reopen.hide()
             self._mark_reached(3)
             self._status.setStyleSheet(
                 "font-size:11.5px;color:#1f6f5c;border:none;"
@@ -244,15 +283,10 @@ class ExternalBrowserPatGuide(QDialog):
         elif has:
             self._status.setText("")
 
-    def _mark_reached(self, index: int) -> None:
-        if index < 0:
-            return
-        self._reached = max(self._reached, index)
+    def _refresh_checklist_labels(self) -> None:
         for i, lab in enumerate(self._check_labels):
             done = i <= self._reached
-            cur = i == min(self._reached + 1, len(_CHECKLIST) - 1) and not (
-                self._reached >= len(_CHECKLIST) - 1
-            )
+            cur = self._current is not None and i == self._current and not done
             if done:
                 lab.setText(f"✓  {_CHECKLIST[i]}")
                 lab.setStyleSheet(
@@ -263,26 +297,130 @@ class ExternalBrowserPatGuide(QDialog):
                 lab.setStyleSheet(
                     "font-size:12.5px;color:#1f6f5c;font-weight:600;border:none;"
                 )
+            elif self._google_rejected and i == 0:
+                lab.setText(f"✗  {_CHECKLIST[i]} (막힘)")
+                lab.setStyleSheet(
+                    "font-size:12.5px;color:#8a6d12;font-weight:600;border:none;"
+                )
             else:
                 lab.setText(f"○  {_CHECKLIST[i]}")
                 lab.setStyleSheet(
                     "font-size:12.5px;color:#8b8477;border:none;"
                 )
 
+    def _mark_reached(self, index: int) -> None:
+        if index < 0:
+            return
+        self._reached = max(self._reached, index)
+        self._current = None
+        self._refresh_checklist_labels()
+
+    def _set_current(self, index: int) -> None:
+        self._current = index
+        self._refresh_checklist_labels()
+
+    def _show_google_rejected(self, url: str) -> None:
+        self._google_rejected = True
+        self._current = 0
+        # Do NOT mark step 0 as done — cross-check failed
+        self._refresh_checklist_labels()
+        self._title.setText("Google 로그인이 막혔어요")
+        self._lead.setText(
+            "브라우저에 「안전한 브라우저가 아닙니다」류 오류가 보입니다. "
+            "아래에서 GitHub 로그인을 다시 연 뒤, Google을 한 번 더 시도하세요."
+        )
+        self._verify_lab.setText(
+            "검증: Google 거절 주소 확인됨 (signin/rejected) — 완료로 세지 않음"
+        )
+        self._verify_lab.setStyleSheet(
+            "font-size:11.5px;color:#8a6d12;border:none;"
+        )
+        self._status.setStyleSheet(
+            "font-size:11.5px;color:#8a6d12;border:none;"
+        )
+        self._status.setText(
+            "같은 오류 주소로 두면 계속 실패합니다. 「GitHub 로그인 다시 열기」를 누르세요."
+        )
+        self._btn_reopen.show()
+        self.adjustSize()
+        self._place_bottom_right()
+
+    def _clear_google_rejected_banner(self) -> None:
+        if not self._google_rejected:
+            return
+        self._google_rejected = False
+        self._btn_reopen.hide()
+        self._title.setText("브라우저에서 이어서 하세요")
+        self._lead.setText(
+            "앱 안에서는 Google 로그인이 막혀 있어요. "
+            "열린 브라우저에서 로그인한 다음, 키를 만들어 복사해 주세요."
+        )
+        self._verify_lab.setStyleSheet(
+            "font-size:11.5px;color:#6d675c;border:none;"
+        )
+
+    def _reopen_github_login(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        QDesktopServices.openUrl(QUrl(_GITHUB_LOGIN))
+        self._clear_google_rejected_banner()
+        self._set_current(0)
+        self._verify_lab.setText(
+            "검증: GitHub 로그인을 새로 열었습니다. Google 버튼을 다시 눌러 보세요."
+        )
+        self._status.setText("")
+
     def _poll_address(self) -> None:
         if self._done:
             return
         url = read_browser_address_bar()
         if not url:
+            self._verify_lab.setText("검증: 브라우저 주소를 아직 읽지 못함")
             return
         if url != self._last_url:
             self._last_url = url
-            # Show a short form of the URL (GUIDE_LEAD-friendly)
             shown = url if len(url) <= 64 else url[:61] + "…"
             self._url_lab.setText(f"주소: {shown}")
-        idx = checklist_index_for_url(url)
-        if idx is not None:
+
+        kind, idx = classify_browser_url(url)
+        if kind == "rejected":
+            self._show_google_rejected(url)
+            return
+
+        if kind == "current" and idx is not None:
+            # Google sign-in in progress — not success yet
+            self._clear_google_rejected_banner()
+            self._set_current(idx)
+            self._verify_lab.setText(
+                "검증: Google 로그인 화면 — 아직 완료로 치지 않음"
+            )
+            self._verify_lab.setStyleSheet(
+                "font-size:11.5px;color:#6d675c;border:none;"
+            )
+            return
+
+        if kind == "reached" and idx is not None:
+            self._clear_google_rejected_banner()
+            # Reaching GitHub means Google step is behind us
+            if idx >= 1:
+                self._reached = max(self._reached, 0)
             self._mark_reached(idx)
+            labels = (
+                "Google 로그인 중",
+                "GitHub 도착",
+                "키 만들기 화면",
+                "키 발급/복사 화면",
+            )
+            self._verify_lab.setText(
+                f"검증: {labels[idx]} 확인됨"
+            )
+            self._verify_lab.setStyleSheet(
+                "font-size:11.5px;color:#1f6f5c;border:none;"
+            )
+            return
+
+        self._verify_lab.setText("검증: 주소를 분류하지 못함 — 체크리스트 유지")
 
     def _poll_clipboard(self) -> None:
         if self._done:
@@ -295,6 +433,7 @@ class ExternalBrowserPatGuide(QDialog):
             return
         self._clip_seen = text
         self._edit.setText(text)
+        self._clear_google_rejected_banner()
         self._mark_reached(3)
         self.raise_()
         self.activateWindow()
