@@ -804,27 +804,45 @@ class ConnectGitHubWizard(QDialog):
 
     def _fit_web_dialog(self) -> None:
         """
-        Open maximized. □ restores to 16:9 via ``_place_normal_web_size()``.
+        Open at full monitor size (covers taskbar area).
 
-        Window chrome only — does not change inner layout.
-        Must ``showNormal`` before placing, otherwise a second ``_fit`` while
-        already maximized would shrink the window and leave it there.
+        □ / Esc restores to 16:9 via ``_place_normal_web_size()``.
+        Important: clear any ``setMaximumHeight`` left by the 16:9 placer —
+        that lock used to block maximize and left the dialog awkwardly small.
         """
         try:
-            # 16:9 floor (960×540); user can still resize after □
             self.setMinimumSize(960, 540)
+            # Must clear height lock from a prior _place_normal_web_size()
             self.setMaximumSize(16777215, 16777215)
             if self.windowState() & Qt.WindowState.WindowFullScreen:
                 self.setWindowState(
                     self.windowState() & ~Qt.WindowState.WindowFullScreen
                 )
-            # Establish □ restore geometry, then maximize
+            if self.windowState() & Qt.WindowState.WindowMaximized:
+                self.setWindowState(
+                    self.windowState() & ~Qt.WindowState.WindowMaximized
+                )
+            # Remember □ restore geometry first (16:9 in work area)
             self.showNormal()
             self._place_normal_web_size()
+            # Unlock again — _fit_frame_in_available sets maximumHeight
             self.setMaximumSize(16777215, 16777215)
-            self.showMaximized()
+            self._apply_full_monitor_size()
         except Exception:
             self.resize(1280, 720)
+
+    def _apply_full_monitor_size(self) -> None:
+        """Fill the whole monitor rect (taskbar area included), keep close (X)."""
+        screen = self._screen_for_dialog()
+        if screen is None:
+            self.showMaximized()
+            return
+        # geometry() = full display; availableGeometry() excludes the taskbar
+        geo = screen.geometry()
+        self.setMaximumSize(16777215, 16777215)
+        self.setGeometry(geo)
+        # FullScreen covers taskbar; Esc / □-equivalent leaves via changeEvent
+        self.showFullScreen()
 
     def changeEvent(self, event) -> None:  # noqa: N802
         super().changeEvent(event)
@@ -835,15 +853,32 @@ class ConnectGitHubWizard(QDialog):
 
         if event.type() != QEvent.Type.WindowStateChange:
             return
-        # Only when leaving maximized via □ — not while entering maximize
+        # Leaving maximized or fullscreen → 16:9 restore size
         old = Qt.WindowState.WindowNoState
         if isinstance(event, QWindowStateChangeEvent):
             old = event.oldState()
+        now = self.windowState()
         leaving_max = bool(old & Qt.WindowState.WindowMaximized) and not bool(
-            self.windowState() & Qt.WindowState.WindowMaximized
+            now & Qt.WindowState.WindowMaximized
         )
-        if leaving_max and not self.isMinimized():
+        leaving_fs = bool(old & Qt.WindowState.WindowFullScreen) and not bool(
+            now & Qt.WindowState.WindowFullScreen
+        )
+        if (leaving_max or leaving_fs) and not self.isMinimized():
             QTimer.singleShot(50, self._place_normal_web_size)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        # FullScreen has no title-bar □ — Esc returns to 16:9 window with X
+        if (
+            self._use_web
+            and event.key() == Qt.Key.Key_Escape
+            and bool(self.windowState() & Qt.WindowState.WindowFullScreen)
+        ):
+            self.showNormal()
+            self._place_normal_web_size()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _place_center_on_anchor(self) -> None:
         if self._anchor is None:
@@ -926,7 +961,8 @@ class ConnectGitHubWizard(QDialog):
         """Bring the dialog back after external-browser yield / token detect."""
         if self.isMinimized():
             if self._use_web:
-                self.showMaximized()
+                self.setMaximumSize(16777215, 16777215)
+                self._apply_full_monitor_size()
             else:
                 self.showNormal()
         self.setWindowOpacity(1.0)
