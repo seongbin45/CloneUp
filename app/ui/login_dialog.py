@@ -688,17 +688,17 @@ class ConnectGitHubWizard(QDialog):
         root.addWidget(self._stack, 1)
         if self._use_web:
             self._go(self._choice_index)
-            self._fit_web_dialog()
+            # Final size applied in showEvent → _fit_choice_dialog (compact)
         else:
             self._go(_STEP_START)
             self._place_center_on_anchor()
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
-        # Maximize after the window is actually shown so WM applies it.
+        # Choice-first: compact dialog. Maximize only when entering WebView.
         if self._use_web and not getattr(self, "_web_sized", False):
             self._web_sized = True
-            QTimer.singleShot(0, self._fit_web_dialog)
+            QTimer.singleShot(0, self._fit_choice_dialog)
 
     def _screen_for_dialog(self):
         from app.util.screen_fit import screen_for_widget
@@ -711,17 +711,56 @@ class ConnectGitHubWizard(QDialog):
 
         place_normal_16x9(self, anchor=self._anchor)
 
+    def _fit_choice_dialog(self) -> None:
+        """Compact, centered window for the path-choice card (not maximized)."""
+        from app.util.screen_fit import (
+            clear_size_locks,
+            fit_client_in_available,
+            read_screen_info,
+            screen_for_widget,
+        )
+        from PySide6.QtCore import Qt
+
+        try:
+            # Leave maximized / fullscreen if we came back from WebView
+            st = self.windowState()
+            if st & (
+                Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen
+            ):
+                self.setWindowState(
+                    st
+                    & ~Qt.WindowState.WindowMaximized
+                    & ~Qt.WindowState.WindowFullScreen
+                )
+            self.showNormal()
+            clear_size_locks(self)
+            self.setMinimumSize(440, 320)
+            # Card ~520 wide + chrome; height from hint with padding
+            hint = self.sizeHint()
+            w = max(520, min(560, hint.width() or 520))
+            h = max(380, min(520, (hint.height() or 400) + 24))
+            info = read_screen_info(screen_for_widget(self, anchor=self._anchor))
+            if info is not None:
+                w = min(w, max(400, info.available_w - 48))
+                h = min(h, max(320, info.available_h - 48))
+            fit_client_in_available(
+                self, w, h, anchor=self._anchor, keep_16x9=False, lock_height=False
+            )
+            self._place_center_on_anchor()
+        except Exception:
+            self.resize(520, 420)
+            self._place_center_on_anchor()
+
     def _fit_web_dialog(self) -> None:
         """
-        Open maximized into the taskbar-safe work area (DPI / scale aware).
+        Maximize into the taskbar-safe work area when entering WebView (Path A).
 
-        □ restores to 16:9 via `_place_normal_web_size()`.
+        □ restores to 16:9 via ``_place_normal_web_size()``.
         Does **not** use FullScreen — that breaks under Windows display scaling.
         """
         from app.util.screen_fit import apply_work_area_maximized, clear_size_locks
 
         try:
-            # Seed □ restore geometry, then unlock and maximize into availableGeometry
             self.showNormal()
             self._place_normal_web_size()
             clear_size_locks(self)
@@ -911,9 +950,11 @@ class ConnectGitHubWizard(QDialog):
             self.setWindowOpacity(1.0)
             if index == self._choice_index:
                 self._progress.setText("로그인 방식")
+                # Compact card window — do not leave a maximized empty shell
+                QTimer.singleShot(0, self._fit_choice_dialog)
             else:
                 self._paint_web_guide(self._ui_now)
-                self._fit_web_dialog()
+                QTimer.singleShot(0, self._fit_web_dialog)
             # Never adjustSize() here — it shrinks the WebEngine view.
             return
         n = len(_STEPS)
@@ -1062,10 +1103,12 @@ class ConnectGitHubWizard(QDialog):
 
     def _page_choice(self) -> QWidget:
         """First screen: pick WebView (Path A) or external browser (Path B)."""
-        inner = QWidget()
-        inner.setObjectName("connGuideInner")
-        inner.setMaximumWidth(520)
-        inner.setMinimumWidth(400)
+        # Compact dialog: card fills the window (no huge gray empty shell)
+        card = QFrame()
+        card.setObjectName("connGuideCard")
+        card.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
         head = QLabel(
             "새 키로 다시 연결"
@@ -1083,7 +1126,7 @@ class ConnectGitHubWizard(QDialog):
         lead.setObjectName("wizLead")
         lead.setWordWrap(True)
 
-        lay = QVBoxLayout(inner)
+        lay = QVBoxLayout(card)
         lay.setContentsMargins(28, 24, 28, 24)
         lay.setSpacing(14)
         lay.addWidget(head)
@@ -1105,6 +1148,7 @@ class ConnectGitHubWizard(QDialog):
 
         lay.addWidget(btn_web)
         lay.addWidget(btn_ext)
+        lay.addStretch(1)
 
         nav = QHBoxLayout()
         nav.setSpacing(10)
@@ -1113,31 +1157,8 @@ class ConnectGitHubWizard(QDialog):
         btn_cancel.clicked.connect(self.reject)
         nav.addWidget(btn_cancel)
         nav.addStretch(1)
-        lay.addSpacing(8)
         lay.addLayout(nav)
-
-        outer = QWidget()
-        outer.setObjectName("connGuideOuter")
-        shell = QVBoxLayout(outer)
-        shell.setContentsMargins(0, 0, 0, 0)
-        shell.setSpacing(0)
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addStretch(1)
-        card = QFrame()
-        card.setObjectName("connGuideCard")
-        card.setSizePolicy(
-            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum
-        )
-        card_lay = QVBoxLayout(card)
-        card_lay.setContentsMargins(0, 0, 0, 0)
-        card_lay.addWidget(inner)
-        row.addWidget(card, 0, Qt.AlignmentFlag.AlignCenter)
-        row.addStretch(1)
-        shell.addStretch(1)
-        shell.addLayout(row)
-        shell.addStretch(1)
-        return outer
+        return card
 
     def _start_webview_path(self) -> None:
         """Path A — this wizard only; never create ExternalBrowserPatGuide."""
@@ -1146,6 +1167,8 @@ class ConnectGitHubWizard(QDialog):
             self._open_fine_and_paste()
         else:
             self._open_create_page()
+        # WebView needs the large maximized chrome; choice used a compact window
+        QTimer.singleShot(0, self._fit_web_dialog)
 
     def _start_external_path(self) -> None:
         """Path B — close this wizard; main_window runs Guide alone."""
