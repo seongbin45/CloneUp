@@ -205,6 +205,51 @@ def looks_like_passkey_os_prompt(window_title: str, ui_text: str = "") -> bool:
     return win_sec and passkey
 
 
+# Logged-out GitHub marketing/home exposes these via UI Automation
+_GITHUB_LOGGED_OUT_UI_NEEDLES = (
+    "sign up for github",
+    "sign in to github",
+    "sign in\nto github",
+    "github에 가입",
+    "github에 로그인",
+    "sign up",  # paired with github context below
+)
+
+
+def looks_like_github_logged_out_ui(
+    window_title: str = "",
+    ui_text: str = "",
+    *,
+    url: str = "",
+) -> bool:
+    """
+    True if accessible UI shows Sign in / Sign up (user is logged out).
+
+    ``github.com`` alone is ambiguous — logged-in dashboard and logged-out
+    marketing home share that URL. Cross-check visible Sign in/Sign up.
+    """
+    blob = f"{window_title or ''}\n{ui_text or ''}".lower()
+    blob = blob.replace("\xa0", " ").replace("\u00a0", " ")
+    if not blob.strip():
+        return False
+    # Strong phrases first
+    strong = (
+        "sign up for github",
+        "sign in to github",
+        "github에 가입",
+        "github에 로그인",
+    )
+    if any(s in blob for s in strong):
+        return True
+    # Weaker: both Sign in and Sign up appear near GitHub chrome
+    has_sign_in = "sign in" in blob or "로그인" in blob
+    has_sign_up = "sign up" in blob or "가입" in blob
+    on_github = "github" in blob or "github.com" in (url or "").lower()
+    if on_github and has_sign_in and has_sign_up:
+        return True
+    return False
+
+
 def detect_signin_method(
     url: str,
     *,
@@ -215,7 +260,8 @@ def detect_signin_method(
     Which sign-in path the user appears to be on.
 
     Returns one of: ``google_blocked``, ``google``, ``apple``, ``passkey``,
-    ``github_login``, ``github_logout``, ``github``, ``other``.
+    ``github_login``, ``github_logout``, ``github_logged_out``, ``github``,
+    ``other``.
     """
     analysis = analyze_google_signin_block(
         url, window_title=window_title, ui_text=ui_text
@@ -239,6 +285,11 @@ def detect_signin_method(
             return "github_logout"
         if path.startswith("/login") or path.startswith("/sessions/"):
             return "github_login"
+        # Same URL ``github.com`` when logged out vs in — use Sign in/up UI
+        if looks_like_github_logged_out_ui(
+            window_title, ui_text, url=url
+        ):
+            return "github_logged_out"
         return "github"
     return "other"
 

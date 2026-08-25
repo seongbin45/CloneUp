@@ -64,7 +64,8 @@ def classify_browser_sample(
 
     kind:
       - ``rejected``: Google insecure-browser / signin rejected (NOT success)
-      - ``logged_out``: user opened GitHub logout — progress must reset
+      - ``logged_out``: logout URL **or** github.com with Sign in/Sign up UI
+        (same URL when logged in vs out — UI text cross-check) — reset progress
       - ``current``: sign-in in progress (password / passkey / Apple / Google)
       - ``reached``: past login (sticky progress OK)
       - ``unknown``: cannot classify
@@ -86,7 +87,8 @@ def classify_browser_sample(
     if method == "google_blocked" or analysis.blocked:
         return ("rejected", 0, meta)
 
-    if method == "github_logout":
+    # /logout URL, or github.com showing Sign in / Sign up (logged-out home)
+    if method in ("github_logout", "github_logged_out"):
         return ("logged_out", 0, meta)
 
     # Passkey OS sheet or Apple / Google / GitHub login form → still signing in
@@ -177,6 +179,12 @@ def _method_guide_copy(method: str) -> tuple[str, str, str]:
             "로그아웃되었어요",
             "GitHub에서 로그아웃했습니다. 다시 로그인한 뒤 키를 만들어 주세요.",
             "검증: /logout 확인 — 진행 상태 초기화",
+        )
+    if method == "github_logged_out":
+        return (
+            "로그인이 필요해요",
+            "Sign in / Sign up이 보입니다. 아직 로그인되지 않았어요. 로그인한 뒤 키를 만들어 주세요.",
+            "검증: Sign in·Sign up UI — 진행 상태 초기화",
         )
     if method == "apple":
         return (
@@ -521,12 +529,18 @@ class ExternalBrowserPatGuide(QDialog):
             return
 
         if kind == "logged_out":
-            # User signed out — wipe sticky progress so old ✓ marks disappear
+            # User signed out (or logged-out github.com with Sign in/up) —
+            # wipe sticky progress so old ✓ marks disappear
             self._clear_google_rejected_banner()
             self._reached = -1
             self._current = 0
             self._refresh_checklist_labels()
-            self._apply_method_copy("github_logout")
+            copy_method = (
+                method
+                if method in ("github_logout", "github_logged_out")
+                else "github_logout"
+            )
+            self._apply_method_copy(copy_method)
             self._btn_reopen.show()
             self._status.setStyleSheet(
                 "font-size:11.5px;color:#8a6d12;border:none;"

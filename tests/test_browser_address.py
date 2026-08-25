@@ -15,6 +15,7 @@ from app.util.browser_address import (
     browser_address_available,
     detect_signin_method,
     is_apple_signin_url,
+    looks_like_github_logged_out_ui,
     looks_like_passkey_os_prompt,
 )
 
@@ -135,6 +136,68 @@ def test_checklist_index_for_url() -> None:
     assert kind_out == "logged_out" and idx_out == 0
     assert detect_signin_method("https://github.com/logout") == "github_logout"
     assert checklist_index_for_url("https://github.com/logout") == 0
+
+
+def test_github_logged_out_via_sign_in_sign_up_ui() -> None:
+    """github.com URL is ambiguous — Sign in/Sign up UI means logged out."""
+    # Without UI text, bare github.com looks like post-login (reached)
+    kind_bare, idx_bare = classify_browser_url("https://github.com/")
+    assert kind_bare == "reached" and idx_bare == 1
+
+    # Strong UIA phrases from Chrome (GroupControl / TabItem names)
+    ui_logged_out = (
+        "Sign up for GitHub\n"
+        "Sign in to GitHub\n"
+        "GitHub\n"
+        "Product\n"
+    )
+    assert looks_like_github_logged_out_ui(
+        "GitHub", ui_logged_out, url="https://github.com/"
+    )
+    assert (
+        detect_signin_method(
+            "https://github.com/",
+            window_title="GitHub",
+            ui_text=ui_logged_out,
+        )
+        == "github_logged_out"
+    )
+    kind, idx, meta = classify_browser_sample(
+        "https://github.com/",
+        window_title="GitHub",
+        ui_text=ui_logged_out,
+    )
+    assert kind == "logged_out" and idx == 0
+    assert meta.get("method") == "github_logged_out"
+
+    # Weaker: both Sign in + Sign up on github.com
+    assert looks_like_github_logged_out_ui(
+        "GitHub · Build and ship software on a single, collaborative platform",
+        "Sign in\nSign up\nFeatures",
+        url="https://github.com",
+    )
+    kind2, idx2, meta2 = classify_browser_sample(
+        "https://github.com",
+        window_title="GitHub",
+        ui_text="Sign in\nSign up\nFeatures",
+    )
+    assert kind2 == "logged_out" and idx2 == 0
+    assert meta2.get("method") == "github_logged_out"
+
+    # Logged-in dashboard chrome must NOT look logged out
+    assert not looks_like_github_logged_out_ui(
+        "GitHub",
+        "Dashboard\nPull requests\nIssues\nCodespaces\nMarketplace",
+        url="https://github.com/",
+    )
+    assert (
+        detect_signin_method(
+            "https://github.com/",
+            window_title="GitHub",
+            ui_text="Dashboard\nPull requests\nIssues",
+        )
+        == "github"
+    )
 
 
 def test_checklist_row_reflects_google_rejected() -> None:
