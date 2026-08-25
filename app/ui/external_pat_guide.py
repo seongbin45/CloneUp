@@ -1,8 +1,9 @@
-"""Small floating guide after Google SSO is handed off to the OS browser.
+"""Small floating guide after SSO is handed off to the OS browser.
 
-User finishes Google + PAT create in Chrome/Edge. This dialog:
-- shows a short checklist of expected steps
-- every 3s reads the browser *address bar only* (UI Automation, optional)
+User may sign in with password, passkey, Apple, or Google in a real browser.
+This dialog:
+- shows a method-neutral checklist
+- every 3s reads omnibox + accessible UI text (UI Automation, optional)
 - watches the clipboard for a PAT
 - lets the user paste / connect into Windows keyring via the parent wizard
 """
@@ -22,10 +23,11 @@ from PySide6.QtWidgets import (
 )
 
 from app.auth.github_page_stage import GitHubPageStage, PageSnapshot, detect_github_page_stage
-from app.ui.connect_webview import is_google_oauth_url
 from app.util.browser_address import (
-    analyze_google_signin_block,
     browser_address_available,
+    detect_signin_method,
+    is_apple_signin_url,
+    looks_like_passkey_os_prompt,
     read_browser_page_sample,
 )
 
@@ -35,10 +37,10 @@ _CLIP_POLL_MS = 500
 _TOKEN_PREFIXES = ("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")
 _GITHUB_LOGIN = "https://github.com/login"
 
-# Friendly checklist (high-school plain language)
+# Method-neutral checklist — do not force Google-only wording
 _CHECKLIST = (
-    "브라우저에서 Google로 로그인",
-    "GitHub 로그인 완료",
+    "GitHub 로그인 (비밀번호·패스키·Apple·Google)",
+    "로그인 완료 확인",
     "Generate new token 으로 키 만들기",
     "키 복사하기",
 )
@@ -56,43 +58,55 @@ def classify_browser_sample(
     *,
     window_title: str = "",
     ui_text: str = "",
-) -> tuple[str, int | None, object | None]:
+) -> tuple[str, int | None, dict]:
     """
-    Cross-check omnibox URL + accessible UI text → (kind, index, analysis).
+    Cross-check omnibox URL + accessible UI text → (kind, index, meta).
 
     kind:
       - ``rejected``: Google insecure-browser / signin rejected (NOT success)
-      - ``current``: this step is in progress (do not mark prior as done alone)
-      - ``reached``: user has reached this step (sticky progress OK)
+      - ``current``: sign-in in progress (password / passkey / Apple / Google)
+      - ``reached``: past login (sticky progress OK)
       - ``unknown``: cannot classify
+
+    meta includes ``method`` (google_blocked|google|apple|passkey|…) and
+    optional ``analysis`` for Google block details.
     """
+    from app.util.browser_address import analyze_google_signin_block
+
     u = (url or "").strip()
+    method = detect_signin_method(
+        u, window_title=window_title, ui_text=ui_text
+    )
     analysis = analyze_google_signin_block(
         u, window_title=window_title, ui_text=ui_text
     )
-    if analysis.blocked:
-        return ("rejected", 0, analysis)
-    if not u:
-        return ("unknown", None, analysis)
-    if is_google_oauth_url(u):
-        return ("current", 0, analysis)
+    meta: dict = {"method": method, "analysis": analysis}
+
+    if method == "google_blocked" or analysis.blocked:
+        return ("rejected", 0, meta)
+
+    # Passkey OS sheet or Apple / Google / GitHub login form → still signing in
+    if method in ("passkey", "apple", "google", "github_login"):
+        return ("current", 0, meta)
+
+    if not u and not window_title:
+        return ("unknown", None, meta)
+
     st = detect_github_page_stage(PageSnapshot(url=u))
     if st == GitHubPageStage.TOKEN_ISSUED:
-        return ("reached", 3, analysis)
+        return ("reached", 3, meta)
     if st in (
         GitHubPageStage.TOKEN_CLASSIC_NEW,
         GitHubPageStage.TOKEN_FINE_NEW,
         GitHubPageStage.TOKEN_CLASSIC_LIST,
         GitHubPageStage.TOKEN_FINE_LIST,
     ):
-        # Logged-in settings — Google + GitHub login are behind us
-        return ("reached", 2, analysis)
+        return ("reached", 2, meta)
     if st == GitHubPageStage.AUTH_2FA:
-        # Past password/Google; still finishing GitHub sign-in
-        return ("reached", 1, analysis)
+        return ("reached", 1, meta)
     if st == GitHubPageStage.LOGIN:
-        # github.com/login — NOT logged in yet. Still on step 0 (sign-in).
-        return ("current", 0, analysis)
+        return ("current", 0, meta)
+
     try:
         from urllib.parse import urlparse
 
@@ -101,11 +115,14 @@ def classify_browser_sample(
     except Exception:
         host, path = "", ""
     if host == "github.com" or host.endswith(".github.com"):
-        # Logged-in-ish pages (home, settings, sessions after auth) — not /login
         if path.startswith("/login"):
-            return ("current", 0, analysis)
-        return ("reached", 1, analysis)
-    return ("unknown", None, analysis)
+            return ("current", 0, meta)
+        return ("reached", 1, meta)
+
+    # Apple/passkey already handled; leftover non-github hosts
+    if is_apple_signin_url(u) or looks_like_passkey_os_prompt(window_title, ui_text):
+        return ("current", 0, meta)
+    return ("unknown", None, meta)
 
 
 def classify_browser_url(url: str) -> tuple[str, int | None]:
@@ -133,12 +150,51 @@ def checklist_row_label(
     base = _CHECKLIST[index]
     done = index <= reached
     if google_rejected and index == 0 and not done:
-        return f"!  {base} — 막힘"
+        return f"!  {base} — Google 막힘"
     if done:
         return f"✓  {base}"
     if current is not None and index == current:
         return f"→  {base}"
     return f"○  {base}"
+
+
+def _method_guide_copy(method: str) -> tuple[str, str, str]:
+    """title, lead, verify hint for the detected sign-in method."""
+    if method == "google_blocked":
+        return (
+            "Google 로그인이 막혔어요",
+            "브라우저에 로그인 오류가 보입니다. GitHub 로그인을 다시 연 뒤 다른 방법(패스키·Apple·비밀번호)을 써도 됩니다.",
+            "검증: Google 거절 확인 — 완료로 세지 않음",
+        )
+    if method == "apple":
+        return (
+            "Apple로 로그인 중",
+            "Apple 로그인 화면입니다. 안내에 따라 계속하세요. 끝나면 GitHub으로 돌아옵니다.",
+            "검증: Apple 로그인 화면 — 진행 중",
+        )
+    if method == "passkey":
+        return (
+            "패스키 확인 중",
+            "Windows 패스키 창입니다. 휴대폰 QR 또는 이 기기에서 확인하세요.",
+            "검증: 패스키(OS) 창 — 진행 중",
+        )
+    if method == "google":
+        return (
+            "Google로 로그인 중",
+            "Google 로그인 화면입니다. 완료되면 GitHub으로 돌아갑니다.",
+            "검증: Google 로그인 화면 — 진행 중",
+        )
+    if method == "github_login":
+        return (
+            "GitHub에 로그인하세요",
+            "비밀번호·패스키·Apple·Google 중 편한 방법을 고르세요.",
+            "검증: GitHub 로그인 화면 — 아직 완료 아님",
+        )
+    return (
+        "브라우저에서 이어서 하세요",
+        "열린 브라우저에서 로그인한 다음, 키를 만들어 복사해 주세요.",
+        "검증: 주소를 확인하는 중…",
+    )
 
 
 class ExternalBrowserPatGuide(QDialog):
@@ -172,8 +228,8 @@ class ExternalBrowserPatGuide(QDialog):
         self._title.setWordWrap(True)
 
         self._lead = QLabel(
-            "앱 안에서는 Google 로그인이 막혀 있어요. "
-            "열린 브라우저에서 로그인한 다음, 키를 만들어 복사해 주세요."
+            "앱 안 WebView에서 Google이 막히면 여기로 옵니다. "
+            "비밀번호·패스키·Apple·Google 모두 브라우저에서 쓸 수 있어요."
         )
         self._lead.setWordWrap(True)
         self._lead.setStyleSheet("font-size:12.5px;color:#4a453b;border:none;")
@@ -360,22 +416,20 @@ class ExternalBrowserPatGuide(QDialog):
         self._current = index
         self._refresh_checklist_labels()
 
-    def _show_google_rejected(self, url: str, analysis: object | None = None) -> None:
+    def _show_google_rejected(self, url: str, meta: dict | None = None) -> None:
         self._google_rejected = True
-        self._current = None  # avoid ● winning over "! 막힘"
-        # Do NOT mark step 0 as done — cross-check failed
+        self._current = None  # avoid progress marker winning over "! 막힘"
         self._refresh_checklist_labels()
-        self._title.setText("Google 로그인이 막혔어요")
-        self._lead.setText(
-            "브라우저에 로그인 오류가 보입니다. "
-            "아래에서 GitHub 로그인을 다시 연 뒤, Google을 한 번 더 시도하세요."
-        )
+        title, lead, verify_fallback = _method_guide_copy("google_blocked")
+        self._title.setText(title)
+        self._lead.setText(lead)
+        analysis = (meta or {}).get("analysis")
         reasons: list[str] = []
         snippets: list[str] = []
         if analysis is not None:
             reasons = list(getattr(analysis, "reasons", []) or [])
             snippets = list(getattr(analysis, "matched_snippets", []) or [])
-        verify = "검증: " + (" · ".join(reasons) if reasons else "Google 거절 감지")
+        verify = "검증: " + (" · ".join(reasons) if reasons else verify_fallback)
         if snippets:
             verify += " | 문구: " + snippets[0][:50]
         self._verify_lab.setText(verify)
@@ -386,22 +440,28 @@ class ExternalBrowserPatGuide(QDialog):
             "font-size:11.5px;color:#8a6d12;border:none;"
         )
         self._status.setText(
-            "같은 오류 화면이면 계속 실패합니다. 「GitHub 로그인 다시 열기」를 누르세요."
+            "Google이 막혀도 패스키·Apple·비밀번호로 로그인할 수 있어요. "
+            "「GitHub 로그인 다시 열기」를 누르세요."
         )
         self._btn_reopen.show()
         self.adjustSize()
         self._place_bottom_right()
+
+    def _apply_method_copy(self, method: str) -> None:
+        title, lead, verify = _method_guide_copy(method)
+        self._title.setText(title)
+        self._lead.setText(lead)
+        self._verify_lab.setText(verify)
+        self._verify_lab.setStyleSheet(
+            "font-size:11.5px;color:#6d675c;border:none;"
+        )
 
     def _clear_google_rejected_banner(self) -> None:
         if not self._google_rejected:
             return
         self._google_rejected = False
         self._btn_reopen.hide()
-        self._title.setText("브라우저에서 이어서 하세요")
-        self._lead.setText(
-            "앱 안에서는 Google 로그인이 막혀 있어요. "
-            "열린 브라우저에서 로그인한 다음, 키를 만들어 복사해 주세요."
-        )
+        self._status.setText("")
         self._verify_lab.setStyleSheet(
             "font-size:11.5px;color:#6d675c;border:none;"
         )
@@ -413,16 +473,18 @@ class ExternalBrowserPatGuide(QDialog):
         QDesktopServices.openUrl(QUrl(_GITHUB_LOGIN))
         self._clear_google_rejected_banner()
         self._set_current(0)
-        self._verify_lab.setText(
-            "검증: GitHub 로그인을 새로 열었습니다. Google 버튼을 다시 눌러 보세요."
+        self._apply_method_copy("github_login")
+        self._status.setText(
+            "비밀번호·패스키·Apple·Google 중 편한 방법을 고르세요."
         )
-        self._status.setText("")
 
     def _poll_address(self) -> None:
         if self._done:
             return
         sample = read_browser_page_sample()
-        if sample is None or not (sample.url or sample.window_title):
+        if sample is None or not (
+            sample.url or sample.window_title or sample.ui_text
+        ):
             self._verify_lab.setText(
                 "검증: 브라우저 주소/텍스트를 아직 읽지 못함"
             )
@@ -435,37 +497,36 @@ class ExternalBrowserPatGuide(QDialog):
         elif not url and sample.window_title:
             self._url_lab.setText(f"창: {sample.window_title[:64]}")
 
-        kind, idx, analysis = classify_browser_sample(
+        kind, idx, meta = classify_browser_sample(
             url,
             window_title=sample.window_title,
             ui_text=sample.ui_text,
         )
+        method = str((meta or {}).get("method") or "other")
+
         if kind == "rejected":
-            self._show_google_rejected(url, analysis)
+            self._show_google_rejected(url, meta)
             return
 
         if kind == "current" and idx is not None:
-            # Sign-in still in progress (Google page OR github.com/login)
             self._clear_google_rejected_banner()
             self._set_current(idx)
-            if idx == 0:
-                msg = "검증: 로그인 화면 — 아직 로그인 완료로 치지 않음"
-            else:
-                msg = "검증: 진행 중 — 완료로 치지 않음"
-            self._verify_lab.setText(msg)
-            self._verify_lab.setStyleSheet(
-                "font-size:11.5px;color:#6d675c;border:none;"
-            )
+            self._apply_method_copy(method)
             return
 
         if kind == "reached" and idx is not None:
             self._clear_google_rejected_banner()
             self._mark_reached(idx)
             labels = (
+                "로그인 단계",
                 "로그인 완료",
-                "GitHub 로그인 완료",
                 "키 만들기 화면",
                 "키 발급/복사 화면",
+            )
+            self._title.setText("잘 진행되고 있어요")
+            self._lead.setText(
+                "로그인이 끝나면 키를 만들고 복사하세요. "
+                "복사되면 아래 칸에 들어옵니다."
             )
             self._verify_lab.setText(f"검증: {labels[idx]} 확인됨")
             self._verify_lab.setStyleSheet(

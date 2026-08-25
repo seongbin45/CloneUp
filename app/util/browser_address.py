@@ -23,6 +23,14 @@ _ADDRESS_NAMES = (
 
 _BROWSER_CLASS = "Chrome_WidgetWin_1"  # Chrome + Chromium Edge
 
+_APPLE_HOSTS = frozenset(
+    {
+        "appleid.apple.com",
+        "idmsa.apple.com",
+        "appleid.cdn-apple.com",
+    }
+)
+
 # Phrases from Google's insecure-browser interstitial (EN + KO)
 _BLOCK_TEXT_NEEDLES = (
     "couldn't sign you in",
@@ -151,16 +159,86 @@ class GoogleBlockAnalysis:
     matched_snippets: list[str] = field(default_factory=list)
 
 
-def _host_is_google_accounts(url: str) -> bool:
+def _hostname(url: str) -> str:
     try:
-        host = (urlparse(url).hostname or "").lower()
+        return (urlparse(url).hostname or "").lower()
     except Exception:
-        host = ""
+        return ""
+
+
+def _host_is_google_accounts(url: str) -> bool:
+    host = _hostname(url)
     if not host:
         return "accounts.google.com" in (url or "").lower()
     return host == "accounts.google.com" or (
         host.endswith(".google.com") and host.startswith("accounts.")
     )
+
+
+def is_apple_signin_url(url: str) -> bool:
+    """True if URL is Apple ID sign-in (GitHub 「Apple로 계속하기」)."""
+    host = _hostname(url)
+    if host in _APPLE_HOSTS:
+        return True
+    u = (url or "").lower()
+    return "appleid.apple.com" in u or "idmsa.apple.com" in u
+
+
+def looks_like_passkey_os_prompt(window_title: str, ui_text: str = "") -> bool:
+    """True if foreground looks like Windows Security passkey sheet."""
+    blob = f"{window_title or ''}\n{ui_text or ''}".lower()
+    if not blob.strip():
+        return False
+    win_sec = (
+        "windows 보안" in blob
+        or "windows security" in blob
+        or "windows hello" in blob
+    )
+    passkey = (
+        "패스키" in blob
+        or "passkey" in blob
+        or "보안 키" in blob
+        or "security key" in blob
+        or "qr 코드" in blob
+        or "qr code" in blob
+    )
+    return win_sec and passkey
+
+
+def detect_signin_method(
+    url: str,
+    *,
+    window_title: str = "",
+    ui_text: str = "",
+) -> str:
+    """
+    Which sign-in path the user appears to be on.
+
+    Returns one of: ``google_blocked``, ``google``, ``apple``, ``passkey``,
+    ``github_login``, ``github``, ``other``.
+    """
+    analysis = analyze_google_signin_block(
+        url, window_title=window_title, ui_text=ui_text
+    )
+    if analysis.blocked:
+        return "google_blocked"
+    if looks_like_passkey_os_prompt(window_title, ui_text):
+        return "passkey"
+    if is_apple_signin_url(url):
+        return "apple"
+    if _host_is_google_accounts(url):
+        return "google"
+    host = _hostname(url)
+    if host == "github.com" or host.endswith(".github.com"):
+        path = ""
+        try:
+            path = (urlparse(url).path or "").lower()
+        except Exception:
+            pass
+        if path.startswith("/login") or path.startswith("/sessions/"):
+            return "github_login"
+        return "github"
+    return "other"
 
 
 def _url_has_signin_rejected(url: str) -> bool:
@@ -250,7 +328,9 @@ def read_browser_page_sample() -> BrowserPageSample | None:
     """
     Best-effort sample: omnibox URL + window title + accessible UI names.
 
-    Prefers the foreground Chromium window, then any top-level Chrome/Edge.
+    Prefers foreground Chromium, then Apple/Google/GitHub tabs, then any
+    Chromium window. Also samples a foreground Windows Security sheet
+    (passkey) which has no omnibox.
     """
     if not browser_address_available():
         return None
@@ -259,12 +339,14 @@ def read_browser_page_sample() -> BrowserPageSample | None:
     except Exception:
         return None
 
-    def _sample_win(win, source: str) -> BrowserPageSample | None:
+    def _sample_win(win, source: str, *, need_url: bool = False) -> BrowserPageSample | None:
         try:
-            url = _read_edit_url(win)
+            url = _read_edit_url(win) if (win.ClassName or "") == _BROWSER_CLASS else ""
             title = (win.Name or "").strip()
             ui_text = _harvest_ui_text(win)
-            if not url and not title:
+            if need_url and not url:
+                return None
+            if not url and not title and not ui_text:
                 return None
             return BrowserPageSample(
                 url=url or "",
@@ -278,19 +360,35 @@ def read_browser_page_sample() -> BrowserPageSample | None:
     try:
         fg = auto.GetForegroundControl()
         win = fg
-        for _ in range(8):
+        top = None
+        for _ in range(10):
             if win is None:
                 break
+            top = win
             try:
-                if (win.ClassName or "") == _BROWSER_CLASS:
-                    sample = _sample_win(win, "foreground")
-                    if sample and (sample.url or sample.window_title):
-                        return sample
-                win = win.GetParentControl()
+                parent = win.GetParentControl()
             except Exception:
+                parent = None
+            if parent is None:
                 break
+            win = parent
 
-        # Prefer a window whose URL is accounts.google.com / github.com
+        if top is not None:
+            title = (top.Name or "").strip()
+            ui_text = _harvest_ui_text(top)
+            if looks_like_passkey_os_prompt(title, ui_text):
+                return BrowserPageSample(
+                    url="",
+                    window_title=title,
+                    ui_text=ui_text,
+                    source="foreground-os",
+                )
+            if (top.ClassName or "") == _BROWSER_CLASS:
+                sample = _sample_win(top, "foreground")
+                if sample and (sample.url or sample.window_title):
+                    return sample
+
+        # Prefer sign-in related tabs (Google / Apple / GitHub)
         root = auto.GetRootControl()
         fallback: BrowserPageSample | None = None
         for w in root.GetChildren():
@@ -301,7 +399,12 @@ def read_browser_page_sample() -> BrowserPageSample | None:
                 if sample is None:
                     continue
                 u = (sample.url or "").lower()
-                if "accounts.google.com" in u or "github.com" in u:
+                if (
+                    "accounts.google.com" in u
+                    or "appleid.apple.com" in u
+                    or "idmsa.apple.com" in u
+                    or "github.com" in u
+                ):
                     return sample
                 if fallback is None and sample.url:
                     fallback = sample
