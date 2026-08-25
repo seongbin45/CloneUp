@@ -141,6 +141,26 @@ def ui_index_for_stage(stage: GitHubPageStage) -> int | None:
     return _STAGE_TO_UI.get(stage)
 
 
+# Connect wizard: title-under description (lead) must stay short so the
+# 16:9 restored dialog does not clip the WebView / footer.
+GUIDE_LEAD_MAX_CHARS = 60
+
+
+def guide_lead(text: str) -> str:
+    """Validate a guide lead string against ``GUIDE_LEAD_MAX_CHARS``.
+
+    Raises ``ValueError`` if over the limit so copy regressions fail fast
+    in tests / at import of new strings.
+    """
+    s = text or ""
+    n = len(s)
+    if n > GUIDE_LEAD_MAX_CHARS:
+        raise ValueError(
+            f"guide lead is {n} chars (max {GUIDE_LEAD_MAX_CHARS}): {s!r}"
+        )
+    return s
+
+
 def guide_line_for_stage(stage: GitHubPageStage) -> str:
     """Title only — current task (no parenthetical alternatives)."""
     overlay = guide_overlay_for_stage(stage)
@@ -161,41 +181,50 @@ def guide_overlay_for_stage(stage: GitHubPageStage) -> dict[str, str] | None:
     Title/lead overrides when the page is related but not the exact step form.
 
     Example: ``/settings/tokens`` list — user must click Generate new token.
+    ``lead`` must be ≤ ``GUIDE_LEAD_MAX_CHARS``.
     """
     if stage == GitHubPageStage.TOKEN_CLASSIC_LIST:
         return {
             "title": "Generate new token 을 눌러 주세요",
-            # Keep to ~1 short line so the 16:9 dialog does not clip
-            "lead": "키 목록입니다. 「Generate new token (classic)」을 누르세요.",
+            "lead": guide_lead(
+                "키 목록입니다. 「Generate new token (classic)」을 누르세요."
+            ),
         }
     if stage == GitHubPageStage.TOKEN_FINE_LIST:
         return {
             "title": "Generate new token 을 눌러 주세요",
-            "lead": "세분 키 목록입니다. 「Generate new token」을 누르세요.",
+            "lead": guide_lead(
+                "세분 키 목록입니다. 「Generate new token」을 누르세요."
+            ),
         }
     if stage == GitHubPageStage.SUDO_OR_OTHER:
         return {
             "title": "GitHub 추가 확인이 있습니다",
-            "lead": "확인을 마친 뒤 「Generate new token」으로 이동하세요.",
+            "lead": guide_lead(
+                "확인을 마친 뒤 「Generate new token」으로 이동하세요."
+            ),
         }
     if stage == GitHubPageStage.UNKNOWN:
         return {
             "title": "키 만들기 화면으로 이동해 주세요",
-            "lead": "github.com/settings/tokens/new 를 열거나 Generate new token 을 누르세요.",
+            "lead": guide_lead(
+                "tokens/new 로 열거나 Generate new token 을 누르세요."
+            ),
         }
     return None
 
 
 def step_copy(i: int) -> dict[str, str | bool]:
-    """Copy deck for UI step i (0..3), matching the design mock."""
+    """Copy deck for UI step i (0..3), matching the design mock.
+
+    Each ``lead`` must be ≤ ``GUIDE_LEAD_MAX_CHARS``.
+    """
     steps: tuple[dict[str, str | bool], ...] = (
         {
             "stepName": "로그인",
             "title": "GitHub에 로그인해 주세요",
-            "lead": (
-                "아래는 GitHub의 실제 로그인 화면입니다. "
-                "아이디와 비밀번호는 GitHub로 바로 전달되며, "
-                "클론업은 입력한 내용을 보지 않습니다."
+            "lead": guide_lead(
+                "GitHub 로그인 화면입니다. 입력은 GitHub로만 가고 클론업은 보지 않습니다."
             ),
             "watchTag": "기다리는 중",
             "watchBody": (
@@ -209,10 +238,8 @@ def step_copy(i: int) -> dict[str, str | bool]:
         {
             "stepName": "인증 코드",
             "title": "인증 코드를 입력해 주세요",
-            "lead": (
-                "GitHub가 한 번 더 확인을 요청했습니다. "
-                "인증 앱의 6자리 숫자나 문자로 받은 코드를 "
-                "아래 화면에 넣으세요."
+            "lead": guide_lead(
+                "인증 앱의 6자리 코드나 문자 코드를 아래 화면에 넣으세요."
             ),
             "watchTag": "기다리는 중",
             "watchBody": (
@@ -226,9 +253,8 @@ def step_copy(i: int) -> dict[str, str | bool]:
         {
             "stepName": "키 만들기",
             "title": "키를 만들어 주세요",
-            "lead": (
-                "필요한 항목은 미리 채워 두었습니다. "
-                "아래 화면을 내려 Generate token 버튼만 누르시면 됩니다."
+            "lead": guide_lead(
+                "미리 채워 두었습니다. Generate token 버튼만 누르면 됩니다."
             ),
             "watchTag": "확인",
             "watchBody": (
@@ -242,10 +268,8 @@ def step_copy(i: int) -> dict[str, str | bool]:
         {
             "stepName": "키 복사",
             "title": "키를 아래 칸에 넣어 주세요",
-            "lead": (
-                "키가 만들어졌습니다. "
-                "아래 화면의 복사 버튼을 누르면 칸이 저절로 채워집니다. "
-                "채워지지 않으면 직접 붙여 넣으세요."
+            "lead": guide_lead(
+                "복사 버튼을 누르면 칸이 채워집니다. 안 되면 직접 붙여 넣으세요."
             ),
             "watchTag": "주의",
             "watchBody": (

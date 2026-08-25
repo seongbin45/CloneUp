@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.auth.github_page_stage import GitHubPageStage
-from app.ui.connect_webview import checklist_text, guide_line_for_stage, webengine_available
+from app.ui.connect_webview import (
+    GUIDE_LEAD_MAX_CHARS,
+    checklist_text,
+    guide_lead,
+    guide_line_for_stage,
+    guide_overlay_for_stage,
+    step_copy,
+    webengine_available,
+)
 
 
 def test_guide_line_for_login() -> None:
@@ -24,7 +34,7 @@ def test_checklist_marks_reached() -> None:
 
 
 def test_step_copy_four_steps() -> None:
-    from app.ui.connect_webview import step_copy, UI_STEP_NAMES
+    from app.ui.connect_webview import UI_STEP_NAMES
 
     assert len(UI_STEP_NAMES) == 4
     assert step_copy(0)["showKey"] is False
@@ -44,24 +54,39 @@ def test_ui_index_for_stage() -> None:
 
 
 def test_guide_overlay_tokens_list() -> None:
-    from app.ui.connect_webview import guide_line_for_stage, guide_overlay_for_stage
-
     ov = guide_overlay_for_stage(GitHubPageStage.TOKEN_CLASSIC_LIST)
     assert ov is not None
     assert "Generate new token" in ov["title"]
     assert "목록" in ov["lead"]
     assert "Generate new token" in ov["lead"]
-    # Short enough not to inflate the title block on 16:9 restore
-    assert len(ov["lead"]) <= 80
+    assert len(ov["lead"]) <= GUIDE_LEAD_MAX_CHARS
     assert "Generate new token" in guide_line_for_stage(GitHubPageStage.TOKEN_CLASSIC_LIST)
 
     ov_fine = guide_overlay_for_stage(GitHubPageStage.TOKEN_FINE_LIST)
     assert ov_fine is not None
     assert "Generate new token" in ov_fine["lead"]
-    assert len(ov_fine["lead"]) <= 80
+    assert len(ov_fine["lead"]) <= GUIDE_LEAD_MAX_CHARS
 
     # Exact create form has no overlay — uses step_copy title
     assert guide_overlay_for_stage(GitHubPageStage.TOKEN_CLASSIC_NEW) is None
+
+
+def test_guide_lead_max_chars_rule() -> None:
+    """Rule: connect wizard lead (title 아래 설명) ≤ 60 Unicode chars."""
+    assert GUIDE_LEAD_MAX_CHARS == 60
+    assert guide_lead("가" * 60) == "가" * 60
+    with pytest.raises(ValueError, match="max 60"):
+        guide_lead("가" * 61)
+
+    for i in range(4):
+        lead = str(step_copy(i)["lead"])
+        assert len(lead) <= GUIDE_LEAD_MAX_CHARS, (i, len(lead), lead)
+
+    for st in GitHubPageStage:
+        ov = guide_overlay_for_stage(st)
+        if ov is None:
+            continue
+        assert len(ov["lead"]) <= GUIDE_LEAD_MAX_CHARS, (st, len(ov["lead"]), ov["lead"])
 
 
 def test_webengine_available_is_bool() -> None:
