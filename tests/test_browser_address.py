@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.ui.connect_webview import is_google_signin_rejected
 from app.ui.external_pat_guide import (
     checklist_index_for_url,
+    checklist_row_label,
     classify_browser_sample,
     classify_browser_url,
 )
@@ -88,6 +89,26 @@ def test_checklist_index_for_url() -> None:
         == 2
     )
     assert checklist_index_for_url("https://example.com/") is None
+
+
+def test_checklist_row_reflects_google_rejected() -> None:
+    """Rejected Google must show on row 0 — not stay as empty ○."""
+    row0 = checklist_row_label(
+        0, reached=-1, current=None, google_rejected=True
+    )
+    assert row0.startswith("!")
+    assert "막힘" in row0
+    # Even if current was wrongly set to 0, rejected wins
+    row0b = checklist_row_label(
+        0, reached=-1, current=0, google_rejected=True
+    )
+    assert row0b.startswith("!")
+    assert not row0b.startswith("→")
+    assert not row0b.startswith("○")
+    # Other rows stay empty
+    assert checklist_row_label(
+        1, reached=-1, current=None, google_rejected=True
+    ).startswith("○")
 
 
 def test_browser_address_available_is_bool() -> None:

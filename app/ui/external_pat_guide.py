@@ -113,6 +113,25 @@ def checklist_index_for_url(url: str) -> int | None:
     return idx
 
 
+def checklist_row_label(
+    index: int,
+    *,
+    reached: int,
+    current: int | None,
+    google_rejected: bool,
+) -> str:
+    """Pure label text for checklist row — used by UI and unit tests."""
+    base = _CHECKLIST[index]
+    done = index <= reached
+    if google_rejected and index == 0 and not done:
+        return f"!  {base} — 막힘"
+    if done:
+        return f"✓  {base}"
+    if current is not None and index == current:
+        return f"→  {base}"
+    return f"○  {base}"
+
+
 class ExternalBrowserPatGuide(QDialog):
     """Bottom-right translucent helper: checklist + paste + connect."""
 
@@ -301,25 +320,22 @@ class ExternalBrowserPatGuide(QDialog):
 
     def _refresh_checklist_labels(self) -> None:
         for i, lab in enumerate(self._check_labels):
-            done = i <= self._reached
-            cur = self._current is not None and i == self._current and not done
-            if done:
-                lab.setText(f"✓  {_CHECKLIST[i]}")
-                lab.setStyleSheet(
-                    "font-size:12.5px;color:#1f6f5c;font-weight:600;border:none;"
-                )
-            elif cur:
-                lab.setText(f"●  {_CHECKLIST[i]}")
-                lab.setStyleSheet(
-                    "font-size:12.5px;color:#1f6f5c;font-weight:600;border:none;"
-                )
-            elif self._google_rejected and i == 0:
-                lab.setText(f"✗  {_CHECKLIST[i]} (막힘)")
+            text = checklist_row_label(
+                i,
+                reached=self._reached,
+                current=self._current,
+                google_rejected=self._google_rejected,
+            )
+            lab.setText(text)
+            if text.startswith("!"):
                 lab.setStyleSheet(
                     "font-size:12.5px;color:#8a6d12;font-weight:600;border:none;"
                 )
+            elif text.startswith("✓") or text.startswith("→"):
+                lab.setStyleSheet(
+                    "font-size:12.5px;color:#1f6f5c;font-weight:600;border:none;"
+                )
             else:
-                lab.setText(f"○  {_CHECKLIST[i]}")
                 lab.setStyleSheet(
                     "font-size:12.5px;color:#8b8477;border:none;"
                 )
@@ -337,7 +353,7 @@ class ExternalBrowserPatGuide(QDialog):
 
     def _show_google_rejected(self, url: str, analysis: object | None = None) -> None:
         self._google_rejected = True
-        self._current = 0
+        self._current = None  # avoid ● winning over "! 막힘"
         # Do NOT mark step 0 as done — cross-check failed
         self._refresh_checklist_labels()
         self._title.setText("Google 로그인이 막혔어요")
