@@ -80,7 +80,18 @@ def test_checklist_index_for_url() -> None:
         "https://accounts.google.com/v3/signin/identifier"
     )
     assert kind2 == "current" and idx2 == 0
-    assert checklist_index_for_url("https://github.com/login") == 1
+    # github.com/login = NOT logged in — must stay current step 0 (not ✓)
+    kind_login, idx_login = classify_browser_url(
+        "https://github.com/login?client_id=Ov23liuwynj1IgDmz8Tj"
+    )
+    assert kind_login == "current" and idx_login == 0
+    assert checklist_index_for_url("https://github.com/login") == 0
+    row0 = checklist_row_label(
+        0, reached=-1, current=0, google_rejected=False
+    )
+    assert row0.startswith("→"), row0
+    assert not row0.startswith("✓")
+    # Logged-in settings page advances
     assert checklist_index_for_url("https://github.com/settings/tokens") == 2
     assert (
         checklist_index_for_url(

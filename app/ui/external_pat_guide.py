@@ -38,7 +38,7 @@ _GITHUB_LOGIN = "https://github.com/login"
 # Friendly checklist (high-school plain language)
 _CHECKLIST = (
     "브라우저에서 Google로 로그인",
-    "GitHub 화면으로 돌아오기",
+    "GitHub 로그인 완료",
     "Generate new token 으로 키 만들기",
     "키 복사하기",
 )
@@ -85,16 +85,25 @@ def classify_browser_sample(
         GitHubPageStage.TOKEN_CLASSIC_LIST,
         GitHubPageStage.TOKEN_FINE_LIST,
     ):
+        # Logged-in settings — Google + GitHub login are behind us
         return ("reached", 2, analysis)
-    if st in (GitHubPageStage.LOGIN, GitHubPageStage.AUTH_2FA):
+    if st == GitHubPageStage.AUTH_2FA:
+        # Past password/Google; still finishing GitHub sign-in
         return ("reached", 1, analysis)
+    if st == GitHubPageStage.LOGIN:
+        # github.com/login — NOT logged in yet. Still on step 0 (sign-in).
+        return ("current", 0, analysis)
     try:
         from urllib.parse import urlparse
 
         host = (urlparse(u).hostname or "").lower()
+        path = (urlparse(u).path or "").lower()
     except Exception:
-        host = ""
+        host, path = "", ""
     if host == "github.com" or host.endswith(".github.com"):
+        # Logged-in-ish pages (home, settings, sessions after auth) — not /login
+        if path.startswith("/login"):
+            return ("current", 0, analysis)
         return ("reached", 1, analysis)
     return ("unknown", None, analysis)
 
@@ -436,15 +445,14 @@ class ExternalBrowserPatGuide(QDialog):
             return
 
         if kind == "current" and idx is not None:
-            # Google sign-in in progress — not success yet
+            # Sign-in still in progress (Google page OR github.com/login)
             self._clear_google_rejected_banner()
             self._set_current(idx)
-            extra = ""
-            if analysis is not None and getattr(analysis, "reasons", None):
-                extra = " · " + analysis.reasons[-1]
-            self._verify_lab.setText(
-                "검증: Google 로그인 진행 중 — 완료로 치지 않음" + extra
-            )
+            if idx == 0:
+                msg = "검증: 로그인 화면 — 아직 로그인 완료로 치지 않음"
+            else:
+                msg = "검증: 진행 중 — 완료로 치지 않음"
+            self._verify_lab.setText(msg)
             self._verify_lab.setStyleSheet(
                 "font-size:11.5px;color:#6d675c;border:none;"
             )
@@ -452,13 +460,10 @@ class ExternalBrowserPatGuide(QDialog):
 
         if kind == "reached" and idx is not None:
             self._clear_google_rejected_banner()
-            # Reaching GitHub means Google step is behind us
-            if idx >= 1:
-                self._reached = max(self._reached, 0)
             self._mark_reached(idx)
             labels = (
-                "Google 로그인 중",
-                "GitHub 도착",
+                "로그인 완료",
+                "GitHub 로그인 완료",
                 "키 만들기 화면",
                 "키 발급/복사 화면",
             )
