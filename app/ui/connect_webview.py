@@ -165,38 +165,23 @@ def guide_overlay_for_stage(stage: GitHubPageStage) -> dict[str, str] | None:
     if stage == GitHubPageStage.TOKEN_CLASSIC_LIST:
         return {
             "title": "Generate new token 을 눌러 주세요",
-            "lead": (
-                "지금은 키 목록 화면입니다. "
-                "화면 위(또는 오른쪽)의 「Generate new token」을 누른 뒤 "
-                "「Generate new token (classic)」을 선택하면 "
-                "키를 만드는 화면으로 갑니다."
-            ),
+            # Keep to ~1 short line so the 16:9 dialog does not clip
+            "lead": "키 목록입니다. 「Generate new token (classic)」을 누르세요.",
         }
     if stage == GitHubPageStage.TOKEN_FINE_LIST:
         return {
             "title": "Generate new token 을 눌러 주세요",
-            "lead": (
-                "지금은 세분 키 목록 화면입니다. "
-                "「Generate new token」을 누르면 새 키를 만드는 화면으로 갑니다."
-            ),
+            "lead": "세분 키 목록입니다. 「Generate new token」을 누르세요.",
         }
     if stage == GitHubPageStage.SUDO_OR_OTHER:
         return {
             "title": "GitHub 추가 확인이 있습니다",
-            "lead": (
-                "비밀번호나 확인을 마친 뒤, "
-                "키 목록에서 「Generate new token」으로 이동해 주세요."
-            ),
+            "lead": "확인을 마친 뒤 「Generate new token」으로 이동하세요.",
         }
     if stage == GitHubPageStage.UNKNOWN:
         return {
             "title": "키 만들기 화면으로 이동해 주세요",
-            "lead": (
-                "연결에 필요한 화면이 아닌 것 같습니다. "
-                "주소창에 github.com/settings/tokens/new 를 열거나, "
-                "키 목록(github.com/settings/tokens)에서 "
-                "「Generate new token」을 누르세요."
-            ),
+            "lead": "github.com/settings/tokens/new 를 열거나 Generate new token 을 누르세요.",
         }
     return None
 

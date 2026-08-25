@@ -51,11 +51,14 @@ def test_guide_overlay_tokens_list() -> None:
     assert "Generate new token" in ov["title"]
     assert "목록" in ov["lead"]
     assert "Generate new token" in ov["lead"]
+    # Short enough not to inflate the title block on 16:9 restore
+    assert len(ov["lead"]) <= 80
     assert "Generate new token" in guide_line_for_stage(GitHubPageStage.TOKEN_CLASSIC_LIST)
 
     ov_fine = guide_overlay_for_stage(GitHubPageStage.TOKEN_FINE_LIST)
     assert ov_fine is not None
     assert "Generate new token" in ov_fine["lead"]
+    assert len(ov_fine["lead"]) <= 80
 
     # Exact create form has no overlay — uses step_copy title
     assert guide_overlay_for_stage(GitHubPageStage.TOKEN_CLASSIC_NEW) is None
