@@ -582,6 +582,7 @@ class ConnectGitHubWizard(QDialog):
         self._web_pane = None
         self._ui_now = 0
         self._ui_max = 0
+        self._web_live_stage = None  # GitHubPageStage | None
         self._key_row: QWidget | None = None
         self._key_note: QLabel | None = None
         self._web_cta: QPushButton | None = None
@@ -1547,23 +1548,44 @@ class ConnectGitHubWizard(QDialog):
                 )
         self._track_lay.addStretch(1)
 
-    def _paint_web_guide(self, now: int) -> None:
-        from app.ui.connect_webview import step_copy
+    def _paint_web_guide(self, now: int, live_stage: object | None = None) -> None:
+        from app.auth.github_page_stage import GitHubPageStage
+        from app.ui.connect_webview import guide_overlay_for_stage, step_copy
 
         now = max(0, min(now, 3))
         self._ui_now = now
+        if live_stage is not None:
+            self._web_live_stage = live_stage
         copy = step_copy(now)
+
+        # Title/lead only — list / off-path pages get Generate new token guidance
+        title = str(copy["title"])
+        lead = str(copy["lead"])
+        st = self._web_live_stage
+        if isinstance(st, GitHubPageStage):
+            overlay = guide_overlay_for_stage(st)
+            # UNKNOWN overlay only after user has reached key-making territory
+            if (
+                overlay is not None
+                and st == GitHubPageStage.UNKNOWN
+                and self._ui_max < 2
+            ):
+                overlay = None
+            if overlay is not None:
+                title = str(overlay["title"])
+                lead = str(overlay["lead"])
+
         if self._web_counter is not None:
             self._web_counter.setText(f"{now + 1} / 4")
         if self._web_step_name is not None:
             self._web_step_name.setText(str(copy["stepName"]))
         self._progress.setText(f"{now + 1} / 4  ·  {copy['stepName']}")
         if self._web_stage_title is not None:
-            self._web_stage_title.setText(str(copy["title"]))
+            self._web_stage_title.setText(title)
         if self._web_hint is not None:
-            self._web_hint.setText(str(copy["lead"]))
+            self._web_hint.setText(lead)
 
-        # Watch banner: tag + body as separate widgets (시안)
+        # Watch banner: tag + body as separate widgets (시안) — unchanged on list
         warn = bool(copy.get("watchWarn", False)) or str(copy["watchTag"]) == "주의"
         if self._web_watch is not None:
             self._web_watch.setObjectName("connWatchWarn" if warn else "connWatch")
@@ -1723,11 +1745,14 @@ class ConnectGitHubWizard(QDialog):
 
         st = stage if isinstance(stage, GitHubPageStage) else GitHubPageStage.UNKNOWN
         ui = ui_index_for_stage(st)
-        if ui is None:
+        if ui is not None:
+            # Advance sticky max; current follows live page
+            self._ui_max = max(self._ui_max, ui)
+            self._paint_web_guide(ui, live_stage=st)
             return
-        # Advance sticky max; current follows live page
-        self._ui_max = max(self._ui_max, ui)
-        self._paint_web_guide(ui)
+        # Off-map page (e.g. profile) — keep track, refresh title/lead if useful
+        if self._ui_max >= 1 or self._ui_now >= 1:
+            self._paint_web_guide(self._ui_now, live_stage=st)
 
     def _on_web_load_failed(self, _msg: str) -> None:
         if self._web_hint is not None:

@@ -62,6 +62,18 @@ def test_url_paths() -> None:
     )
     assert (
         detect_github_page_stage(
+            PageSnapshot(url="https://github.com/settings/tokens?type=beta")
+        )
+        == GitHubPageStage.TOKEN_CLASSIC_LIST
+    )
+    assert (
+        detect_github_page_stage(
+            PageSnapshot(url="https://github.com/settings/personal-access-tokens")
+        )
+        == GitHubPageStage.TOKEN_FINE_LIST
+    )
+    assert (
+        detect_github_page_stage(
             PageSnapshot(url="https://github.com/sessions/two-factor")
         )
         == GitHubPageStage.AUTH_2FA

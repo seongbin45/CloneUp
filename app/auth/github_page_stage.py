@@ -26,6 +26,7 @@ class GitHubPageStage(str, Enum):
     TOKEN_FINE_NEW = "token_fine_new"
     TOKEN_ISSUED = "token_issued"
     TOKEN_CLASSIC_LIST = "token_classic_list"
+    TOKEN_FINE_LIST = "token_fine_list"
     SUDO_OR_OTHER = "sudo_or_other"
 
 
@@ -110,6 +111,13 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
             return GitHubPageStage.TOKEN_ISSUED
         return GitHubPageStage.TOKEN_CLASSIC_LIST
 
+    # Fine-grained token list (not /new)
+    if (
+        path == "/settings/personal-access-tokens"
+        or path.endswith("/settings/personal-access-tokens")
+    ):
+        return GitHubPageStage.TOKEN_FINE_LIST
+
     # --- Title ---
     if "sign in to github" in title_l:
         return GitHubPageStage.LOGIN
@@ -180,5 +188,6 @@ def stage_label_ko(stage: GitHubPageStage) -> str:
         GitHubPageStage.TOKEN_FINE_NEW: "세분 키 만들기",
         GitHubPageStage.TOKEN_ISSUED: "키 발급됨(지금 복사)",
         GitHubPageStage.TOKEN_CLASSIC_LIST: "classic 키 목록",
+        GitHubPageStage.TOKEN_FINE_LIST: "세분 키 목록",
         GitHubPageStage.SUDO_OR_OTHER: "추가 확인(sudo 등)",
     }.get(stage, stage.value)

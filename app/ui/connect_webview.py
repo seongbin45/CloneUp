@@ -122,6 +122,7 @@ _STAGE_TO_UI: dict[GitHubPageStage, int] = {
     GitHubPageStage.TOKEN_CLASSIC_NEW: 2,
     GitHubPageStage.TOKEN_FINE_NEW: 2,
     GitHubPageStage.TOKEN_CLASSIC_LIST: 2,
+    GitHubPageStage.TOKEN_FINE_LIST: 2,
     GitHubPageStage.TOKEN_ISSUED: 3,
 }
 
@@ -142,6 +143,9 @@ def ui_index_for_stage(stage: GitHubPageStage) -> int | None:
 
 def guide_line_for_stage(stage: GitHubPageStage) -> str:
     """Title only — current task (no parenthetical alternatives)."""
+    overlay = guide_overlay_for_stage(stage)
+    if overlay is not None:
+        return str(overlay["title"])
     i = ui_index_for_stage(stage)
     if i is not None:
         return step_copy(i)["title"]
@@ -150,6 +154,51 @@ def guide_line_for_stage(stage: GitHubPageStage) -> str:
         GitHubPageStage.AUTH_PASSKEY_OS: "패스키 확인이 필요할 수 있습니다",
         GitHubPageStage.SUDO_OR_OTHER: "추가 확인 화면입니다",
     }.get(stage, stage_label_ko(stage))
+
+
+def guide_overlay_for_stage(stage: GitHubPageStage) -> dict[str, str] | None:
+    """
+    Title/lead overrides when the page is related but not the exact step form.
+
+    Example: ``/settings/tokens`` list — user must click Generate new token.
+    """
+    if stage == GitHubPageStage.TOKEN_CLASSIC_LIST:
+        return {
+            "title": "Generate new token 을 눌러 주세요",
+            "lead": (
+                "지금은 키 목록 화면입니다. "
+                "화면 위(또는 오른쪽)의 「Generate new token」을 누른 뒤 "
+                "「Generate new token (classic)」을 선택하면 "
+                "키를 만드는 화면으로 갑니다."
+            ),
+        }
+    if stage == GitHubPageStage.TOKEN_FINE_LIST:
+        return {
+            "title": "Generate new token 을 눌러 주세요",
+            "lead": (
+                "지금은 세분 키 목록 화면입니다. "
+                "「Generate new token」을 누르면 새 키를 만드는 화면으로 갑니다."
+            ),
+        }
+    if stage == GitHubPageStage.SUDO_OR_OTHER:
+        return {
+            "title": "GitHub 추가 확인이 있습니다",
+            "lead": (
+                "비밀번호나 확인을 마친 뒤, "
+                "키 목록에서 「Generate new token」으로 이동해 주세요."
+            ),
+        }
+    if stage == GitHubPageStage.UNKNOWN:
+        return {
+            "title": "키 만들기 화면으로 이동해 주세요",
+            "lead": (
+                "연결에 필요한 화면이 아닌 것 같습니다. "
+                "주소창에 github.com/settings/tokens/new 를 열거나, "
+                "키 목록(github.com/settings/tokens)에서 "
+                "「Generate new token」을 누르세요."
+            ),
+        }
+    return None
 
 
 def step_copy(i: int) -> dict[str, str | bool]:
