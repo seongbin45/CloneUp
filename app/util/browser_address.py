@@ -9,8 +9,15 @@ Optional dependency: ``uiautomation`` (soft-fail if missing).
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
+
+# Visible PAT on GitHub "copy your token now" page (Name / Value via UIA)
+_VISIBLE_PAT_RE = re.compile(
+    r"\b(gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b",
+    re.IGNORECASE,
+)
 
 # Localized / English omnibox names observed on Windows Chrome/Edge
 _ADDRESS_NAMES = (
@@ -91,8 +98,29 @@ def _read_edit_url(win) -> str:
     return ""
 
 
-def _harvest_ui_text(win, *, max_depth: int = 14, max_names: int = 80) -> str:
-    """Collect accessible Name strings (page body often empty in Chrome)."""
+def _ctrl_value(ctrl) -> str:
+    """Best-effort ValuePattern / LegacyIAccessible value (PAT often here)."""
+    try:
+        vp = ctrl.GetValuePattern()
+        if vp is not None:
+            val = (getattr(vp, "Value", None) or "").strip()
+            if val:
+                return val
+    except Exception:
+        pass
+    try:
+        leg = ctrl.GetLegacyIAccessiblePattern()
+        if leg is not None:
+            val = (getattr(leg, "Value", None) or "").strip()
+            if val:
+                return val
+    except Exception:
+        pass
+    return ""
+
+
+def _harvest_ui_text(win, *, max_depth: int = 14, max_names: int = 120) -> str:
+    """Collect accessible Name (+ Value) strings for cross-checks / PAT extract."""
     parts: list[str] = []
 
     def walk(ctrl, depth: int = 0) -> None:
@@ -101,6 +129,11 @@ def _harvest_ui_text(win, *, max_depth: int = 14, max_names: int = 80) -> str:
         try:
             name = (ctrl.Name or "").strip()
             ctype = ctrl.ControlTypeName or ""
+            value = _ctrl_value(ctrl)
+            # Always keep token-shaped strings (even odd control types)
+            for candidate in (name, value):
+                if candidate and _VISIBLE_PAT_RE.search(candidate):
+                    parts.append(candidate)
             if name and len(name) > 1:
                 # Prefer content-ish controls; still keep short button labels
                 # that match Google's CTA ("Try using a different browser").
@@ -113,10 +146,16 @@ def _harvest_ui_text(win, *, max_depth: int = 14, max_names: int = 80) -> str:
                     "AlertControl",
                     "StatusBarControl",
                     "ToolTipControl",
+                    "EditControl",
                 ):
                     parts.append(name)
                 elif len(name) > 20:
                     parts.append(name)
+            if value and value != name and len(value) > 1:
+                if ctype in ("EditControl", "DocumentControl", "TextControl"):
+                    parts.append(value)
+                elif _VISIBLE_PAT_RE.search(value):
+                    parts.append(value)
         except Exception:
             pass
         try:
@@ -138,6 +177,42 @@ def _harvest_ui_text(win, *, max_depth: int = 14, max_names: int = 80) -> str:
         seen.add(p)
         out.append(p)
     return "\n".join(out)
+
+
+def extract_visible_pat(*texts: str) -> str | None:
+    """
+    If a classic/fine-grained PAT appears in accessible text, return it.
+
+    Used on ``/settings/tokens`` right after Generate token (value shown once).
+    """
+    blob = "\n".join(t for t in texts if t)
+    if not blob.strip():
+        return None
+    m = _VISIBLE_PAT_RE.search(blob)
+    if not m:
+        return None
+    tok = m.group(1).strip()
+    # Reject masked placeholders
+    if set(tok) <= {"•", "*", "·", ".", " "}:
+        return None
+    if len(tok) < 24:
+        return None
+    return tok
+
+
+def looks_like_token_issued_banner(
+    window_title: str = "",
+    ui_text: str = "",
+) -> bool:
+    """True if GitHub 'copy your personal access token now' banner is visible."""
+    blob = f"{window_title or ''}\n{ui_text or ''}".lower()
+    if "make sure to copy your personal access token now" in blob:
+        return True
+    if "copy your personal access token" in blob and "now" in blob:
+        return True
+    if "개인용 액세스 토큰을 지금 복사" in blob or "지금 복사해 두세요" in blob:
+        return True
+    return False
 
 
 @dataclass

@@ -20,10 +20,12 @@ from app.util.browser_address import (
     analyze_google_signin_block,
     browser_address_available,
     detect_signin_method,
+    extract_visible_pat,
     is_apple_signin_url,
     is_github_flow_family_url,
     looks_like_github_logged_out_ui,
     looks_like_passkey_os_prompt,
+    looks_like_token_issued_banner,
     looks_like_token_note_taken,
     token_create_error_snippets,
 )
@@ -242,12 +244,45 @@ def test_away_from_github_flow_family() -> None:
 
     title, lead, verify = away_from_flow_guide_copy()
     assert "GitHub" in title
-    assert "괜찮" in lead or "원하" in lead  # soft, non-coercive
+    assert lead == "원하시면 마지막 페이지로 돌아가도 됩니다."
     assert "연계" in verify or "아님" in verify
 
     assert fallback_return_url(reached=-1).endswith("/login")
     assert fallback_return_url(reached=1) == "https://github.com/"
     assert "tokens/new" in fallback_return_url(reached=2)
+
+
+def test_extract_visible_pat_from_settings_tokens_uia() -> None:
+    """After Generate token, /settings/tokens may show ghp_… in accessible text."""
+    fake = (
+        "ghp_" + ("A" * 36)
+    )  # classic-shaped; length satisfies extract_visible_pat
+    ui = (
+        "Make sure to copy your personal access token now.\n"
+        "You won’t be able to see it again!\n"
+        f"{fake}\n"
+        "Copy token\n"
+    )
+    assert looks_like_token_issued_banner("", ui)
+    assert extract_visible_pat(ui) == fake
+    assert extract_visible_pat("no secret here") is None
+
+    kind, idx, meta = classify_browser_sample(
+        "https://github.com/settings/tokens",
+        window_title="Personal Access Tokens (Classic)",
+        ui_text=ui,
+    )
+    assert kind == "reached" and idx == 3
+    assert meta.get("method") == "token_visible"
+    assert meta.get("visible_pat") == fake
+
+    # List page without secret stays at key-create step
+    kind2, idx2, _m2 = classify_browser_sample(
+        "https://github.com/settings/tokens",
+        window_title="Personal Access Tokens (Classic)",
+        ui_text="Generate new token (classic)\nTokens (classic)",
+    )
+    assert kind2 == "reached" and idx2 == 2
 
 
 def test_token_note_already_taken_uia() -> None:

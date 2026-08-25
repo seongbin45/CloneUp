@@ -28,9 +28,11 @@ from app.auth.github_page_stage import GitHubPageStage, PageSnapshot, detect_git
 from app.util.browser_address import (
     browser_address_available,
     detect_signin_method,
+    extract_visible_pat,
     is_apple_signin_url,
     is_github_flow_family_url,
     looks_like_passkey_os_prompt,
+    looks_like_token_issued_banner,
     looks_like_token_note_taken,
     read_browser_page_sample,
     token_create_error_snippets,
@@ -124,6 +126,16 @@ def classify_browser_sample(
         meta["error_snippets"] = snippets
         return ("token_error", 2, meta)
 
+    # Visible PAT on /settings/tokens (UIA Name/Value) → ready to connect
+    visible = extract_visible_pat(window_title, ui_text)
+    if visible:
+        meta["method"] = "token_visible"
+        meta["visible_pat"] = visible
+        return ("reached", 3, meta)
+    if looks_like_token_issued_banner(window_title, ui_text):
+        meta["method"] = "token_issued_banner"
+        return ("reached", 3, meta)
+
     st = detect_github_page_stage(PageSnapshot(url=u))
     if st == GitHubPageStage.TOKEN_ISSUED:
         return ("reached", 3, meta)
@@ -171,7 +183,7 @@ def away_from_flow_guide_copy() -> tuple[str, str, str]:
     """title, lead, verify — soft, non-coercive (user may stay elsewhere)."""
     return (
         "지금은 GitHub 작업 화면이 아니에요",
-        "괜찮아요. 원하시면 마지막 페이지로 돌아와도 됩니다.",
+        "원하시면 마지막 페이지로 돌아가도 됩니다.",
         "검증: GitHub 연계 주소가 아님",
     )
 
@@ -884,22 +896,56 @@ class ExternalBrowserPatGuide(QDialog):
                     "Generate token을 누른 뒤 나온 키를 복사하세요."
                 )
             else:
-                # idx == 3 — issued / ready to paste
-                self._current = None
-                self._refresh_checklist_labels()
-                self._btn_open_tokens.hide()
-                self._status.setStyleSheet(
-                    "font-size:11.5px;color:#1f6f5c;border:none;"
-                )
-                self._status.setText(
-                    "키를 복사하면 아래 칸에 들어옵니다. 「연결」을 누르세요."
-                )
+                # idx == 3 — issued / copy; prefer UIA-visible PAT when present
+                visible = str((meta or {}).get("visible_pat") or "").strip()
+                if not visible:
+                    visible = (
+                        extract_visible_pat(
+                            sample.window_title, sample.ui_text
+                        )
+                        or ""
+                    )
+                if visible and _looks_like_token(visible):
+                    self._ingest_token(
+                        visible, source="화면에서 키를 읽었어요"
+                    )
+                else:
+                    self._current = None
+                    self._refresh_checklist_labels()
+                    self._btn_open_tokens.hide()
+                    self._status.setStyleSheet(
+                        "font-size:11.5px;color:#1f6f5c;border:none;"
+                    )
+                    self._status.setText(
+                        "화면에 키가 보이면 자동으로 들어옵니다. "
+                        "안 되면 복사해 붙여 넣으세요."
+                    )
             self.adjustSize()
             self._place_bottom_right()
             return
 
         self._btn_return_flow.hide()
         self._verify_lab.setText("검증: 주소를 분류하지 못함 — 체크리스트 유지")
+
+    def _ingest_token(self, text: str, *, source: str) -> None:
+        """Fill the key field from clipboard or UIA-visible PAT (once per value)."""
+        tok = (text or "").strip()
+        if not _looks_like_token(tok) or tok == self._clip_seen:
+            return
+        self._clip_seen = tok
+        self._edit.setText(tok)
+        self._clear_google_rejected_banner()
+        self._clear_token_note_taken()
+        self._btn_open_tokens.hide()
+        self._btn_return_flow.hide()
+        self._mark_reached(3)
+        self._apply_progress_copy(3)
+        self._status.setStyleSheet(
+            "font-size:11.5px;color:#1f6f5c;border:none;"
+        )
+        self._status.setText(f"{source}. 「연결」을 누르세요.")
+        self.raise_()
+        self.activateWindow()
 
     def _poll_clipboard(self) -> None:
         if self._done:
@@ -908,21 +954,7 @@ class ExternalBrowserPatGuide(QDialog):
         if clip is None:
             return
         text = (clip.text() or "").strip()
-        if not _looks_like_token(text) or text == self._clip_seen:
-            return
-        self._clip_seen = text
-        self._edit.setText(text)
-        self._clear_google_rejected_banner()
-        self._clear_token_note_taken()
-        self._btn_open_tokens.hide()
-        self._mark_reached(3)
-        self._apply_progress_copy(3)
-        self._status.setStyleSheet(
-            "font-size:11.5px;color:#1f6f5c;border:none;"
-        )
-        self._status.setText("키를 인식했어요. 「연결」을 누르세요.")
-        self.raise_()
-        self.activateWindow()
+        self._ingest_token(text, source="클립보드에서 키를 인식했어요")
 
     def _on_connect(self) -> None:
         raw = (self._edit.text() or "").strip()
