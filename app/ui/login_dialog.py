@@ -561,10 +561,9 @@ def _looks_like_github_token(text: str) -> bool:
     return any(t.startswith(p) for p in _TOKEN_PREFIXES)
 
 
-# Web-mode stack indices (START keeps key-list; CHOICE picks path; WEB is Path A)
-_WEB_PAGE_START = 0
-_WEB_PAGE_CHOICE = 1
-_WEB_PAGE_WEB = 2
+# Web-mode stack: choice first (no library/start page), then WebView (Path A)
+_WEB_PAGE_CHOICE = 0
+_WEB_PAGE_WEB = 1
 
 
 class ConnectGitHubWizard(QDialog):
@@ -656,10 +655,7 @@ class ConnectGitHubWizard(QDialog):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         if self._use_web:
-            # 0=start (키 목록), 1=path choice, 2=WebView only (Path A)
-            self._stack.addWidget(
-                self._page_guide(_STEP_START, _STEPS[_STEP_START][0], _STEPS[_STEP_START][1])
-            )
+            # 0=path choice (first), 1=WebView only (Path A). No library/start page.
             self._stack.addWidget(self._page_choice())
             self._stack.addWidget(self._page_web())
             self._choice_index = _WEB_PAGE_CHOICE
@@ -690,10 +686,11 @@ class ConnectGitHubWizard(QDialog):
             root.setSpacing(10)
         root.addWidget(self._progress)
         root.addWidget(self._stack, 1)
-        self._go(_STEP_START)
         if self._use_web:
+            self._go(self._choice_index)
             self._fit_web_dialog()
         else:
+            self._go(_STEP_START)
             self._place_center_on_anchor()
 
     def showEvent(self, event) -> None:  # noqa: N802
@@ -1016,18 +1013,14 @@ class ConnectGitHubWizard(QDialog):
 
     def _go(self, index: int) -> None:
         if self._use_web:
-            # START (0) · CHOICE (1) · WEB (2) — never nest external guide here
-            if index <= _WEB_PAGE_START:
-                index = _WEB_PAGE_START
-            elif index == _WEB_PAGE_CHOICE or index == self._choice_index:
+            # CHOICE (0) · WEB (1) — never nest external guide here
+            if index == self._choice_index or index <= _WEB_PAGE_CHOICE:
                 index = self._choice_index
             else:
                 index = self._web_index
             self._stack.setCurrentIndex(index)
             self.setWindowOpacity(1.0)
-            if index == _WEB_PAGE_START:
-                self._progress.setText("시작")
-            elif index == self._choice_index:
+            if index == self._choice_index:
                 self._progress.setText("로그인 방식")
             else:
                 self._paint_web_guide(self._ui_now)
@@ -1089,11 +1082,7 @@ class ConnectGitHubWizard(QDialog):
             inner.setMaximumWidth(520)
             inner.setMinimumWidth(400)
 
-        head = QLabel(
-            ("새 키로 다시 연결" if self._reauth else title)
-            if index == _STEP_START
-            else title
-        )
+        head = QLabel(title)
         head.setObjectName("wizTitle")
         head.setWordWrap(True)
         head.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
@@ -1117,33 +1106,10 @@ class ConnectGitHubWizard(QDialog):
             detail = _DetailToggle(
                 "키는 채팅·캡처·메일에 붙이지 마세요.\n"
                 "만료되면 새 키를 만들어 다시 연결합니다.\n"
-                "GitHub 영문: Tokens (classic) · Generate new token · repo."
+                "GitHub 영문: Tokens (classic) · Generate new token · repo.\n"
+                "키 목록·세분 키는 설정에서 열 수 있습니다."
             )
             lay.addWidget(detail)
-
-            side = QHBoxLayout()
-            side.setSpacing(8)
-            btn_fine = QPushButton("세분 키 (기존 저장소)")
-            btn_fine.setObjectName("btnSecondary")
-            btn_fine.setToolTip(
-                "이미 GitHub에 있는 저장소만 동기화할 때.\n"
-                "만들고 올리기(새 저장소)에는 classic이 필요합니다.\n"
-                "누르면 세분 키 페이지를 연 뒤, 키를 복사하면 붙여넣기로 이동합니다."
-            )
-            btn_fine.clicked.connect(self._open_fine_and_paste)
-            btn_list = QPushButton("키 목록")
-            btn_list.setObjectName("btnSecondary")
-            btn_list.setToolTip(
-                "GitHub에 이미 있는 키 목록을 엽니다. "
-                "연결 창은 잠시 최소화됩니다."
-            )
-            btn_list.clicked.connect(
-                lambda: self._open_url_in_external_browser(PAT_LIST_URL)
-            )
-            side.addWidget(btn_fine)
-            side.addWidget(btn_list)
-            side.addStretch(1)
-            lay.addLayout(side)
 
             if is_device_flow_allowed():
                 btn_dev = QPushButton("개발용 장치 코드")
@@ -1194,68 +1160,36 @@ class ConnectGitHubWizard(QDialog):
             btn_next.clicked.connect(lambda: self._go(_STEP_PASTE))
             nav.addWidget(btn_next)
         else:
-            # START only
-            if self._use_web:
-                btn_next = QPushButton("다음 →")
-                btn_next.setObjectName("btnPrimary")
-                btn_next.setDefault(True)
-                # Keep START (키 목록) first; path choice is the second screen
-                btn_next.clicked.connect(
-                    lambda: self._go(self._choice_index)
-                )
-                nav.addWidget(btn_next)
-            else:
-                btn_next = QPushButton("다음 →")
-                btn_next.setObjectName("btnPrimary")
-                btn_next.setDefault(True)
-                btn_next.clicked.connect(lambda: self._go(index + 1))
-                nav.addWidget(btn_next)
+            # Non-web START only
+            btn_next = QPushButton("다음 →")
+            btn_next.setObjectName("btnPrimary")
+            btn_next.setDefault(True)
+            btn_next.clicked.connect(lambda: self._go(index + 1))
+            nav.addWidget(btn_next)
 
         lay.addSpacing(8)
         lay.addLayout(nav)
-
-        if self._use_web and index == _STEP_START:
-            # Center the start card in the maximized dialog
-            outer = QWidget()
-            outer.setObjectName("connGuideOuter")
-            shell = QVBoxLayout(outer)
-            shell.setContentsMargins(0, 0, 0, 0)
-            shell.setSpacing(0)
-            row = QHBoxLayout()
-            row.setContentsMargins(0, 0, 0, 0)
-            row.addStretch(1)
-            # Soft card frame so content is visually grouped
-            card = QFrame()
-            card.setObjectName("connGuideCard")
-            card.setSizePolicy(
-                QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum
-            )
-            card_lay = QVBoxLayout(card)
-            card_lay.setContentsMargins(0, 0, 0, 0)
-            card_lay.addWidget(inner)
-            row.addWidget(card, 0, Qt.AlignmentFlag.AlignCenter)
-            row.addStretch(1)
-            shell.addStretch(1)
-            shell.addLayout(row)
-            shell.addStretch(1)
-            return outer
-
         return inner
 
     def _page_choice(self) -> QWidget:
-        """Second screen: pick WebView (Path A) or external browser (Path B)."""
+        """First screen: pick WebView (Path A) or external browser (Path B)."""
         inner = QWidget()
         inner.setObjectName("connGuideInner")
         inner.setMaximumWidth(520)
         inner.setMinimumWidth(400)
 
-        head = QLabel("로그인 방식을 고르세요")
+        head = QLabel(
+            "새 키로 다시 연결"
+            if self._reauth
+            else "로그인 방식을 고르세요"
+        )
         head.setObjectName("wizTitle")
         head.setWordWrap(True)
 
         lead = QLabel(
-            "앱 안 화면과 브라우저 안내 중 하나만 씁니다.\n"
-            "Google·패스키가 편하면 브라우저를 골라도 됩니다."
+            "어디서 로그인할지 고르세요. 창은 하나만 사용합니다.\n"
+            "Google·패스키가 편하면 브라우저를 골라도 됩니다.\n"
+            "키 목록·세분 키는 설정에서 열 수 있습니다."
         )
         lead.setObjectName("wizLead")
         lead.setWordWrap(True)
@@ -1288,11 +1222,7 @@ class ConnectGitHubWizard(QDialog):
         btn_cancel = QPushButton("취소")
         btn_cancel.setObjectName("btnGhost")
         btn_cancel.clicked.connect(self.reject)
-        btn_back = QPushButton("← 이전")
-        btn_back.setObjectName("btnGhost")
-        btn_back.clicked.connect(lambda: self._go(_WEB_PAGE_START))
         nav.addWidget(btn_cancel)
-        nav.addWidget(btn_back)
         nav.addStretch(1)
         lay.addSpacing(8)
         lay.addLayout(nav)

@@ -9,7 +9,6 @@ from app.ui.external_pat_guide import ExternalBrowserPatGuide
 from app.ui.login_dialog import (
     ConnectGitHubWizard,
     _WEB_PAGE_CHOICE,
-    _WEB_PAGE_START,
     _WEB_PAGE_WEB,
 )
 
@@ -28,9 +27,10 @@ def test_wizard_external_path_closes_without_nested_guide() -> None:
         wiz.close()
         return
 
-    assert wiz._stack.count() == 3
-    assert wiz._choice_index == _WEB_PAGE_CHOICE
-    assert wiz._web_index == _WEB_PAGE_WEB
+    assert wiz._stack.count() == 2
+    assert wiz._choice_index == _WEB_PAGE_CHOICE == 0
+    assert wiz._web_index == _WEB_PAGE_WEB == 1
+    assert wiz._stack.currentIndex() == _WEB_PAGE_CHOICE
 
     # Choosing external must Accept with empty token + wants_external
     QTimer.singleShot(30, wiz._start_external_path)
@@ -71,6 +71,5 @@ def test_guide_connect_accepts_with_token_standalone() -> None:
 
 
 def test_web_stack_indices_ordered() -> None:
-    assert _WEB_PAGE_START == 0
-    assert _WEB_PAGE_CHOICE == 1
-    assert _WEB_PAGE_WEB == 2
+    assert _WEB_PAGE_CHOICE == 0
+    assert _WEB_PAGE_WEB == 1
