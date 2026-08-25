@@ -637,8 +637,8 @@ class ConnectGitHubWizard(QDialog):
             pass
         if self._use_web:
             self.setObjectName("connectWebDialog")
-            # Floor only — opens maximized; □ restores to 16:9 (min 960×540).
-            self.setMinimumSize(960, 540)
+            # Soft floor — real mins come from screen_fit on show (DPI / small panels).
+            self.setMinimumSize(640, 360)
             # Do not call adjustSize() in web mode — it collapses QWebEngineView.
         else:
             self.setMinimumWidth(440)
@@ -701,145 +701,33 @@ class ConnectGitHubWizard(QDialog):
             QTimer.singleShot(0, self._fit_web_dialog)
 
     def _screen_for_dialog(self):
-        screen = None
-        if self._anchor is not None:
-            screen = self._anchor.screen()
-        if screen is None:
-            screen = self.screen()
-        if screen is None:
-            screen = QGuiApplication.primaryScreen()
-        return screen
+        from app.util.screen_fit import screen_for_widget
 
-    def _fit_frame_in_available(self, width: int, height: int) -> None:
-        """Resize/move so the *window frame* sits inside the work area.
-
-        Inner widget tree is untouched. On Windows ``setGeometry`` sets the
-        *client* rect — the title bar sits above it — so we convert through
-        frame chrome before calling setGeometry.
-        """
-        screen = self._screen_for_dialog()
-        if screen is None:
-            self.resize(width, height)
-            return
-        avail = screen.availableGeometry()
-        self.setMaximumSize(16777215, 16777215)
-        self.resize(width, height)
-        app = QApplication.instance()
-        if app is not None:
-            app.processEvents()
-
-        fg = self.frameGeometry()
-        geo = self.geometry()
-        # Chrome around the client area (title bar is usually chrome_t)
-        chrome_l = max(0, geo.x() - fg.x())
-        chrome_t = max(0, geo.y() - fg.y())
-        chrome_r = max(0, fg.right() - geo.right())
-        chrome_b = max(0, fg.bottom() - geo.bottom())
-
-        max_cw = max(960, avail.width() - chrome_l - chrome_r - 8)
-        max_ch = max(540, avail.height() - chrome_t - chrome_b - 8)
-        cw = min(width, max_cw)
-        ch = min(height, max_ch)
-        # Keep 16:9 if the caller asked for it (don't stretch height and leave a bottom gap)
-        if width > 0 and height > 0 and abs((width / height) - (16 / 9)) < 0.08:
-            if cw / max(ch, 1) > 16 / 9:
-                cw = max(960, int(ch * 16 / 9))
-            else:
-                ch = max(540, int(cw * 9 / 16))
-            cw = min(cw, max_cw)
-            ch = min(ch, max_ch)
-            # Re-fit after clamp so ratio survives both caps
-            if cw / max(ch, 1) > 16 / 9:
-                cw = int(ch * 16 / 9)
-            else:
-                ch = int(cw * 9 / 16)
-        if cw != self.width() or ch != self.height():
-            self.resize(cw, ch)
-            if app is not None:
-                app.processEvents()
-            fg = self.frameGeometry()
-            geo = self.geometry()
-            chrome_l = max(0, geo.x() - fg.x())
-            chrome_t = max(0, geo.y() - fg.y())
-            chrome_r = max(0, fg.right() - geo.right())
-            chrome_b = max(0, fg.bottom() - geo.bottom())
-            cw, ch = self.width(), self.height()
-
-        frame_w = cw + chrome_l + chrome_r
-        frame_h = ch + chrome_t + chrome_b
-        frame_x = avail.x() + max(0, (avail.width() - frame_w) // 2)
-        frame_y = avail.y() + max(0, (avail.height() - frame_h) // 2)
-        if frame_x + frame_w - 1 > avail.right():
-            frame_x = avail.right() - frame_w + 1
-        if frame_y + frame_h - 1 > avail.bottom():
-            frame_y = avail.bottom() - frame_h + 1
-        frame_x = max(frame_x, avail.left())
-        frame_y = max(frame_y, avail.top())
-
-        # setGeometry = client rect on Windows
-        self.setGeometry(frame_x + chrome_l, frame_y + chrome_t, cw, ch)
-        # Lock height so sizeHint cannot reintroduce a tall empty bottom band
-        self.setMaximumHeight(ch)
+        return screen_for_widget(self, anchor=self._anchor)
 
     def _place_normal_web_size(self) -> None:
-        """□ restore size: 16:9 client, centered in the work area."""
-        screen = self._screen_for_dialog()
-        if screen is None:
-            self.resize(1280, 720)
-            return
-        avail = screen.availableGeometry()
-        # Largest 16:9 that fits with a small inset (avoids tall window + empty bottom)
-        box_w = max(960, int(avail.width() * 0.90))
-        box_h = max(540, int(avail.height() * 0.90))
-        if box_w / box_h >= 16 / 9:
-            h = box_h
-            w = int(h * 16 / 9)
-        else:
-            w = box_w
-            h = int(w * 9 / 16)
-        self._fit_frame_in_available(w, h)
+        """□ restore size: 16:9 client, centered in the work area (DPI-aware)."""
+        from app.util.screen_fit import place_normal_16x9
+
+        place_normal_16x9(self, anchor=self._anchor)
 
     def _fit_web_dialog(self) -> None:
         """
-        Open at full monitor size (covers taskbar area).
+        Open maximized into the taskbar-safe work area (DPI / scale aware).
 
-        □ / Esc restores to 16:9 via ``_place_normal_web_size()``.
-        Important: clear any ``setMaximumHeight`` left by the 16:9 placer —
-        that lock used to block maximize and left the dialog awkwardly small.
+        □ restores to 16:9 via `_place_normal_web_size()`.
+        Does **not** use FullScreen — that breaks under Windows display scaling.
         """
+        from app.util.screen_fit import apply_work_area_maximized, clear_size_locks
+
         try:
-            self.setMinimumSize(960, 540)
-            # Must clear height lock from a prior _place_normal_web_size()
-            self.setMaximumSize(16777215, 16777215)
-            if self.windowState() & Qt.WindowState.WindowFullScreen:
-                self.setWindowState(
-                    self.windowState() & ~Qt.WindowState.WindowFullScreen
-                )
-            if self.windowState() & Qt.WindowState.WindowMaximized:
-                self.setWindowState(
-                    self.windowState() & ~Qt.WindowState.WindowMaximized
-                )
-            # Remember □ restore geometry first (16:9 in work area)
+            # Seed □ restore geometry, then unlock and maximize into availableGeometry
             self.showNormal()
             self._place_normal_web_size()
-            # Unlock again — _fit_frame_in_available sets maximumHeight
-            self.setMaximumSize(16777215, 16777215)
-            self._apply_full_monitor_size()
+            clear_size_locks(self)
+            apply_work_area_maximized(self, anchor=self._anchor)
         except Exception:
             self.resize(1280, 720)
-
-    def _apply_full_monitor_size(self) -> None:
-        """Fill the whole monitor rect (taskbar area included), keep close (X)."""
-        screen = self._screen_for_dialog()
-        if screen is None:
-            self.showMaximized()
-            return
-        # geometry() = full display; availableGeometry() excludes the taskbar
-        geo = screen.geometry()
-        self.setMaximumSize(16777215, 16777215)
-        self.setGeometry(geo)
-        # FullScreen covers taskbar; Esc / □-equivalent leaves via changeEvent
-        self.showFullScreen()
 
     def changeEvent(self, event) -> None:  # noqa: N802
         super().changeEvent(event)
@@ -850,7 +738,7 @@ class ConnectGitHubWizard(QDialog):
 
         if event.type() != QEvent.Type.WindowStateChange:
             return
-        # Leaving maximized or fullscreen → 16:9 restore size
+        # Leaving maximized (or legacy FullScreen) → 16:9 restore size
         old = Qt.WindowState.WindowNoState
         if isinstance(event, QWindowStateChangeEvent):
             old = event.oldState()
@@ -865,7 +753,7 @@ class ConnectGitHubWizard(QDialog):
             QTimer.singleShot(50, self._place_normal_web_size)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
-        # FullScreen has no title-bar □ — Esc returns to 16:9 window with X
+        # Legacy FullScreen escape hatch; maximized uses title-bar □
         if (
             self._use_web
             and event.key() == Qt.Key.Key_Escape
@@ -958,8 +846,9 @@ class ConnectGitHubWizard(QDialog):
         """Bring the dialog back after external-browser yield / token detect."""
         if self.isMinimized():
             if self._use_web:
-                self.setMaximumSize(16777215, 16777215)
-                self._apply_full_monitor_size()
+                from app.util.screen_fit import apply_work_area_maximized
+
+                apply_work_area_maximized(self, anchor=self._anchor)
             else:
                 self.showNormal()
         self.setWindowOpacity(1.0)

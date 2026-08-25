@@ -1,0 +1,276 @@
+"""DPI-aware window sizing helpers for varying monitor resolutions/scales.
+
+Qt logical pixels already incorporate devicePixelRatio when High DPI is on.
+Prefer ``availableGeometry()`` (taskbar-safe work area) over ``geometry()``
++ FullScreen, which mis-sizes on scaled displays.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+# Qt default max widget size
+_QWIDGETSIZE_MAX = 16777215
+
+
+@dataclass(frozen=True)
+class ScreenInfo:
+    """Snapshot of the screen the dialog should use (logical pixels)."""
+
+    available_x: int
+    available_y: int
+    available_w: int
+    available_h: int
+    full_w: int
+    full_h: int
+    dpr: float  # devicePixelRatio
+
+    @property
+    def available(self) -> tuple[int, int, int, int]:
+        return (
+            self.available_x,
+            self.available_y,
+            self.available_w,
+            self.available_h,
+        )
+
+
+def screen_for_widget(widget: Any = None, *, anchor: Any = None) -> Any:
+    """Best QScreen for a dialog (anchor → widget → primary)."""
+    from PySide6.QtGui import QGuiApplication
+
+    screen = None
+    if anchor is not None and hasattr(anchor, "screen"):
+        try:
+            screen = anchor.screen()
+        except Exception:
+            screen = None
+    if screen is None and widget is not None and hasattr(widget, "screen"):
+        try:
+            screen = widget.screen()
+        except Exception:
+            screen = None
+    if screen is None:
+        screen = QGuiApplication.primaryScreen()
+    return screen
+
+
+def read_screen_info(screen: Any) -> ScreenInfo | None:
+    if screen is None:
+        return None
+    try:
+        avail = screen.availableGeometry()
+        full = screen.geometry()
+        dpr = float(screen.devicePixelRatio())
+        return ScreenInfo(
+            available_x=int(avail.x()),
+            available_y=int(avail.y()),
+            available_w=max(1, int(avail.width())),
+            available_h=max(1, int(avail.height())),
+            full_w=max(1, int(full.width())),
+            full_h=max(1, int(full.height())),
+            dpr=dpr if dpr > 0 else 1.0,
+        )
+    except Exception:
+        return None
+
+
+def largest_16x9(
+    avail_w: int,
+    avail_h: int,
+    *,
+    inset: float = 0.90,
+    min_w: int = 960,
+    min_h: int = 540,
+) -> tuple[int, int]:
+    """
+    Largest 16:9 client size that fits in the work area.
+
+    Mins shrink on small / highly-scaled displays so the window still fits.
+    """
+    margin = 32
+    fit_w = max(320, avail_w - margin)
+    fit_h = max(240, avail_h - margin)
+    # Soft floors — never exceed the work area
+    floor_w = min(min_w, fit_w)
+    floor_h = min(min_h, fit_h)
+    box_w = max(floor_w, int(avail_w * inset))
+    box_h = max(floor_h, int(avail_h * inset))
+    box_w = min(box_w, fit_w)
+    box_h = min(box_h, fit_h)
+    if box_w / max(box_h, 1) >= 16 / 9:
+        h = box_h
+        w = int(h * 16 / 9)
+    else:
+        w = box_w
+        h = int(w * 9 / 16)
+    w = max(floor_w, min(w, fit_w))
+    h = max(floor_h, min(h, fit_h))
+    # Re-clamp ratio after mins
+    if w / max(h, 1) > 16 / 9:
+        w = max(floor_w, int(h * 16 / 9))
+    else:
+        h = max(floor_h, int(w * 9 / 16))
+    w = min(w, fit_w)
+    h = min(h, fit_h)
+    return w, h
+
+
+def clear_size_locks(widget: Any) -> None:
+    """Remove maximumWidth/Height locks that block maximize."""
+    try:
+        widget.setMaximumSize(_QWIDGETSIZE_MAX, _QWIDGETSIZE_MAX)
+    except Exception:
+        pass
+
+
+def apply_work_area_maximized(widget: Any, *, anchor: Any = None) -> None:
+    """
+    Maximize into the taskbar-safe work area (DPI-aware).
+
+    Uses ``showMaximized()`` so the window manager places the frame correctly
+    under the current display scale — avoids FullScreen + raw geometry bugs.
+    """
+    from PySide6.QtCore import Qt
+
+    clear_size_locks(widget)
+    # Drop FullScreen / Maximized so we can re-apply cleanly
+    try:
+        st = widget.windowState()
+        if st & Qt.WindowState.WindowFullScreen:
+            widget.setWindowState(st & ~Qt.WindowState.WindowFullScreen)
+        if st & Qt.WindowState.WindowMaximized:
+            widget.setWindowState(
+                widget.windowState() & ~Qt.WindowState.WindowMaximized
+            )
+    except Exception:
+        pass
+    try:
+        widget.showNormal()
+    except Exception:
+        pass
+    # Optional: seed geometry to available rect (helps multi-monitor)
+    screen = screen_for_widget(widget, anchor=anchor)
+    info = read_screen_info(screen)
+    if info is not None:
+        try:
+            # Soft minimum that always fits this screen
+            mw = min(960, max(320, info.available_w - 48))
+            mh = min(540, max(240, info.available_h - 48))
+            widget.setMinimumSize(mw, mh)
+        except Exception:
+            pass
+    clear_size_locks(widget)
+    try:
+        widget.showMaximized()
+    except Exception:
+        if info is not None:
+            widget.setGeometry(
+                info.available_x,
+                info.available_y,
+                info.available_w,
+                info.available_h,
+            )
+
+
+def fit_client_in_available(
+    widget: Any,
+    width: int,
+    height: int,
+    *,
+    anchor: Any = None,
+    keep_16x9: bool = False,
+    lock_height: bool = False,
+) -> None:
+    """
+    Resize/move so the window frame sits inside availableGeometry.
+
+    On Windows ``setGeometry`` is the *client* rect — account for frame chrome.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    screen = screen_for_widget(widget, anchor=anchor)
+    info = read_screen_info(screen)
+    if info is None:
+        widget.resize(width, height)
+        return
+
+    clear_size_locks(widget)
+    widget.resize(width, height)
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
+
+    fg = widget.frameGeometry()
+    geo = widget.geometry()
+    chrome_l = max(0, geo.x() - fg.x())
+    chrome_t = max(0, geo.y() - fg.y())
+    chrome_r = max(0, fg.right() - geo.right())
+    chrome_b = max(0, fg.bottom() - geo.bottom())
+
+    avail_w, avail_h = info.available_w, info.available_h
+    max_cw = max(320, avail_w - chrome_l - chrome_r - 8)
+    max_ch = max(240, avail_h - chrome_t - chrome_b - 8)
+    cw = min(width, max_cw)
+    ch = min(height, max_ch)
+
+    if keep_16x9 and width > 0 and height > 0:
+        if cw / max(ch, 1) > 16 / 9:
+            cw = max(320, int(ch * 16 / 9))
+        else:
+            ch = max(240, int(cw * 9 / 16))
+        cw = min(cw, max_cw)
+        ch = min(ch, max_ch)
+        if cw / max(ch, 1) > 16 / 9:
+            cw = int(ch * 16 / 9)
+        else:
+            ch = int(cw * 9 / 16)
+
+    if cw != widget.width() or ch != widget.height():
+        widget.resize(cw, ch)
+        if app is not None:
+            app.processEvents()
+        fg = widget.frameGeometry()
+        geo = widget.geometry()
+        chrome_l = max(0, geo.x() - fg.x())
+        chrome_t = max(0, geo.y() - fg.y())
+        chrome_r = max(0, fg.right() - geo.right())
+        chrome_b = max(0, fg.bottom() - geo.bottom())
+        cw, ch = widget.width(), widget.height()
+
+    frame_w = cw + chrome_l + chrome_r
+    frame_h = ch + chrome_t + chrome_b
+    frame_x = info.available_x + max(0, (avail_w - frame_w) // 2)
+    frame_y = info.available_y + max(0, (avail_h - frame_h) // 2)
+    if frame_x + frame_w - 1 > info.available_x + avail_w - 1:
+        frame_x = info.available_x + avail_w - frame_w
+    if frame_y + frame_h - 1 > info.available_y + avail_h - 1:
+        frame_y = info.available_y + avail_h - frame_h
+    frame_x = max(frame_x, info.available_x)
+    frame_y = max(frame_y, info.available_y)
+
+    widget.setGeometry(frame_x + chrome_l, frame_y + chrome_t, cw, ch)
+    if lock_height:
+        try:
+            widget.setMaximumHeight(ch)
+        except Exception:
+            pass
+
+
+def place_normal_16x9(widget: Any, *, anchor: Any = None) -> None:
+    """□ restore: largest 16:9 in the work area, centered."""
+    screen = screen_for_widget(widget, anchor=anchor)
+    info = read_screen_info(screen)
+    if info is None:
+        widget.resize(1280, 720)
+        return
+    w, h = largest_16x9(info.available_w, info.available_h)
+    # Soft minimum for this screen
+    try:
+        widget.setMinimumSize(min(960, w), min(540, h))
+    except Exception:
+        pass
+    fit_client_in_available(
+        widget, w, h, anchor=anchor, keep_16x9=True, lock_height=True
+    )
