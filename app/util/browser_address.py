@@ -1,11 +1,15 @@
-"""Read the address bar of Chrome / Edge via UI Automation (Windows).
+"""Read Chrome / Edge omnibox (+ accessible UI text) via UI Automation.
 
-Does **not** capture the full screen or page content — only the omnibox value.
-Requires optional dependency ``uiautomation`` (soft-fail if missing).
+Does **not** screenshot the page. Chrome often hides web-page DOM text from
+accessibility; we still harvest window title / Document / Text / Button names
+and cross-check them with the URL.
+
+Optional dependency: ``uiautomation`` (soft-fail if missing).
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 # Localized / English omnibox names observed on Windows Chrome/Edge
@@ -18,6 +22,23 @@ _ADDRESS_NAMES = (
 )
 
 _BROWSER_CLASS = "Chrome_WidgetWin_1"  # Chrome + Chromium Edge
+
+# Phrases from Google's insecure-browser interstitial (EN + KO)
+_BLOCK_TEXT_NEEDLES = (
+    "couldn't sign you in",
+    "could not sign you in",
+    "couldn’t sign you in",
+    "may not be secure",
+    "try using a different browser",
+    "browser or app may not be secure",
+    "this browser or app may not be secure",
+    "지원되는 브라우저로 로그인",
+    "안전한 브라우저가 아닐",
+    "다른 브라우저를 사용",
+    "브라우저나 앱이 안전하지",
+    "로그인할 수 없음",
+    "로그인하지 못했습니다",
+)
 
 
 def browser_address_available() -> bool:
@@ -62,12 +83,174 @@ def _read_edit_url(win) -> str:
     return ""
 
 
-def read_browser_address_bar() -> str | None:
-    """
-    Return the best-effort https URL from a Chrome/Edge window, or None.
+def _harvest_ui_text(win, *, max_depth: int = 14, max_names: int = 80) -> str:
+    """Collect accessible Name strings (page body often empty in Chrome)."""
+    parts: list[str] = []
 
-    Prefers the foreground browser window, then any top-level Chromium window
-    whose omnibox looks like an http(s) URL.
+    def walk(ctrl, depth: int = 0) -> None:
+        if depth > max_depth or len(parts) >= max_names:
+            return
+        try:
+            name = (ctrl.Name or "").strip()
+            ctype = ctrl.ControlTypeName or ""
+            if name and len(name) > 1:
+                # Prefer content-ish controls; still keep short button labels
+                # that match Google's CTA ("Try using a different browser").
+                if ctype in (
+                    "TextControl",
+                    "DocumentControl",
+                    "HyperlinkControl",
+                    "ButtonControl",
+                    "GroupControl",
+                ):
+                    parts.append(name)
+                elif len(name) > 20:
+                    parts.append(name)
+        except Exception:
+            pass
+        try:
+            for ch in ctrl.GetChildren():
+                walk(ch, depth + 1)
+        except Exception:
+            pass
+
+    try:
+        walk(win)
+    except Exception:
+        pass
+    # De-dupe while preserving order
+    seen: set[str] = set()
+    out: list[str] = []
+    for p in parts:
+        if p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return "\n".join(out)
+
+
+@dataclass
+class BrowserPageSample:
+    """One poll of a Chromium window."""
+
+    url: str = ""
+    window_title: str = ""
+    ui_text: str = ""
+    source: str = ""  # foreground | scan
+
+
+@dataclass
+class GoogleBlockAnalysis:
+    """Cross-check result for Google insecure-browser / rejected sign-in."""
+
+    blocked: bool
+    url_hit: bool
+    text_hit: bool
+    title_hit: bool
+    reasons: list[str] = field(default_factory=list)
+    matched_snippets: list[str] = field(default_factory=list)
+
+
+def _host_is_google_accounts(url: str) -> bool:
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        host = ""
+    if not host:
+        return "accounts.google.com" in (url or "").lower()
+    return host == "accounts.google.com" or (
+        host.endswith(".google.com") and host.startswith("accounts.")
+    )
+
+
+def _url_has_signin_rejected(url: str) -> bool:
+    raw = (url or "").strip().lower()
+    if not raw or not _host_is_google_accounts(raw):
+        return False
+    try:
+        path = (urlparse(raw).path or "").lower()
+        query = (urlparse(raw).query or "").lower()
+    except Exception:
+        path, query = raw, raw
+    if "/signin/rejected" in path or path.endswith("/rejected"):
+        return True
+    if "rejected" in path and "signin" in path:
+        return True
+    if "flowname=glifwebsignin" in query and "rejected" in raw:
+        return True
+    return False
+
+
+def analyze_google_signin_block(
+    url: str,
+    *,
+    window_title: str = "",
+    ui_text: str = "",
+) -> GoogleBlockAnalysis:
+    """
+    Cross-verify Google sign-in failure from URL + accessible text.
+
+    URL path ``/signin/rejected`` is the strongest signal when Chrome hides
+    page DOM from UI Automation. Text/title hits raise confidence when present.
+    """
+    reasons: list[str] = []
+    snippets: list[str] = []
+    url_hit = _url_has_signin_rejected(url)
+    if url_hit:
+        reasons.append("URL에 signin/rejected 확인")
+
+    title = window_title or ""
+    body = ui_text or ""
+    blob = f"{title}\n{body}".lower()
+    text_hit = False
+    title_hit = False
+    for needle in _BLOCK_TEXT_NEEDLES:
+        if needle in title.lower():
+            title_hit = True
+            text_hit = True
+            reasons.append(f"창 제목 일치: {needle}")
+            snippets.append(title[:80])
+            break
+    if not text_hit:
+        for needle in _BLOCK_TEXT_NEEDLES:
+            if needle in blob:
+                text_hit = True
+                reasons.append(f"UI 텍스트 일치: {needle}")
+                for line in body.splitlines():
+                    if needle in line.lower():
+                        snippets.append(line.strip()[:100])
+                        break
+                if not snippets and title:
+                    snippets.append(title[:80])
+                break
+
+    on_google = _host_is_google_accounts(url)
+    # Prefer requiring Google context for text-only hits (avoid false positives)
+    blocked = bool(url_hit or (on_google and text_hit))
+    if blocked and not reasons:
+        reasons.append("Google 차단 감지")
+    if on_google and not blocked:
+        reasons.append("Google 주소 · 거절 URL/차단 문구 없음 (진행 중)")
+    if on_google and url_hit and not text_hit:
+        reasons.append(
+            "본문 텍스트는 접근성으로 안 읽힘 — URL 교차검증만으로 거절 확정"
+        )
+
+    return GoogleBlockAnalysis(
+        blocked=blocked,
+        url_hit=url_hit,
+        text_hit=text_hit,
+        title_hit=title_hit,
+        reasons=reasons,
+        matched_snippets=snippets[:3],
+    )
+
+
+def read_browser_page_sample() -> BrowserPageSample | None:
+    """
+    Best-effort sample: omnibox URL + window title + accessible UI names.
+
+    Prefers the foreground Chromium window, then any top-level Chrome/Edge.
     """
     if not browser_address_available():
         return None
@@ -76,32 +259,62 @@ def read_browser_address_bar() -> str | None:
     except Exception:
         return None
 
+    def _sample_win(win, source: str) -> BrowserPageSample | None:
+        try:
+            url = _read_edit_url(win)
+            title = (win.Name or "").strip()
+            ui_text = _harvest_ui_text(win)
+            if not url and not title:
+                return None
+            return BrowserPageSample(
+                url=url or "",
+                window_title=title,
+                ui_text=ui_text,
+                source=source,
+            )
+        except Exception:
+            return None
+
     try:
         fg = auto.GetForegroundControl()
-        # Walk up to a top-level window
         win = fg
         for _ in range(8):
             if win is None:
                 break
             try:
                 if (win.ClassName or "") == _BROWSER_CLASS:
-                    url = _read_edit_url(win)
-                    if url:
-                        return url
+                    sample = _sample_win(win, "foreground")
+                    if sample and (sample.url or sample.window_title):
+                        return sample
                 win = win.GetParentControl()
             except Exception:
                 break
 
+        # Prefer a window whose URL is accounts.google.com / github.com
         root = auto.GetRootControl()
+        fallback: BrowserPageSample | None = None
         for w in root.GetChildren():
             try:
                 if (w.ClassName or "") != _BROWSER_CLASS:
                     continue
-                url = _read_edit_url(w)
-                if url:
-                    return url
+                sample = _sample_win(w, "scan")
+                if sample is None:
+                    continue
+                u = (sample.url or "").lower()
+                if "accounts.google.com" in u or "github.com" in u:
+                    return sample
+                if fallback is None and sample.url:
+                    fallback = sample
             except Exception:
                 continue
+        return fallback
     except Exception:
         return None
-    return None
+
+
+def read_browser_address_bar() -> str | None:
+    """Return https URL from Chrome/Edge omnibox, or None."""
+    sample = read_browser_page_sample()
+    if sample is None:
+        return None
+    return sample.url or None

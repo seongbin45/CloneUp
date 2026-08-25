@@ -56,28 +56,10 @@ def is_google_oauth_url(url: str) -> bool:
 
 
 def is_google_signin_rejected(url: str) -> bool:
-    """True if Google refused sign-in (insecure browser / rejected flow).
+    """True if Google refused sign-in (insecure browser / rejected flow)."""
+    from app.util.browser_address import _url_has_signin_rejected
 
-    Cross-check: path/query from the live omnibox, e.g.
-    ``/v3/signin/rejected?...&flowName=GlifWebSignIn``.
-    """
-    raw = (url or "").strip()
-    if not raw or not is_google_oauth_url(raw):
-        return False
-    try:
-        q = QUrl(raw)
-        path = (q.path() or "").lower()
-        query = (q.query() or "").lower()
-    except Exception:
-        path, query = raw.lower(), raw.lower()
-    if "/signin/rejected" in path or path.endswith("/rejected"):
-        return True
-    if "rejected" in path and "signin" in path:
-        return True
-    # Some interstitial URLs keep /signin but flag the reject in query
-    if "flowname=glifwebsignin" in query and "rejected" in raw.lower():
-        return True
-    return False
+    return _url_has_signin_rejected(url)
 
 
 def looks_like_insecure_browser_block(title: str, html: str) -> bool:

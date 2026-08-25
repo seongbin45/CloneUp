@@ -22,8 +22,12 @@ from PySide6.QtWidgets import (
 )
 
 from app.auth.github_page_stage import GitHubPageStage, PageSnapshot, detect_github_page_stage
-from app.ui.connect_webview import is_google_oauth_url, is_google_signin_rejected
-from app.util.browser_address import browser_address_available, read_browser_address_bar
+from app.ui.connect_webview import is_google_oauth_url
+from app.util.browser_address import (
+    analyze_google_signin_block,
+    browser_address_available,
+    read_browser_page_sample,
+)
 
 _GUIDE_OPACITY = 0.90
 _ADDR_POLL_MS = 3000
@@ -47,9 +51,14 @@ def _looks_like_token(text: str) -> bool:
     return any(t.startswith(p) for p in _TOKEN_PREFIXES)
 
 
-def classify_browser_url(url: str) -> tuple[str, int | None]:
+def classify_browser_sample(
+    url: str,
+    *,
+    window_title: str = "",
+    ui_text: str = "",
+) -> tuple[str, int | None, object | None]:
     """
-    Cross-check omnibox URL → (kind, checklist_index).
+    Cross-check omnibox URL + accessible UI text → (kind, index, analysis).
 
     kind:
       - ``rejected``: Google insecure-browser / signin rejected (NOT success)
@@ -58,26 +67,27 @@ def classify_browser_url(url: str) -> tuple[str, int | None]:
       - ``unknown``: cannot classify
     """
     u = (url or "").strip()
+    analysis = analyze_google_signin_block(
+        u, window_title=window_title, ui_text=ui_text
+    )
+    if analysis.blocked:
+        return ("rejected", 0, analysis)
     if not u:
-        return ("unknown", None)
-    # 1) Google error page must win over generic accounts.google.com
-    if is_google_signin_rejected(u):
-        return ("rejected", 0)
+        return ("unknown", None, analysis)
     if is_google_oauth_url(u):
-        # On Google, but not rejected yet — still signing in
-        return ("current", 0)
+        return ("current", 0, analysis)
     st = detect_github_page_stage(PageSnapshot(url=u))
     if st == GitHubPageStage.TOKEN_ISSUED:
-        return ("reached", 3)
+        return ("reached", 3, analysis)
     if st in (
         GitHubPageStage.TOKEN_CLASSIC_NEW,
         GitHubPageStage.TOKEN_FINE_NEW,
         GitHubPageStage.TOKEN_CLASSIC_LIST,
         GitHubPageStage.TOKEN_FINE_LIST,
     ):
-        return ("reached", 2)
+        return ("reached", 2, analysis)
     if st in (GitHubPageStage.LOGIN, GitHubPageStage.AUTH_2FA):
-        return ("reached", 1)
+        return ("reached", 1, analysis)
     try:
         from urllib.parse import urlparse
 
@@ -85,8 +95,14 @@ def classify_browser_url(url: str) -> tuple[str, int | None]:
     except Exception:
         host = ""
     if host == "github.com" or host.endswith(".github.com"):
-        return ("reached", 1)
-    return ("unknown", None)
+        return ("reached", 1, analysis)
+    return ("unknown", None, analysis)
+
+
+def classify_browser_url(url: str) -> tuple[str, int | None]:
+    """URL-only classify (tests / callers without a full sample)."""
+    kind, idx, _a = classify_browser_sample(url)
+    return (kind, idx)
 
 
 def checklist_index_for_url(url: str) -> int | None:
@@ -319,19 +335,25 @@ class ExternalBrowserPatGuide(QDialog):
         self._current = index
         self._refresh_checklist_labels()
 
-    def _show_google_rejected(self, url: str) -> None:
+    def _show_google_rejected(self, url: str, analysis: object | None = None) -> None:
         self._google_rejected = True
         self._current = 0
         # Do NOT mark step 0 as done — cross-check failed
         self._refresh_checklist_labels()
         self._title.setText("Google 로그인이 막혔어요")
         self._lead.setText(
-            "브라우저에 「안전한 브라우저가 아닙니다」류 오류가 보입니다. "
+            "브라우저에 로그인 오류가 보입니다. "
             "아래에서 GitHub 로그인을 다시 연 뒤, Google을 한 번 더 시도하세요."
         )
-        self._verify_lab.setText(
-            "검증: Google 거절 주소 확인됨 (signin/rejected) — 완료로 세지 않음"
-        )
+        reasons: list[str] = []
+        snippets: list[str] = []
+        if analysis is not None:
+            reasons = list(getattr(analysis, "reasons", []) or [])
+            snippets = list(getattr(analysis, "matched_snippets", []) or [])
+        verify = "검증: " + (" · ".join(reasons) if reasons else "Google 거절 감지")
+        if snippets:
+            verify += " | 문구: " + snippets[0][:50]
+        self._verify_lab.setText(verify)
         self._verify_lab.setStyleSheet(
             "font-size:11.5px;color:#8a6d12;border:none;"
         )
@@ -339,7 +361,7 @@ class ExternalBrowserPatGuide(QDialog):
             "font-size:11.5px;color:#8a6d12;border:none;"
         )
         self._status.setText(
-            "같은 오류 주소로 두면 계속 실패합니다. 「GitHub 로그인 다시 열기」를 누르세요."
+            "같은 오류 화면이면 계속 실패합니다. 「GitHub 로그인 다시 열기」를 누르세요."
         )
         self._btn_reopen.show()
         self.adjustSize()
@@ -374,26 +396,38 @@ class ExternalBrowserPatGuide(QDialog):
     def _poll_address(self) -> None:
         if self._done:
             return
-        url = read_browser_address_bar()
-        if not url:
-            self._verify_lab.setText("검증: 브라우저 주소를 아직 읽지 못함")
+        sample = read_browser_page_sample()
+        if sample is None or not (sample.url or sample.window_title):
+            self._verify_lab.setText(
+                "검증: 브라우저 주소/텍스트를 아직 읽지 못함"
+            )
             return
-        if url != self._last_url:
+        url = sample.url or ""
+        if url and url != self._last_url:
             self._last_url = url
             shown = url if len(url) <= 64 else url[:61] + "…"
             self._url_lab.setText(f"주소: {shown}")
+        elif not url and sample.window_title:
+            self._url_lab.setText(f"창: {sample.window_title[:64]}")
 
-        kind, idx = classify_browser_url(url)
+        kind, idx, analysis = classify_browser_sample(
+            url,
+            window_title=sample.window_title,
+            ui_text=sample.ui_text,
+        )
         if kind == "rejected":
-            self._show_google_rejected(url)
+            self._show_google_rejected(url, analysis)
             return
 
         if kind == "current" and idx is not None:
             # Google sign-in in progress — not success yet
             self._clear_google_rejected_banner()
             self._set_current(idx)
+            extra = ""
+            if analysis is not None and getattr(analysis, "reasons", None):
+                extra = " · " + analysis.reasons[-1]
             self._verify_lab.setText(
-                "검증: Google 로그인 화면 — 아직 완료로 치지 않음"
+                "검증: Google 로그인 진행 중 — 완료로 치지 않음" + extra
             )
             self._verify_lab.setStyleSheet(
                 "font-size:11.5px;color:#6d675c;border:none;"
@@ -412,9 +446,7 @@ class ExternalBrowserPatGuide(QDialog):
                 "키 만들기 화면",
                 "키 발급/복사 화면",
             )
-            self._verify_lab.setText(
-                f"검증: {labels[idx]} 확인됨"
-            )
+            self._verify_lab.setText(f"검증: {labels[idx]} 확인됨")
             self._verify_lab.setStyleSheet(
                 "font-size:11.5px;color:#1f6f5c;border:none;"
             )

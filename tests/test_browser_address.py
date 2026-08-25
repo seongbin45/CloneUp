@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 from app.ui.connect_webview import is_google_signin_rejected
-from app.ui.external_pat_guide import checklist_index_for_url, classify_browser_url
-from app.util.browser_address import _normalize_url, browser_address_available
+from app.ui.external_pat_guide import (
+    checklist_index_for_url,
+    classify_browser_sample,
+    classify_browser_url,
+)
+from app.util.browser_address import (
+    _normalize_url,
+    analyze_google_signin_block,
+    browser_address_available,
+)
 
 
 def test_normalize_url() -> None:
@@ -26,6 +34,33 @@ def test_google_signin_rejected_url() -> None:
     assert not is_google_signin_rejected("https://github.com/login")
 
 
+def test_analyze_google_block_cross_check() -> None:
+    rejected = (
+        "https://accounts.google.com/v3/signin/rejected"
+        "?continue=https://github.com&flowName=GlifWebSignIn"
+    )
+    a = analyze_google_signin_block(rejected)
+    assert a.blocked and a.url_hit
+    assert any("rejected" in r.lower() or "URL" in r for r in a.reasons)
+
+    # Text-only hit on Google host (when UIA exposes the interstitial copy)
+    b = analyze_google_signin_block(
+        "https://accounts.google.com/v3/signin/identifier",
+        window_title="Sign in - Google Accounts",
+        ui_text="Couldn't sign you in\nThis browser or app may not be secure.",
+    )
+    assert b.blocked and b.text_hit
+    assert any("텍스트" in r or "제목" in r for r in b.reasons)
+
+    # Progressing Google page without block text
+    c = analyze_google_signin_block(
+        "https://accounts.google.com/v3/signin/identifier?flowName=GlifWebSignIn",
+        window_title="Sign in - Google Accounts",
+        ui_text="Email or phone\nForgot email?",
+    )
+    assert not c.blocked
+
+
 def test_checklist_index_for_url() -> None:
     # In-progress Google — index 0 via classify, but rejected must NOT count as done
     assert checklist_index_for_url("https://accounts.google.com/signin") == 0
@@ -36,6 +71,10 @@ def test_checklist_index_for_url() -> None:
     assert checklist_index_for_url(rejected) is None
     kind, idx = classify_browser_url(rejected)
     assert kind == "rejected" and idx == 0
+    kind_s, idx_s, analysis = classify_browser_sample(
+        rejected, ui_text="Try using a different browser"
+    )
+    assert kind_s == "rejected" and analysis is not None and analysis.blocked
     kind2, idx2 = classify_browser_url(
         "https://accounts.google.com/v3/signin/identifier"
     )
