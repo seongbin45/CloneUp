@@ -67,6 +67,23 @@ def looks_like_insecure_browser_block(title: str, html: str) -> bool:
     )
     return any(n in blob for n in needles)
 
+
+def _normalize_nav_url(text: str) -> QUrl | None:
+    """Turn address-bar text into a QUrl (adds https:// when scheme missing)."""
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    # Reject obvious non-URLs / dangerous schemes
+    lower = raw.lower()
+    if lower.startswith(("javascript:", "data:", "file:", "vbscript:")):
+        return None
+    if "://" not in raw:
+        raw = "https://" + raw
+    q = QUrl.fromUserInput(raw)
+    if not q.isValid() or q.scheme() not in ("http", "https"):
+        return None
+    return q
+
 # Prefer a mainstream desktop Chrome UA so GitHub is less likely to treat
 # the embed as a bot. Version string is cosmetic.
 _CHROME_UA = (
@@ -275,6 +292,8 @@ class GitHubConnectWebPane(QWidget):
     load_failed = Signal(str)
     # Google SSO cannot run inside Qt WebEngine — open system browser.
     external_oauth_needed = Signal(str)
+    # (can_go_back, can_go_forward) after navigation / load
+    history_changed = Signal(bool, bool)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -505,6 +524,38 @@ class GitHubConnectWebPane(QWidget):
         if page is not None and hasattr(page, "reset_handoff"):
             page.reset_handoff()
         self._view.setUrl(QUrl(url))
+        self._emit_history()
+
+    def navigate_to(self, text: str) -> bool:
+        """Load a user-typed address. Returns False if the text is empty/invalid."""
+        q = _normalize_nav_url(text)
+        if q is None or not q.isValid():
+            return False
+        self.load_url(q.toString())
+        return True
+
+    def go_back(self) -> None:
+        hist = self._view.history()
+        if hist is not None and hist.canGoBack():
+            hist.back()
+            self._emit_history()
+
+    def go_forward(self) -> None:
+        hist = self._view.history()
+        if hist is not None and hist.canGoForward():
+            hist.forward()
+            self._emit_history()
+
+    def can_go_back(self) -> bool:
+        hist = self._view.history()
+        return bool(hist is not None and hist.canGoBack())
+
+    def can_go_forward(self) -> bool:
+        hist = self._view.history()
+        return bool(hist is not None and hist.canGoForward())
+
+    def _emit_history(self) -> None:
+        self.history_changed.emit(self.can_go_back(), self.can_go_forward())
 
     def open_external_fallback(self, url: str) -> None:
         from PySide6.QtGui import QDesktopServices
@@ -549,6 +600,7 @@ class GitHubConnectWebPane(QWidget):
     def _on_url(self, url: QUrl) -> None:
         text = url.toString()
         self.url_changed.emit(text)
+        self._emit_history()
         if is_google_oauth_url(text):
             self._emit_external_oauth(text)
             return
@@ -563,6 +615,7 @@ class GitHubConnectWebPane(QWidget):
 
     @Slot(bool)
     def _on_loaded(self, ok: bool) -> None:
+        self._emit_history()
         if not ok:
             self.load_failed.emit("페이지를 불러오지 못했습니다.")
             return

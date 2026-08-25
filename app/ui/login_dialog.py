@@ -587,6 +587,9 @@ class ConnectGitHubWizard(QDialog):
         self._web_cta: QPushButton | None = None
         self._web_cta_note: QLabel | None = None
         self._web_url: QLineEdit | None = None
+        self._web_back_btn: QPushButton | None = None
+        self._web_fwd_btn: QPushButton | None = None
+        self._web_url_editing = False
         self._track_host: QWidget | None = None
         self._track_lay: QHBoxLayout | None = None
         self._web_watch: QFrame | None = None
@@ -1275,13 +1278,17 @@ class ConnectGitHubWizard(QDialog):
         addr_lay = QHBoxLayout(addr)
         addr_lay.setContentsMargins(12, 0, 12, 0)
         addr_lay.setSpacing(10)
-        btn_back_nav = QPushButton("←")
-        btn_back_nav.setObjectName("connNavMini")
-        btn_back_nav.setEnabled(False)
-        btn_fwd_nav = QPushButton("→")
-        btn_fwd_nav.setObjectName("connNavMini")
-        btn_fwd_nav.setEnabled(False)
-        # URL field group: lock inside bar (시안)
+        self._web_back_btn = QPushButton("←")
+        self._web_back_btn.setObjectName("connNavMini")
+        self._web_back_btn.setToolTip("이전 페이지")
+        self._web_back_btn.setEnabled(False)
+        self._web_back_btn.clicked.connect(self._on_web_back)
+        self._web_fwd_btn = QPushButton("→")
+        self._web_fwd_btn.setObjectName("connNavMini")
+        self._web_fwd_btn.setToolTip("다음 페이지")
+        self._web_fwd_btn.setEnabled(False)
+        self._web_fwd_btn.clicked.connect(self._on_web_forward)
+        # URL field group: editable address (Enter to go)
         url_box = QFrame()
         url_box.setObjectName("connUrlBox")
         url_box_lay = QHBoxLayout(url_box)
@@ -1292,24 +1299,31 @@ class ConnectGitHubWizard(QDialog):
             "font-size:10px;color:#1f6f5c;border:none;background:transparent;"
         )
         self._web_url = QLineEdit()
-        self._web_url.setReadOnly(True)
+        self._web_url.setReadOnly(False)
         self._web_url.setObjectName("connUrlInner")
         self._web_url.setText("https://github.com/")
         self._web_url.setCursorPosition(0)
         self._web_url.setFrame(False)
+        self._web_url.setPlaceholderText("주소를 입력한 뒤 Enter")
+        self._web_url.setToolTip("주소를 수정한 뒤 Enter로 이동합니다")
+        self._web_url.returnPressed.connect(self._on_web_url_commit)
+        self._web_url.editingFinished.connect(self._on_web_url_edit_finished)
+        # While typing, don't let live navigation overwrite the field
+        self._web_url.textEdited.connect(lambda _t: self._mark_web_url_editing(True))
         url_box_lay.addWidget(lock)
         url_box_lay.addWidget(self._web_url, 1)
         only = QLabel("github.com 에서만 열립니다")
         only.setObjectName("wizMeta")
         only.setStyleSheet("font-size:11px;color:#6d675c;border:none;")
-        addr_lay.addWidget(btn_back_nav)
-        addr_lay.addWidget(btn_fwd_nav)
+        addr_lay.addWidget(self._web_back_btn)
+        addr_lay.addWidget(self._web_fwd_btn)
         addr_lay.addWidget(url_box, 1)
         addr_lay.addWidget(only)
 
         self._web_pane = GitHubConnectWebPane(browser)
         self._web_pane.stage_changed.connect(self._on_web_stage)
         self._web_pane.url_changed.connect(self._on_web_url)
+        self._web_pane.history_changed.connect(self._on_web_history)
         self._web_pane.token_found.connect(self._apply_detected_token)
         self._web_pane.load_failed.connect(self._on_web_load_failed)
         self._web_pane.external_oauth_needed.connect(self._on_google_oauth_external)
@@ -1608,10 +1622,55 @@ class ConnectGitHubWizard(QDialog):
         if self._ui_now >= 3:
             self._finish()
 
+    def _mark_web_url_editing(self, editing: bool) -> None:
+        self._web_url_editing = editing
+
+    def _on_web_url_edit_finished(self) -> None:
+        # Focus left the field without Enter — resume syncing from the page
+        self._web_url_editing = False
+
     def _on_web_url(self, url: str) -> None:
-        if self._web_url is not None:
-            self._web_url.setText(url or "https://github.com/")
-            self._web_url.setCursorPosition(0)
+        if self._web_url is None:
+            return
+        # Don't clobber what the user is typing
+        if self._web_url_editing or self._web_url.hasFocus():
+            return
+        self._web_url.setText(url or "https://github.com/")
+        self._web_url.setCursorPosition(0)
+
+    def _on_web_history(self, can_back: bool, can_fwd: bool) -> None:
+        if self._web_back_btn is not None:
+            self._web_back_btn.setEnabled(bool(can_back))
+        if self._web_fwd_btn is not None:
+            self._web_fwd_btn.setEnabled(bool(can_fwd))
+
+    def _on_web_back(self) -> None:
+        if self._web_pane is not None:
+            self._web_url_editing = False
+            self._web_pane.go_back()
+
+    def _on_web_forward(self) -> None:
+        if self._web_pane is not None:
+            self._web_url_editing = False
+            self._web_pane.go_forward()
+
+    def _on_web_url_commit(self) -> None:
+        """Enter in the address bar → navigate."""
+        if self._web_pane is None or self._web_url is None:
+            return
+        text = self._web_url.text()
+        self._web_url_editing = False
+        ok = self._web_pane.navigate_to(text)
+        if not ok and self._web_hint is not None:
+            self._web_hint.setText(
+                "주소를 확인하세요. https:// 로 시작하는 웹 주소만 열 수 있습니다."
+            )
+            # Restore current page URL into the field
+            try:
+                cur = self._web_pane._view.url().toString()
+            except Exception:
+                cur = "https://github.com/"
+            self._web_url.setText(cur or "https://github.com/")
 
     def _on_web_stage(self, stage: object) -> None:
         from app.auth.github_page_stage import GitHubPageStage
