@@ -215,7 +215,7 @@ def detect_signin_method(
     Which sign-in path the user appears to be on.
 
     Returns one of: ``google_blocked``, ``google``, ``apple``, ``passkey``,
-    ``github_login``, ``github``, ``other``.
+    ``github_login``, ``github_logout``, ``github``, ``other``.
     """
     analysis = analyze_google_signin_block(
         url, window_title=window_title, ui_text=ui_text
@@ -235,6 +235,8 @@ def detect_signin_method(
             path = (urlparse(url).path or "").lower()
         except Exception:
             pass
+        if path == "/logout" or path.startswith("/logout"):
+            return "github_logout"
         if path.startswith("/login") or path.startswith("/sessions/"):
             return "github_login"
         return "github"

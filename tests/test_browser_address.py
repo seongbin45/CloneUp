@@ -130,6 +130,12 @@ def test_checklist_index_for_url() -> None:
     )
     assert checklist_index_for_url("https://example.com/") is None
 
+    # Logout must be detected (not "unknown") and reset progress semantics
+    kind_out, idx_out = classify_browser_url("https://github.com/logout")
+    assert kind_out == "logged_out" and idx_out == 0
+    assert detect_signin_method("https://github.com/logout") == "github_logout"
+    assert checklist_index_for_url("https://github.com/logout") == 0
+
 
 def test_checklist_row_reflects_google_rejected() -> None:
     """Rejected Google must show on row 0 — not stay as empty ○."""

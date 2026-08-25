@@ -64,6 +64,7 @@ def classify_browser_sample(
 
     kind:
       - ``rejected``: Google insecure-browser / signin rejected (NOT success)
+      - ``logged_out``: user opened GitHub logout — progress must reset
       - ``current``: sign-in in progress (password / passkey / Apple / Google)
       - ``reached``: past login (sticky progress OK)
       - ``unknown``: cannot classify
@@ -84,6 +85,9 @@ def classify_browser_sample(
 
     if method == "google_blocked" or analysis.blocked:
         return ("rejected", 0, meta)
+
+    if method == "github_logout":
+        return ("logged_out", 0, meta)
 
     # Passkey OS sheet or Apple / Google / GitHub login form → still signing in
     if method in ("passkey", "apple", "google", "github_login"):
@@ -115,6 +119,8 @@ def classify_browser_sample(
     except Exception:
         host, path = "", ""
     if host == "github.com" or host.endswith(".github.com"):
+        if path == "/logout" or path.startswith("/logout"):
+            return ("logged_out", 0, meta)
         if path.startswith("/login"):
             return ("current", 0, meta)
         return ("reached", 1, meta)
@@ -165,6 +171,12 @@ def _method_guide_copy(method: str) -> tuple[str, str, str]:
             "Google 로그인이 막혔어요",
             "브라우저에 로그인 오류가 보입니다. GitHub 로그인을 다시 연 뒤 다른 방법(패스키·Apple·비밀번호)을 써도 됩니다.",
             "검증: Google 거절 확인 — 완료로 세지 않음",
+        )
+    if method == "github_logout":
+        return (
+            "로그아웃되었어요",
+            "GitHub에서 로그아웃했습니다. 다시 로그인한 뒤 키를 만들어 주세요.",
+            "검증: /logout 확인 — 진행 상태 초기화",
         )
     if method == "apple":
         return (
@@ -506,6 +518,25 @@ class ExternalBrowserPatGuide(QDialog):
 
         if kind == "rejected":
             self._show_google_rejected(url, meta)
+            return
+
+        if kind == "logged_out":
+            # User signed out — wipe sticky progress so old ✓ marks disappear
+            self._clear_google_rejected_banner()
+            self._reached = -1
+            self._current = 0
+            self._refresh_checklist_labels()
+            self._apply_method_copy("github_logout")
+            self._btn_reopen.show()
+            self._status.setStyleSheet(
+                "font-size:11.5px;color:#8a6d12;border:none;"
+            )
+            self._status.setText(
+                "다시 로그인한 뒤 키를 만들어 주세요. "
+                "「GitHub 로그인 다시 열기」를 눌러도 됩니다."
+            )
+            self.adjustSize()
+            self._place_bottom_right()
             return
 
         if kind == "current" and idx is not None:
