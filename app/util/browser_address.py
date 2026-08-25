@@ -110,6 +110,9 @@ def _harvest_ui_text(win, *, max_depth: int = 14, max_names: int = 80) -> str:
                     "HyperlinkControl",
                     "ButtonControl",
                     "GroupControl",
+                    "AlertControl",
+                    "StatusBarControl",
+                    "ToolTipControl",
                 ):
                     parts.append(name)
                 elif len(name) > 20:
@@ -248,6 +251,64 @@ def looks_like_github_logged_out_ui(
     if on_github and has_sign_in and has_sign_up:
         return True
     return False
+
+
+# GitHub classic PAT form flash errors (UIA Name harvest)
+_TOKEN_NOTE_TAKEN_NEEDLES = (
+    "note has already been taken",
+    "note already been taken",
+    "has already been taken",
+)
+
+
+def looks_like_token_note_taken(
+    window_title: str = "",
+    ui_text: str = "",
+    *,
+    url: str = "",
+) -> bool:
+    """
+    True if PAT create form shows Note-name collision flash.
+
+    Screenshot/UIA: ``Validation failed: Note has already been taken``
+    (common when ``description=CloneUp`` is reused across attempts).
+    """
+    blob = f"{window_title or ''}\n{ui_text or ''}".lower()
+    blob = blob.replace("\xa0", " ").replace("\u00a0", " ")
+    if not blob.strip():
+        return False
+    if "note has already been taken" in blob:
+        return True
+    if "has already been taken" in blob and (
+        "note" in blob or "validation failed" in blob
+    ):
+        return True
+    # On token settings pages, bare "already been taken" is still strong
+    path_hint = (url or "").lower()
+    on_token_page = "settings/tokens" in path_hint or "personal-access-token" in path_hint
+    if on_token_page and any(n in blob for n in _TOKEN_NOTE_TAKEN_NEEDLES):
+        return True
+    return False
+
+
+def token_create_error_snippets(
+    window_title: str = "",
+    ui_text: str = "",
+) -> list[str]:
+    """Return matched flash/error lines for verify UI (order preserved)."""
+    blob = f"{window_title or ''}\n{ui_text or ''}"
+    lines = [ln.strip() for ln in blob.splitlines() if ln.strip()]
+    out: list[str] = []
+    for ln in lines:
+        low = ln.lower()
+        if (
+            "already been taken" in low
+            or "validation failed" in low
+            or (low.startswith("note ") and "taken" in low)
+        ):
+            if ln not in out:
+                out.append(ln)
+    return out[:5]
 
 
 def detect_signin_method(

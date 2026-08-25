@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from app.ui.connect_webview import is_google_signin_rejected
 from app.ui.external_pat_guide import (
+    build_pat_create_url,
     checklist_index_for_url,
     checklist_row_label,
     classify_browser_sample,
     classify_browser_url,
     progress_guide_for_reached,
     should_auto_open_token_page,
+    token_note_error_guide_copy,
 )
 from app.util.browser_address import (
     _normalize_url,
@@ -19,6 +21,8 @@ from app.util.browser_address import (
     is_apple_signin_url,
     looks_like_github_logged_out_ui,
     looks_like_passkey_os_prompt,
+    looks_like_token_note_taken,
+    token_create_error_snippets,
 )
 
 
@@ -200,6 +204,59 @@ def test_github_logged_out_via_sign_in_sign_up_ui() -> None:
         )
         == "github"
     )
+
+
+def test_token_note_already_taken_uia() -> None:
+    """Duplicate Note flash must be read from UIA text, not treated as success."""
+    ui = (
+        "New personal access token\n"
+        "Dismiss this message\n"
+        "Validation failed: Note has already been taken\n"
+        "Note has already been taken\n"
+        "Generate token\n"
+    )
+    assert looks_like_token_note_taken(
+        "New Personal Access Token (classic)",
+        ui,
+        url="https://github.com/settings/tokens",
+    )
+    snippets = token_create_error_snippets(
+        "New Personal Access Token (classic)", ui
+    )
+    assert any("already been taken" in s.lower() for s in snippets)
+
+    kind, idx, meta = classify_browser_sample(
+        "https://github.com/settings/tokens",
+        window_title="New Personal Access Token (classic)",
+        ui_text=ui,
+    )
+    assert kind == "token_error" and idx == 2
+    assert meta.get("method") == "token_note_taken"
+    assert meta.get("token_error") == "note_taken"
+
+    # Without error text, same URL is normal token list progress
+    kind_ok, idx_ok, _m = classify_browser_sample(
+        "https://github.com/settings/tokens",
+        window_title="Personal Access Tokens (Classic)",
+        ui_text="Generate new token (classic)\nTokens (classic)",
+    )
+    assert kind_ok == "reached" and idx_ok == 2
+
+    row = checklist_row_label(
+        2, reached=1, current=2, google_rejected=False, token_note_taken=True
+    )
+    assert row.startswith("!")
+    assert "중복" in row
+
+    title, lead, verify = token_note_error_guide_copy()
+    assert "Note" in title
+    assert "이름" in lead or "열기" in lead
+    assert "already been taken" in verify.lower() or "Note" in verify
+
+    url = build_pat_create_url()
+    assert "settings/tokens/new" in url
+    assert "scopes=repo" in url
+    assert "description=CloneUp-" in url  # unique suffix, not bare CloneUp
 
 
 def test_progress_guide_after_login_confirmed() -> None:

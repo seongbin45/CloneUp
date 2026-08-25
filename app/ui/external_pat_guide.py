@@ -22,13 +22,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from urllib.parse import quote
+
 from app.auth.github_page_stage import GitHubPageStage, PageSnapshot, detect_github_page_stage
 from app.util.browser_address import (
     browser_address_available,
     detect_signin_method,
     is_apple_signin_url,
     looks_like_passkey_os_prompt,
+    looks_like_token_note_taken,
     read_browser_page_sample,
+    token_create_error_snippets,
 )
 
 _GUIDE_OPACITY = 0.90
@@ -36,11 +40,17 @@ _ADDR_POLL_MS = 3000
 _CLIP_POLL_MS = 500
 _TOKEN_PREFIXES = ("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")
 _GITHUB_LOGIN = "https://github.com/login"
-# classic repo — same default as connect wizard (새 저장소 만들기용)
-_PAT_CREATE_URL = (
-    "https://github.com/settings/tokens/new"
-    "?scopes=repo&description=CloneUp"
-)
+
+
+def build_pat_create_url(*, note: str | None = None) -> str:
+    """classic ``repo`` token form; unique Note avoids 'already been taken'."""
+    from datetime import datetime
+
+    n = (note or "").strip() or f"CloneUp-{datetime.now().strftime('%m%d-%H%M')}"
+    return (
+        "https://github.com/settings/tokens/new"
+        f"?scopes=repo&description={quote(n, safe='')}"
+    )
 
 # Method-neutral checklist — do not force Google-only wording
 _CHECKLIST = (
@@ -71,6 +81,7 @@ def classify_browser_sample(
       - ``rejected``: Google insecure-browser / signin rejected (NOT success)
       - ``logged_out``: logout URL **or** github.com with Sign in/Sign up UI
         (same URL when logged in vs out — UI text cross-check) — reset progress
+      - ``token_error``: PAT form flash (e.g. Note has already been taken)
       - ``current``: sign-in in progress (password / passkey / Apple / Google)
       - ``reached``: past login (sticky progress OK)
       - ``unknown``: cannot classify
@@ -102,6 +113,14 @@ def classify_browser_sample(
 
     if not u and not window_title:
         return ("unknown", None, meta)
+
+    # PAT Note collision flash — must win over generic token-page "reached"
+    if looks_like_token_note_taken(window_title, ui_text, url=u):
+        snippets = token_create_error_snippets(window_title, ui_text)
+        meta["method"] = "token_note_taken"
+        meta["token_error"] = "note_taken"
+        meta["error_snippets"] = snippets
+        return ("token_error", 2, meta)
 
     st = detect_github_page_stage(PageSnapshot(url=u))
     if st == GitHubPageStage.TOKEN_ISSUED:
@@ -158,17 +177,29 @@ def checklist_row_label(
     reached: int,
     current: int | None,
     google_rejected: bool,
+    token_note_taken: bool = False,
 ) -> str:
     """Pure label text for checklist row — used by UI and unit tests."""
     base = _CHECKLIST[index]
     done = index <= reached
     if google_rejected and index == 0 and not done:
         return f"!  {base} — Google 막힘"
+    if token_note_taken and index == 2 and not done:
+        return f"!  {base} — Note 이름 중복"
     if done:
         return f"✓  {base}"
     if current is not None and index == current:
         return f"→  {base}"
     return f"○  {base}"
+
+
+def token_note_error_guide_copy() -> tuple[str, str, str]:
+    """title, lead, verify when UIA reads Note-already-taken flash."""
+    return (
+        "Note 이름이 이미 있어요",
+        "Note를 바꾸거나 「다른 이름으로 열기」를 누르세요.",
+        "검증: Note has already been taken",
+    )
 
 
 def _method_guide_copy(method: str) -> tuple[str, str, str]:
@@ -275,6 +306,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._reached = -1  # highest checklist index marked done
         self._current: int | None = None  # in-progress step (●)
         self._google_rejected = False
+        self._token_note_taken = False  # UIA: Note has already been taken
         self._token_nav_opened = False  # auto-open tokens/new at most once
         self._check_labels: list[QLabel] = []
         self._last_url = ""
@@ -364,7 +396,8 @@ class ExternalBrowserPatGuide(QDialog):
 
         self._btn_open_tokens = QPushButton("키 만들기 페이지 열기")
         self._btn_open_tokens.setToolTip(
-            "로그인 후 classic 키(repo) 만들기 페이지를 엽니다."
+            "classic 키(repo) 만들기 페이지를 엽니다. "
+            "Note 이름이 겹치면 새 이름으로 다시 엽니다."
         )
         self._btn_open_tokens.clicked.connect(self._on_open_token_page_clicked)
         self._btn_open_tokens.hide()
@@ -447,7 +480,9 @@ class ExternalBrowserPatGuide(QDialog):
         self._btn_connect.setEnabled(has)
         if _looks_like_token(text or ""):
             self._google_rejected = False
+            self._clear_token_note_taken()
             self._btn_reopen.hide()
+            self._btn_open_tokens.hide()
             self._mark_reached(3)
             self._status.setStyleSheet(
                 "font-size:11.5px;color:#1f6f5c;border:none;"
@@ -463,6 +498,7 @@ class ExternalBrowserPatGuide(QDialog):
                 reached=self._reached,
                 current=self._current,
                 google_rejected=self._google_rejected,
+                token_note_taken=self._token_note_taken,
             )
             lab.setText(text)
             if text.startswith("!"):
@@ -488,6 +524,52 @@ class ExternalBrowserPatGuide(QDialog):
     def _set_current(self, index: int) -> None:
         self._current = index
         self._refresh_checklist_labels()
+
+    def _sync_open_tokens_button(self) -> None:
+        if self._token_note_taken:
+            self._btn_open_tokens.setText("다른 이름으로 키 만들기 열기")
+        else:
+            self._btn_open_tokens.setText("키 만들기 페이지 열기")
+
+    def _show_token_note_taken(self, meta: dict | None = None) -> None:
+        self._token_note_taken = True
+        self._google_rejected = False
+        self._btn_reopen.hide()
+        # Login stays done; key-create row shows "!" not sticky ✓
+        self._reached = max(self._reached, 1)
+        if self._reached >= 2:
+            self._reached = 1
+        self._current = 2
+        self._refresh_checklist_labels()
+        title, lead, verify_fallback = token_note_error_guide_copy()
+        self._title.setText(title)
+        self._lead.setText(lead)
+        snippets = list((meta or {}).get("error_snippets") or [])
+        if snippets:
+            verify = "검증: " + snippets[0][:72]
+        else:
+            verify = verify_fallback
+        self._verify_lab.setText(verify)
+        self._verify_lab.setStyleSheet(
+            "font-size:11.5px;color:#8a6d12;border:none;"
+        )
+        self._status.setStyleSheet(
+            "font-size:11.5px;color:#8a6d12;border:none;"
+        )
+        self._status.setText(
+            "Note(이름)이 이미 쓰였어요. 이름을 바꾸거나 "
+            "「다른 이름으로 키 만들기 열기」를 누르세요."
+        )
+        self._sync_open_tokens_button()
+        self._btn_open_tokens.show()
+        self.adjustSize()
+        self._place_bottom_right()
+
+    def _clear_token_note_taken(self) -> None:
+        if not self._token_note_taken:
+            return
+        self._token_note_taken = False
+        self._sync_open_tokens_button()
 
     def _show_google_rejected(self, url: str, meta: dict | None = None) -> None:
         self._google_rejected = True
@@ -548,23 +630,27 @@ class ExternalBrowserPatGuide(QDialog):
             "font-size:11.5px;color:#6d675c;border:none;"
         )
 
-    def _open_token_create_page(self) -> None:
+    def _open_token_create_page(self, *, unique_note: bool = True) -> None:
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
 
-        QDesktopServices.openUrl(QUrl(_PAT_CREATE_URL))
+        # Always use a fresh Note so retries don't hit "already been taken"
+        url = build_pat_create_url() if unique_note else build_pat_create_url(note="CloneUp")
+        QDesktopServices.openUrl(QUrl(url))
         self._token_nav_opened = True
 
     def _on_open_token_page_clicked(self) -> None:
-        self._open_token_create_page()
+        self._clear_token_note_taken()
+        self._open_token_create_page(unique_note=True)
         self._set_current(2)
         self._apply_progress_copy(1)
         self._status.setStyleSheet(
             "font-size:11.5px;color:#1f6f5c;border:none;"
         )
         self._status.setText(
-            "브라우저에서 Generate token을 누른 뒤 키를 복사하세요."
+            "새 Note 이름으로 열었어요. Generate token을 누르세요."
         )
+        self._sync_open_tokens_button()
 
     def _reopen_github_login(self) -> None:
         from PySide6.QtCore import QUrl
@@ -572,6 +658,7 @@ class ExternalBrowserPatGuide(QDialog):
 
         QDesktopServices.openUrl(QUrl(_GITHUB_LOGIN))
         self._clear_google_rejected_banner()
+        self._clear_token_note_taken()
         self._btn_open_tokens.hide()
         self._set_current(0)
         self._apply_method_copy("github_login")
@@ -609,10 +696,15 @@ class ExternalBrowserPatGuide(QDialog):
             self._show_google_rejected(url, meta)
             return
 
+        if kind == "token_error":
+            self._show_token_note_taken(meta)
+            return
+
         if kind == "logged_out":
             # User signed out (or logged-out github.com with Sign in/up) —
             # wipe sticky progress so old ✓ marks disappear
             self._clear_google_rejected_banner()
+            self._clear_token_note_taken()
             self._reached = -1
             self._current = 0
             self._token_nav_opened = False
@@ -638,6 +730,7 @@ class ExternalBrowserPatGuide(QDialog):
 
         if kind == "current" and idx is not None:
             self._clear_google_rejected_banner()
+            self._clear_token_note_taken()
             self._btn_open_tokens.hide()
             self._set_current(idx)
             self._apply_method_copy(method)
@@ -645,6 +738,7 @@ class ExternalBrowserPatGuide(QDialog):
 
         if kind == "reached" and idx is not None:
             self._clear_google_rejected_banner()
+            self._clear_token_note_taken()
             self._btn_reopen.hide()
             self._mark_reached(idx)
             self._apply_progress_copy(idx)
@@ -652,13 +746,14 @@ class ExternalBrowserPatGuide(QDialog):
             if idx == 1:
                 # Logged in on github.com — guide toward classic token create
                 self._set_current(2)
+                self._sync_open_tokens_button()
                 self._btn_open_tokens.show()
                 if should_auto_open_token_page(
                     kind=kind,
                     idx=idx,
                     already_opened=self._token_nav_opened,
                 ):
-                    self._open_token_create_page()
+                    self._open_token_create_page(unique_note=True)
                     self._status.setStyleSheet(
                         "font-size:11.5px;color:#1f6f5c;border:none;"
                     )
@@ -675,6 +770,7 @@ class ExternalBrowserPatGuide(QDialog):
                     )
             elif idx == 2:
                 self._set_current(2)
+                self._sync_open_tokens_button()
                 self._btn_open_tokens.show()
                 self._status.setStyleSheet(
                     "font-size:11.5px;color:#1f6f5c;border:none;"
@@ -711,6 +807,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._clip_seen = text
         self._edit.setText(text)
         self._clear_google_rejected_banner()
+        self._clear_token_note_taken()
         self._btn_open_tokens.hide()
         self._mark_reached(3)
         self._apply_progress_copy(3)
