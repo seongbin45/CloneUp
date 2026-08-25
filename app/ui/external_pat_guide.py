@@ -333,16 +333,27 @@ def should_auto_open_token_page(
 
 
 class ExternalBrowserPatGuide(QDialog):
-    """Bottom-right translucent helper: checklist + paste + connect."""
+    """Standalone browser-path connect UI (Path B).
+
+    Must not run nested under ConnectGitHubWizard. Main window closes the
+    wizard first, then ``exec()`` this dialog alone. 「연결」 accepts with
+    ``token()`` — independent of WebView ``_finish``.
+    """
 
     token_accepted = Signal(str)
     cancelled = Signal()
 
-    def __init__(self, anchor: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        anchor: QWidget | None = None,
+        *,
+        open_login_on_start: bool = False,
+    ) -> None:
         super().__init__(None)
         self._anchor = anchor
         self._clip_seen = ""
         self._done = False
+        self._token = ""  # set on Connect for token() after exec()
         self._reached = -1  # highest checklist index marked done
         self._current: int | None = None  # in-progress step (●)
         self._google_rejected = False
@@ -351,9 +362,11 @@ class ExternalBrowserPatGuide(QDialog):
         self._last_family_url = ""  # last GitHub-flow family URL (soft return)
         self._check_labels: list[QLabel] = []
         self._last_url = ""
+        self._open_login_on_start = open_login_on_start
 
         self.setWindowTitle("CloneUp — 브라우저 안내")
-        self.setWindowModality(Qt.WindowModality.NonModal)
+        # Standalone modal — only this connect UI should be up
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
         self.setWindowOpacity(_GUIDE_OPACITY)
         self.setMinimumWidth(380)
@@ -366,8 +379,8 @@ class ExternalBrowserPatGuide(QDialog):
         self._title.setWordWrap(True)
 
         self._lead = QLabel(
-            "앱 안 WebView에서 Google이 막히면 여기로 옵니다. "
-            "비밀번호·패스키·Apple·Google 모두 브라우저에서 쓸 수 있어요."
+            "비밀번호·패스키·Apple·Google 중 편한 방법으로 로그인한 뒤 "
+            "키를 만들어 주세요."
         )
         self._lead.setWordWrap(True)
         self._lead.setStyleSheet("font-size:12.5px;color:#4a453b;border:none;")
@@ -489,6 +502,8 @@ class ExternalBrowserPatGuide(QDialog):
         self._addr_timer.start()
         # First read soon so the user sees feedback quickly
         QTimer.singleShot(400, self._poll_address)
+        if self._open_login_on_start:
+            QTimer.singleShot(200, self._reopen_github_login)
 
         self._place_bottom_right()
 
@@ -957,6 +972,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._ingest_token(text, source="클립보드에서 키를 인식했어요")
 
     def _on_connect(self) -> None:
+        """Path B Connect — accept with token; does not touch WebView wizard."""
         raw = (self._edit.text() or "").strip()
         if not _looks_like_token(raw):
             self._status.setStyleSheet(
@@ -968,8 +984,7 @@ class ExternalBrowserPatGuide(QDialog):
             return
         self._stop_timers()
         self._done = True
-        # Emit before accept so the parent wizard can done(Accepted) while
-        # this dialog is still alive; then close without emitting cancelled.
+        self._token = raw
         self.token_accepted.emit(raw)
         self.accept()
 
@@ -995,4 +1010,4 @@ class ExternalBrowserPatGuide(QDialog):
         super().closeEvent(event)
 
     def token(self) -> str:
-        return (self._edit.text() or "").strip()
+        return (self._token or self._edit.text() or "").strip()

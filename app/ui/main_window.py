@@ -1242,7 +1242,7 @@ class MainController(QObject):
                 self._log("재로그인 취소됨 — 기존 로그인 유지")
                 return
 
-        # Beginner 3-step wizard (PAT only). Security: no public Device Flow.
+        # Beginner wizard (PAT). Path A = WebView wizard; Path B = Guide alone.
         wiz = ConnectGitHubWizard(self.window, reauth=had_session)
         if wiz.exec() != ConnectGitHubWizard.DialogCode.Accepted:
             self._log("연결 안내 취소")
@@ -1266,7 +1266,30 @@ class MainController(QObject):
             self._start_worker(w)
             return
 
+        if wiz.wants_external_browser():
+            # Wizard is already closed — only ExternalBrowserPatGuide may show
+            self._run_external_pat_guide()
+            return
+
         self._start_pat_login(token=wiz.token())
+
+    def _run_external_pat_guide(self) -> None:
+        """Path B: floating/browser guide alone (never nested under WebView wizard)."""
+        from app.ui.external_pat_guide import ExternalBrowserPatGuide
+
+        self._log("--- GitHub 연결 (브라우저 안내) ---")
+        guide = ExternalBrowserPatGuide(
+            anchor=self.window, open_login_on_start=True
+        )
+        # Mutual exclusion: wizard must already be closed before Guide.exec
+        if guide.exec() != ExternalBrowserPatGuide.DialogCode.Accepted:
+            self._log("브라우저 안내 취소")
+            return
+        raw = (guide.token() or "").strip()
+        if not raw:
+            self._log("키가 비어 연결 취소")
+            return
+        self._start_pat_login(token=raw)
 
     def _start_pat_login(self, token: str | None = None) -> None:
         """Store user-issued PAT after GET /user (no OAuth App)."""
@@ -1278,6 +1301,9 @@ class MainController(QObject):
                 return
             if wiz.wants_device_flow():
                 self._log("개발용 Device Flow는 상태줄 로그인에서만 가능")
+                return
+            if wiz.wants_external_browser():
+                self._run_external_pat_guide()
                 return
             raw = wiz.token()
         if not raw.strip():

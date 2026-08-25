@@ -561,12 +561,19 @@ def _looks_like_github_token(text: str) -> bool:
     return any(t.startswith(p) for p in _TOKEN_PREFIXES)
 
 
+# Web-mode stack indices (START keeps key-list; CHOICE picks path; WEB is Path A)
+_WEB_PAGE_START = 0
+_WEB_PAGE_CHOICE = 1
+_WEB_PAGE_WEB = 2
+
+
 class ConnectGitHubWizard(QDialog):
     """
     PAT connect wizard.
 
-    Preferred: embedded Qt WebEngine + live page-stage guide.
-    Fallback: external browser + checklist (when WebEngine is missing).
+    Path A: embedded Qt WebEngine (this dialog only).
+    Path B: user chooses external browser → this dialog closes, then
+    ``ExternalBrowserPatGuide`` runs alone (main_window). Never nested.
     """
 
     def __init__(self, parent: QWidget | None = None, *, reauth: bool = False) -> None:
@@ -575,6 +582,7 @@ class ConnectGitHubWizard(QDialog):
         super().__init__(None)
         self._token = ""
         self._want_device = False
+        self._want_external = False  # Path B: close wizard, main runs Guide alone
         self._reauth = reauth
         self._via_fine = False
         self._browser_opened = False
@@ -600,6 +608,8 @@ class ConnectGitHubWizard(QDialog):
         self._web_step_name: QLabel | None = None
         self._web_stage_title: QLabel | None = None
         self._web_hint: QLabel | None = None
+        self._btn_switch_external: QPushButton | None = None
+        self._external_guide = None  # must stay unused (no nested guide)
         from app.ui.connect_webview import webengine_available
 
         self._use_web = webengine_available()
@@ -646,13 +656,15 @@ class ConnectGitHubWizard(QDialog):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         if self._use_web:
-            # 0=start, 1=embedded GitHub + guide (시안 카드)
+            # 0=start (키 목록), 1=path choice, 2=WebView only (Path A)
             self._stack.addWidget(
                 self._page_guide(_STEP_START, _STEPS[_STEP_START][0], _STEPS[_STEP_START][1])
             )
+            self._stack.addWidget(self._page_choice())
             self._stack.addWidget(self._page_web())
-            self._web_index = 1
-            self._paste_index = 1  # token field lives on web page
+            self._choice_index = _WEB_PAGE_CHOICE
+            self._web_index = _WEB_PAGE_WEB
+            self._paste_index = _WEB_PAGE_WEB  # token field lives on web page
             self._progress.hide()  # counter lives inside the card
         else:
             for i, (title, body) in enumerate(_STEPS):
@@ -660,6 +672,7 @@ class ConnectGitHubWizard(QDialog):
                     self._stack.addWidget(self._page_paste(title, body))
                 else:
                     self._stack.addWidget(self._page_guide(i, title, body))
+            self._choice_index = -1
             self._web_index = -1
             self._paste_index = _STEP_PASTE
 
@@ -954,6 +967,10 @@ class ConnectGitHubWizard(QDialog):
     def wants_device_flow(self) -> bool:
         return self._want_device
 
+    def wants_external_browser(self) -> bool:
+        """Path B: wizard closed so main can run ExternalBrowserPatGuide alone."""
+        return bool(self._want_external)
+
     def _sync_opacity(self, index: int) -> None:
         """Translucent only on the browser-work screen after the browser opens."""
         over_browser = self._browser_opened and index == _STEP_WORK
@@ -963,14 +980,20 @@ class ConnectGitHubWizard(QDialog):
 
     def _go(self, index: int) -> None:
         if self._use_web:
-            # Only start (0) and web (1) pages exist.
-            index = 0 if index <= 0 else self._web_index
-            self._stack.setCurrentIndex(index)
-            if index == 0:
-                self._progress.setText("시작")
-                self.setWindowOpacity(1.0)
+            # START (0) · CHOICE (1) · WEB (2) — never nest external guide here
+            if index <= _WEB_PAGE_START:
+                index = _WEB_PAGE_START
+            elif index == _WEB_PAGE_CHOICE or index == self._choice_index:
+                index = self._choice_index
             else:
-                # 1/4 … 4/4 comes from _paint_web_guide / live stage
+                index = self._web_index
+            self._stack.setCurrentIndex(index)
+            self.setWindowOpacity(1.0)
+            if index == _WEB_PAGE_START:
+                self._progress.setText("시작")
+            elif index == self._choice_index:
+                self._progress.setText("로그인 방식")
+            else:
                 self._paint_web_guide(self._ui_now)
                 self._fit_web_dialog()
             # Never adjustSize() here — it shrinks the WebEngine view.
@@ -1137,13 +1160,12 @@ class ConnectGitHubWizard(QDialog):
         else:
             # START only
             if self._use_web:
-                btn_next = QPushButton("키 만들기 시작 →")
+                btn_next = QPushButton("다음 →")
                 btn_next.setObjectName("btnPrimary")
                 btn_next.setDefault(True)
+                # Keep START (키 목록) first; path choice is the second screen
                 btn_next.clicked.connect(
-                    lambda: self._open_create_page()
-                    if not self._via_fine
-                    else self._open_fine_and_paste()
+                    lambda: self._go(self._choice_index)
                 )
                 nav.addWidget(btn_next)
             else:
@@ -1183,6 +1205,101 @@ class ConnectGitHubWizard(QDialog):
             return outer
 
         return inner
+
+    def _page_choice(self) -> QWidget:
+        """Second screen: pick WebView (Path A) or external browser (Path B)."""
+        inner = QWidget()
+        inner.setObjectName("connGuideInner")
+        inner.setMaximumWidth(520)
+        inner.setMinimumWidth(400)
+
+        head = QLabel("로그인 방식을 고르세요")
+        head.setObjectName("wizTitle")
+        head.setWordWrap(True)
+
+        lead = QLabel(
+            "앱 안 화면과 브라우저 안내 중 하나만 씁니다.\n"
+            "Google·패스키가 편하면 브라우저를 골라도 됩니다."
+        )
+        lead.setObjectName("wizLead")
+        lead.setWordWrap(True)
+
+        lay = QVBoxLayout(inner)
+        lay.setContentsMargins(28, 24, 28, 24)
+        lay.setSpacing(14)
+        lay.addWidget(head)
+        lay.addWidget(lead)
+
+        btn_web = QPushButton("앱 안에서 로그인")
+        btn_web.setObjectName("btnPrimary")
+        btn_web.setDefault(True)
+        btn_web.setToolTip("CloneUp 창 안에서 GitHub 로그인·키 만들기를 진행합니다.")
+        btn_web.clicked.connect(self._start_webview_path)
+
+        btn_ext = QPushButton("브라우저에서 로그인")
+        btn_ext.setObjectName("btnSecondary")
+        btn_ext.setToolTip(
+            "OS 브라우저 + 작은 안내 창만 사용합니다. "
+            "이 연결 마법사는 닫힙니다."
+        )
+        btn_ext.clicked.connect(self._start_external_path)
+
+        lay.addWidget(btn_web)
+        lay.addWidget(btn_ext)
+
+        nav = QHBoxLayout()
+        nav.setSpacing(10)
+        btn_cancel = QPushButton("취소")
+        btn_cancel.setObjectName("btnGhost")
+        btn_cancel.clicked.connect(self.reject)
+        btn_back = QPushButton("← 이전")
+        btn_back.setObjectName("btnGhost")
+        btn_back.clicked.connect(lambda: self._go(_WEB_PAGE_START))
+        nav.addWidget(btn_cancel)
+        nav.addWidget(btn_back)
+        nav.addStretch(1)
+        lay.addSpacing(8)
+        lay.addLayout(nav)
+
+        outer = QWidget()
+        outer.setObjectName("connGuideOuter")
+        shell = QVBoxLayout(outer)
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.setSpacing(0)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addStretch(1)
+        card = QFrame()
+        card.setObjectName("connGuideCard")
+        card.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum
+        )
+        card_lay = QVBoxLayout(card)
+        card_lay.setContentsMargins(0, 0, 0, 0)
+        card_lay.addWidget(inner)
+        row.addWidget(card, 0, Qt.AlignmentFlag.AlignCenter)
+        row.addStretch(1)
+        shell.addStretch(1)
+        shell.addLayout(row)
+        shell.addStretch(1)
+        return outer
+
+    def _start_webview_path(self) -> None:
+        """Path A — this wizard only; never create ExternalBrowserPatGuide."""
+        self._want_external = False
+        if self._via_fine:
+            self._open_fine_and_paste()
+        else:
+            self._open_create_page()
+
+    def _start_external_path(self) -> None:
+        """Path B — close this wizard; main_window runs Guide alone."""
+        self._want_external = True
+        self._want_device = False
+        self._token = ""
+        self._stop_clipboard_watch()
+        # Fully close so only one connect UI is visible
+        self.done(int(QDialog.DialogCode.Accepted))
 
     def _page_web(self) -> QWidget:
         """시안 본문: 카운터·제목·트랙·브라우저·안내·푸터.
@@ -1397,10 +1514,15 @@ class ConnectGitHubWizard(QDialog):
         btn_cancel.clicked.connect(self.reject)
         btn_back = QPushButton("← 이전")
         btn_back.setObjectName("btnGhost")
-        btn_back.clicked.connect(lambda: self._go(0))
-        btn_ext = QPushButton("외부 브라우저로 열기")
-        btn_ext.setObjectName("btnSecondary")
-        btn_ext.clicked.connect(self._open_external_from_web)
+        btn_back.clicked.connect(lambda: self._go(self._choice_index))
+        # Path switch (closes WebView wizard; main opens Guide alone)
+        self._btn_switch_external = QPushButton("브라우저에서 로그인으로 바꾸기")
+        self._btn_switch_external.setObjectName("btnSecondary")
+        self._btn_switch_external.setToolTip(
+            "이 창을 닫고 브라우저 안내만 사용합니다. 창은 하나만 남습니다."
+        )
+        self._btn_switch_external.clicked.connect(self._start_external_path)
+        self._btn_switch_external.hide()
         self._web_cta_note = QLabel("로그인하면 자동으로 진행됩니다")
         self._web_cta_note.setObjectName("wizMeta")
         self._web_cta = QPushButton("다음")
@@ -1409,7 +1531,7 @@ class ConnectGitHubWizard(QDialog):
         self._web_cta.clicked.connect(self._on_web_cta)
         foot.addWidget(btn_cancel)
         foot.addWidget(btn_back)
-        foot.addWidget(btn_ext)
+        foot.addWidget(self._btn_switch_external)
         foot.addStretch(1)
         foot.addWidget(self._web_cta_note)
         foot.addWidget(self._web_cta)
@@ -1765,72 +1887,25 @@ class ConnectGitHubWizard(QDialog):
         """
         Google blocks sign-in inside Qt WebEngine.
 
-        Close this large wizard UI, open a *fresh* GitHub login in the OS
-        browser (never a rejected Google URL), and show a small bottom-right
-        guide. User may continue with password, passkey, Apple, or Google.
+        Do **not** nest ExternalBrowserPatGuide under this wizard (two windows
+        + broken Connect). Offer an explicit switch to Path B instead.
         """
-        from app.ui.connect_webview import is_google_signin_rejected
-        from app.ui.external_pat_guide import ExternalBrowserPatGuide
-
-        raw = (url or "").strip()
-        # Always prefer a clean GitHub login — rejected Google URLs keep failing
-        if (
-            not raw
-            or is_google_signin_rejected(raw)
-            or "accounts.google.com" in raw.lower()
-        ):
-            handoff = "https://github.com/login"
-        else:
-            handoff = raw
-        QDesktopServices.openUrl(QUrl(handoff))
-        self._browser_opened = True
-        self._stop_clipboard_watch()
-
-        # CRITICAL: do NOT hide() an ApplicationModal dialog while exec() is
-        # running — on Windows Qt ends the modal loop as Rejected, so the
-        # main window never starts PatLoginWorker (no log, no success dialog).
-        # Minimize to the taskbar instead; exec() stays alive until accept/reject.
-        self.showMinimized()
-        guide = ExternalBrowserPatGuide(anchor=self._anchor)
-        self._external_guide = guide
-        guide.token_accepted.connect(self._on_external_guide_token)
-        guide.cancelled.connect(self._on_external_guide_cancelled)
-        guide.show()
-        guide.raise_()
-        guide.activateWindow()
-
-    def _on_external_guide_token(self, token: str) -> None:
-        self._token = (token or "").strip()
-        self._want_device = False
-        guide = getattr(self, "_external_guide", None)
-        self._external_guide = None
-        # Guide closes itself via accept() after emitting; do not close here
-        # (avoids cancel/closeEvent races). Leave a no-op if already gone.
-        if guide is not None and guide.isVisible():
-            try:
-                guide._done = True  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        # Restore before finishing so modality/teardown is orderly
-        if self.isMinimized():
-            self.showNormal()
-        self.done(int(QDialog.DialogCode.Accepted))
-
-    def _on_external_guide_cancelled(self) -> None:
-        self._external_guide = None
-        if self.isMinimized():
-            self.showNormal()
-        self.done(int(QDialog.DialogCode.Rejected))
-
-    def _open_external_from_web(self) -> None:
-        url = PAT_CREATE_URL_FINE if self._via_fine else PAT_CREATE_URL
+        _ = url
         if self._web_hint is not None:
             self._web_hint.setText(
-                "외부 브라우저에서 키를 만든 뒤 복사하세요. "
-                "복사되면 키 칸에 자동으로 들어올 수 있습니다. "
-                "연결 창은 작업 표시줄로 잠시 내려 두었습니다."
+                "앱 안에서는 Google 로그인이 막힐 수 있어요. "
+                "원하시면 「브라우저에서 로그인으로 바꾸기」를 누르세요."
             )
-        self._open_url_in_external_browser(url)
+        if self._btn_switch_external is not None:
+            self._btn_switch_external.show()
+        if self._web_cta_note is not None:
+            self._web_cta_note.setText(
+                "브라우저 경로로 바꾸면 이 창은 닫힙니다"
+            )
+
+    def _open_external_from_web(self) -> None:
+        """Legacy name — switching paths closes wizard; Guide runs alone."""
+        self._start_external_path()
 
     def _page_paste(self, title: str, body: str) -> QWidget:
         w = QWidget()
