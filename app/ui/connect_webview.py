@@ -6,8 +6,17 @@ fall back to an external browser when ``webengine_available()`` is False.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, QUrl, Signal, Slot
-from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QUrl, Signal, Slot
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.auth.github_page_stage import (
     GitHubPageStage,
@@ -15,6 +24,12 @@ from app.auth.github_page_stage import (
     detect_github_page_stage,
     stage_label_ko,
 )
+
+# Browser-like page zoom (QWebEngineView.setZoomFactor)
+_ZOOM_MIN = 0.5
+_ZOOM_MAX = 3.0
+_ZOOM_STEP = 0.1
+_ZOOM_DEFAULT = 1.0
 
 # Prefer a mainstream desktop Chrome UA so GitHub is less likely to treat
 # the embed as a bot. Version string is cosmetic.
@@ -201,6 +216,7 @@ class GitHubConnectWebPane(QWidget):
         self._stage = GitHubPageStage.UNKNOWN
         self._reached: set[GitHubPageStage] = set()
         self._last_token = ""
+        self._zoom = _ZOOM_DEFAULT
 
         self._view = QWebEngineView(self)
         # Default sizeHint is tiny (~100×30) and will collapse layouts.
@@ -224,14 +240,173 @@ class GitHubConnectWebPane(QWidget):
         self._view.urlChanged.connect(self._on_url)
         self._view.titleChanged.connect(self._on_title)
         self._view.loadFinished.connect(self._on_loaded)
+        # Ctrl+wheel zoom (Chromium focus often eats Widget shortcuts)
+        self._view.installEventFilter(self)
+
+        self._find_bar = self._build_find_bar()
+        self._find_bar.hide()
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
+        lay.addWidget(self._find_bar, 0)
         lay.addWidget(self._view, 1)
+
+        self._install_browser_shortcuts()
+        self._apply_zoom()
 
     def sizeHint(self) -> QSize:  # noqa: N802
         return QSize(960, 560)
+
+    def _build_find_bar(self) -> QWidget:
+        bar = QWidget(self)
+        bar.setObjectName("webFindBar")
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(8, 4, 8, 4)
+        row.setSpacing(6)
+        lab = QLabel("찾기")
+        lab.setStyleSheet("color:#4a453b;font-size:12px;border:none;")
+        self._find_edit = QLineEdit()
+        self._find_edit.setPlaceholderText("페이지에서 찾기")
+        self._find_edit.setClearButtonEnabled(True)
+        self._find_edit.returnPressed.connect(self._find_next)
+        self._find_edit.textChanged.connect(self._find_on_type)
+        btn_prev = QPushButton("이전")
+        btn_prev.setObjectName("btnSecondary")
+        btn_prev.clicked.connect(self._find_prev)
+        btn_next = QPushButton("다음")
+        btn_next.setObjectName("btnSecondary")
+        btn_next.clicked.connect(self._find_next)
+        btn_close = QPushButton("닫기")
+        btn_close.setObjectName("btnGhost")
+        btn_close.clicked.connect(self._hide_find)
+        self._find_status = QLabel("")
+        self._find_status.setStyleSheet(
+            "color:#6d675c;font-size:11.5px;border:none;"
+        )
+        row.addWidget(lab)
+        row.addWidget(self._find_edit, 1)
+        row.addWidget(btn_prev)
+        row.addWidget(btn_next)
+        row.addWidget(self._find_status)
+        row.addWidget(btn_close)
+        return bar
+
+    def _install_browser_shortcuts(self) -> None:
+        """Ctrl+/- / 0 / F — WindowShortcut so they work while Chromium has focus."""
+
+        def _add(seq: QKeySequence | str, slot) -> None:
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.ShortcutContext.WindowShortcut)
+            sc.activated.connect(slot)
+
+        # Zoom in: Ctrl++ and Ctrl+= (US keyboard)
+        _add(QKeySequence.StandardKey.ZoomIn, self._zoom_in)
+        _add("Ctrl+=", self._zoom_in)
+        _add(QKeySequence.StandardKey.ZoomOut, self._zoom_out)
+        _add("Ctrl+0", self._zoom_reset)
+        _add(QKeySequence.StandardKey.Find, self._show_find)
+        # Esc closes find only — enabled while the bar is open
+        self._esc_find = QShortcut(QKeySequence("Escape"), self)
+        self._esc_find.setContext(Qt.ShortcutContext.WindowShortcut)
+        self._esc_find.setEnabled(False)
+        self._esc_find.activated.connect(self._hide_find)
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if obj is self._view and event.type() == QEvent.Type.Wheel:
+            from PySide6.QtGui import QWheelEvent
+
+            we = event
+            if isinstance(we, QWheelEvent) and (
+                we.modifiers() & Qt.KeyboardModifier.ControlModifier
+            ):
+                delta = we.angleDelta().y()
+                if delta > 0:
+                    self._zoom_in()
+                elif delta < 0:
+                    self._zoom_out()
+                return True
+        return super().eventFilter(obj, event)
+
+    def _apply_zoom(self) -> None:
+        self._zoom = max(_ZOOM_MIN, min(_ZOOM_MAX, self._zoom))
+        try:
+            self._view.setZoomFactor(self._zoom)
+        except Exception:
+            pass
+
+    def _zoom_in(self) -> None:
+        self._zoom = round(self._zoom + _ZOOM_STEP, 2)
+        self._apply_zoom()
+
+    def _zoom_out(self) -> None:
+        self._zoom = round(self._zoom - _ZOOM_STEP, 2)
+        self._apply_zoom()
+
+    def _zoom_reset(self) -> None:
+        self._zoom = _ZOOM_DEFAULT
+        self._apply_zoom()
+
+    def _show_find(self) -> None:
+        self._find_bar.show()
+        self._esc_find.setEnabled(True)
+        self._find_edit.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        self._find_edit.selectAll()
+
+    def _hide_find(self) -> None:
+        self._find_bar.hide()
+        self._esc_find.setEnabled(False)
+        try:
+            self._view.page().findText("")
+        except Exception:
+            pass
+        self._find_status.setText("")
+        self._view.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _find_on_type(self, _text: str) -> None:
+        self._find_next()
+
+    def _find_next(self) -> None:
+        self._run_find(backward=False)
+
+    def _find_prev(self) -> None:
+        self._run_find(backward=True)
+
+    def _run_find(self, *, backward: bool) -> None:
+        from PySide6.QtWebEngineCore import QWebEnginePage
+
+        query = (self._find_edit.text() or "").strip()
+        if not query:
+            self._find_status.setText("")
+            try:
+                self._view.page().findText("")
+            except Exception:
+                pass
+            return
+
+        def _done(found: bool) -> None:
+            self._find_status.setText("찾음" if found else "없음")
+
+        try:
+            if backward:
+                self._view.page().findText(
+                    query, QWebEnginePage.FindFlag.FindBackward, _done
+                )
+            else:
+                self._view.page().findText(query, resultCallback=_done)
+        except TypeError:
+            try:
+                if backward:
+                    self._view.page().findText(
+                        query, QWebEnginePage.FindFlag.FindBackward
+                    )
+                else:
+                    self._view.page().findText(query)
+                self._find_status.setText("")
+            except Exception:
+                self._find_status.setText("찾기 불가")
+        except Exception:
+            self._find_status.setText("찾기 불가")
 
     @property
     def stage(self) -> GitHubPageStage:
