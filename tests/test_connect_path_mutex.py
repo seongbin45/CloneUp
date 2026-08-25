@@ -63,8 +63,8 @@ def test_guide_connect_accepts_with_token_standalone() -> None:
     guide = ExternalBrowserPatGuide(anchor=None, open_login_on_start=False)
     assert guide.windowModality() == Qt.WindowModality.ApplicationModal
     fake = "ghp_" + ("y" * 36)
-    guide._edit.setText(fake)
-    QTimer.singleShot(40, guide._on_connect)
+    # Recognized PAT should auto-press Connect (no manual click)
+    QTimer.singleShot(40, lambda: guide._edit.setText(fake))
     code = guide.exec()
     assert int(code) == int(QDialog.DialogCode.Accepted)
     assert guide.token() == fake

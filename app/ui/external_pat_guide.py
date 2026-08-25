@@ -315,7 +315,7 @@ def progress_guide_for_reached(idx: int) -> tuple[str, str, str]:
         )
     return (
         "키를 복사해 주세요",
-        "복사하면 아래 칸에 들어옵니다. 「연결」을 누르세요.",
+        "복사되거나 화면에 보이면 자동으로 연결합니다.",
         "검증: 키 발급/복사 화면 확인됨",
     )
 
@@ -354,6 +354,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._clip_seen = ""
         self._done = False
         self._token = ""  # set on Connect for token() after exec()
+        self._auto_connect_pending = False
         self._reached = -1  # highest checklist index marked done
         self._current: int | None = None  # in-progress step (●)
         self._google_rejected = False
@@ -539,6 +540,7 @@ class ExternalBrowserPatGuide(QDialog):
         text = (clip.text() or "").strip()
         if text:
             self._edit.setText(text)
+            # _on_text schedules auto-connect when the value looks like a PAT
 
     def _on_text(self, text: str) -> None:
         has = bool((text or "").strip())
@@ -552,9 +554,30 @@ class ExternalBrowserPatGuide(QDialog):
             self._status.setStyleSheet(
                 "font-size:11.5px;color:#1f6f5c;border:none;"
             )
-            self._status.setText("키를 인식했어요. 「연결」을 누르세요.")
+            self._status.setText("키를 인식했어요. 자동으로 연결합니다…")
+            self._schedule_auto_connect(source="키 인식")
         elif has:
             self._status.setText("")
+
+    def _schedule_auto_connect(self, *, source: str) -> None:
+        """When a PAT is in the field, press Connect without a second click."""
+        if self._done or self._auto_connect_pending:
+            return
+        if not _looks_like_token(self._edit.text() or ""):
+            return
+        self._auto_connect_pending = True
+        self._status.setStyleSheet(
+            "font-size:11.5px;color:#1f6f5c;border:none;"
+        )
+        self._status.setText(f"{source} — 자동으로 연결합니다…")
+        # Defer so textChanged / clipboard handlers finish first
+        QTimer.singleShot(0, self._run_auto_connect)
+
+    def _run_auto_connect(self) -> None:
+        self._auto_connect_pending = False
+        if self._done:
+            return
+        self._on_connect()
 
     def _refresh_checklist_labels(self) -> None:
         for i, lab in enumerate(self._check_labels):
@@ -943,9 +966,11 @@ class ExternalBrowserPatGuide(QDialog):
         self._verify_lab.setText("검증: 주소를 분류하지 못함 — 체크리스트 유지")
 
     def _ingest_token(self, text: str, *, source: str) -> None:
-        """Fill the key field from clipboard or UIA-visible PAT (once per value)."""
+        """Fill the key field from clipboard or UIA-visible PAT, then auto-Connect."""
         tok = (text or "").strip()
         if not _looks_like_token(tok) or tok == self._clip_seen:
+            return
+        if self._done:
             return
         self._clip_seen = tok
         self._edit.setText(tok)
@@ -955,12 +980,11 @@ class ExternalBrowserPatGuide(QDialog):
         self._btn_return_flow.hide()
         self._mark_reached(3)
         self._apply_progress_copy(3)
-        self._status.setStyleSheet(
-            "font-size:11.5px;color:#1f6f5c;border:none;"
-        )
-        self._status.setText(f"{source}. 「연결」을 누르세요.")
         self.raise_()
         self.activateWindow()
+        # setText already triggers _on_text → _schedule_auto_connect;
+        # call again in case text was identical and textChanged did not fire
+        self._schedule_auto_connect(source=source)
 
     def _poll_clipboard(self) -> None:
         if self._done:
