@@ -506,9 +506,10 @@ class ExternalBrowserPatGuide(QDialog):
         if self._open_login_on_start:
             QTimer.singleShot(200, self._reopen_github_login)
 
-        self._place_bottom_right()
+        self._place_top_left()
 
-    def _place_bottom_right(self) -> None:
+    def _place_top_left(self) -> None:
+        """Default position: top-left of the work area (away from browser center)."""
         margin = 24
         self.adjustSize()
         try:
@@ -520,10 +521,9 @@ class ExternalBrowserPatGuide(QDialog):
             if screen is None:
                 return
             avail = screen.availableGeometry()
-            g = self.frameGeometry()
-            x = avail.right() - g.width() - margin + 1
-            y = avail.bottom() - g.height() - margin + 1
-            self.move(max(avail.left() + margin, x), max(avail.top() + margin, y))
+            x = avail.left() + margin
+            y = avail.top() + margin
+            self.move(x, y)
         except Exception:
             pass
 
@@ -651,7 +651,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._sync_open_tokens_button()
         self._btn_open_tokens.show()
         self.adjustSize()
-        self._place_bottom_right()
+        self._place_top_left()
 
     def _clear_token_note_taken(self) -> None:
         if not self._token_note_taken:
@@ -688,7 +688,7 @@ class ExternalBrowserPatGuide(QDialog):
         )
         self._btn_reopen.show()
         self.adjustSize()
-        self._place_bottom_right()
+        self._place_top_left()
 
     def _apply_method_copy(self, method: str) -> None:
         title, lead, verify = _method_guide_copy(method)
@@ -773,7 +773,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._btn_return_flow.show()
         # Don't hide token/reopen buttons aggressively — user may still want them
         self.adjustSize()
-        self._place_bottom_right()
+        self._place_top_left()
 
     def _on_return_to_flow_clicked(self) -> None:
         from PySide6.QtCore import QUrl
@@ -878,7 +878,7 @@ class ExternalBrowserPatGuide(QDialog):
                 "「GitHub 로그인 다시 열기」를 눌러도 됩니다."
             )
             self.adjustSize()
-            self._place_bottom_right()
+            self._place_top_left()
             return
 
         if kind == "current" and idx is not None:
@@ -959,7 +959,7 @@ class ExternalBrowserPatGuide(QDialog):
                         "안 되면 복사해 붙여 넣으세요."
                     )
             self.adjustSize()
-            self._place_bottom_right()
+            self._place_top_left()
             return
 
         self._btn_return_flow.hide()
