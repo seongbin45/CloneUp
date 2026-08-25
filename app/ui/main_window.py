@@ -1316,6 +1316,12 @@ class MainController(QObject):
         w.failed.connect(self._on_fail_msg)
         self._start_worker(w)
 
+    def _raise_app_over_browser(self) -> None:
+        """Bring CloneUp above the browser before connect success/fail UI."""
+        from app.util.winproc import bring_window_to_front
+
+        bring_window_to_front(self.window)
+
     @Slot(dict)
     def _on_login_ok(self, info: dict) -> None:
         self._close_device_overlay()
@@ -1334,6 +1340,8 @@ class MainController(QObject):
         # 받기 탭: 로그인 → 내 저장소 목록 모드
         self._clone_repos_loaded_for = None
         self._sync_clone_url_login_mode(force=True)
+        # Browser often still has focus after Path B — lift CloneUp first
+        self._raise_app_over_browser()
         QMessageBox.information(
             self.window,
             "연결 완료",
