@@ -36,6 +36,11 @@ _ADDR_POLL_MS = 3000
 _CLIP_POLL_MS = 500
 _TOKEN_PREFIXES = ("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")
 _GITHUB_LOGIN = "https://github.com/login"
+# classic repo — same default as connect wizard (새 저장소 만들기용)
+_PAT_CREATE_URL = (
+    "https://github.com/settings/tokens/new"
+    "?scopes=repo&description=CloneUp"
+)
 
 # Method-neutral checklist — do not force Google-only wording
 _CHECKLIST = (
@@ -217,6 +222,45 @@ def _method_guide_copy(method: str) -> tuple[str, str, str]:
     )
 
 
+def progress_guide_for_reached(idx: int) -> tuple[str, str, str]:
+    """
+    title, lead, verify for post-login checklist progress (idx 1..3).
+
+    idx 1 = logged in on github.com (not yet on token pages) → nudge to create key.
+    idx 2 = token list / new form.
+    idx 3 = token issued / copy.
+    """
+    if idx <= 1:
+        return (
+            "로그인됐어요. 키를 만들어요",
+            "키 만들기 페이지로 안내합니다. Generate token을 누르세요.",
+            "검증: 로그인 완료 — 키 만들기로 이동",
+        )
+    if idx == 2:
+        return (
+            "키를 만들어 주세요",
+            "repo가 체크돼 있어요. Generate token을 누르세요.",
+            "검증: 키 만들기 화면 확인됨",
+        )
+    return (
+        "키를 복사해 주세요",
+        "복사하면 아래 칸에 들어옵니다. 「연결」을 누르세요.",
+        "검증: 키 발급/복사 화면 확인됨",
+    )
+
+
+def should_auto_open_token_page(
+    *,
+    kind: str,
+    idx: int | None,
+    already_opened: bool,
+) -> bool:
+    """Open tokens/new once when login is confirmed on github.com (not yet on PAT pages)."""
+    if already_opened:
+        return False
+    return kind == "reached" and idx == 1
+
+
 class ExternalBrowserPatGuide(QDialog):
     """Bottom-right translucent helper: checklist + paste + connect."""
 
@@ -231,6 +275,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._reached = -1  # highest checklist index marked done
         self._current: int | None = None  # in-progress step (●)
         self._google_rejected = False
+        self._token_nav_opened = False  # auto-open tokens/new at most once
         self._check_labels: list[QLabel] = []
         self._last_url = ""
 
@@ -317,6 +362,13 @@ class ExternalBrowserPatGuide(QDialog):
         self._btn_reopen.clicked.connect(self._reopen_github_login)
         self._btn_reopen.hide()
 
+        self._btn_open_tokens = QPushButton("키 만들기 페이지 열기")
+        self._btn_open_tokens.setToolTip(
+            "로그인 후 classic 키(repo) 만들기 페이지를 엽니다."
+        )
+        self._btn_open_tokens.clicked.connect(self._on_open_token_page_clicked)
+        self._btn_open_tokens.hide()
+
         btn_cancel = QPushButton("취소")
         btn_cancel.clicked.connect(self._on_cancel)
         self._btn_connect = QPushButton("연결")
@@ -338,6 +390,7 @@ class ExternalBrowserPatGuide(QDialog):
         root.addWidget(self._verify_lab)
         root.addWidget(steps_box)
         root.addWidget(self._btn_reopen)
+        root.addWidget(self._btn_open_tokens)
         root.addLayout(key_row)
         root.addWidget(self._status)
         root.addLayout(nav)
@@ -476,6 +529,15 @@ class ExternalBrowserPatGuide(QDialog):
             "font-size:11.5px;color:#6d675c;border:none;"
         )
 
+    def _apply_progress_copy(self, idx: int) -> None:
+        title, lead, verify = progress_guide_for_reached(idx)
+        self._title.setText(title)
+        self._lead.setText(lead)
+        self._verify_lab.setText(verify)
+        self._verify_lab.setStyleSheet(
+            "font-size:11.5px;color:#1f6f5c;border:none;"
+        )
+
     def _clear_google_rejected_banner(self) -> None:
         if not self._google_rejected:
             return
@@ -486,12 +548,31 @@ class ExternalBrowserPatGuide(QDialog):
             "font-size:11.5px;color:#6d675c;border:none;"
         )
 
+    def _open_token_create_page(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        QDesktopServices.openUrl(QUrl(_PAT_CREATE_URL))
+        self._token_nav_opened = True
+
+    def _on_open_token_page_clicked(self) -> None:
+        self._open_token_create_page()
+        self._set_current(2)
+        self._apply_progress_copy(1)
+        self._status.setStyleSheet(
+            "font-size:11.5px;color:#1f6f5c;border:none;"
+        )
+        self._status.setText(
+            "브라우저에서 Generate token을 누른 뒤 키를 복사하세요."
+        )
+
     def _reopen_github_login(self) -> None:
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
 
         QDesktopServices.openUrl(QUrl(_GITHUB_LOGIN))
         self._clear_google_rejected_banner()
+        self._btn_open_tokens.hide()
         self._set_current(0)
         self._apply_method_copy("github_login")
         self._status.setText(
@@ -534,6 +615,8 @@ class ExternalBrowserPatGuide(QDialog):
             self._clear_google_rejected_banner()
             self._reached = -1
             self._current = 0
+            self._token_nav_opened = False
+            self._btn_open_tokens.hide()
             self._refresh_checklist_labels()
             copy_method = (
                 method
@@ -555,28 +638,63 @@ class ExternalBrowserPatGuide(QDialog):
 
         if kind == "current" and idx is not None:
             self._clear_google_rejected_banner()
+            self._btn_open_tokens.hide()
             self._set_current(idx)
             self._apply_method_copy(method)
             return
 
         if kind == "reached" and idx is not None:
             self._clear_google_rejected_banner()
+            self._btn_reopen.hide()
             self._mark_reached(idx)
-            labels = (
-                "로그인 단계",
-                "로그인 완료",
-                "키 만들기 화면",
-                "키 발급/복사 화면",
-            )
-            self._title.setText("잘 진행되고 있어요")
-            self._lead.setText(
-                "로그인이 끝나면 키를 만들고 복사하세요. "
-                "복사되면 아래 칸에 들어옵니다."
-            )
-            self._verify_lab.setText(f"검증: {labels[idx]} 확인됨")
-            self._verify_lab.setStyleSheet(
-                "font-size:11.5px;color:#1f6f5c;border:none;"
-            )
+            self._apply_progress_copy(idx)
+
+            if idx == 1:
+                # Logged in on github.com — guide toward classic token create
+                self._set_current(2)
+                self._btn_open_tokens.show()
+                if should_auto_open_token_page(
+                    kind=kind,
+                    idx=idx,
+                    already_opened=self._token_nav_opened,
+                ):
+                    self._open_token_create_page()
+                    self._status.setStyleSheet(
+                        "font-size:11.5px;color:#1f6f5c;border:none;"
+                    )
+                    self._status.setText(
+                        "키 만들기 페이지를 열었어요. "
+                        "Generate token → 복사 → 아래에 붙여 넣으세요."
+                    )
+                else:
+                    self._status.setStyleSheet(
+                        "font-size:11.5px;color:#1f6f5c;border:none;"
+                    )
+                    self._status.setText(
+                        "「키 만들기 페이지 열기」로 다시 열 수 있어요."
+                    )
+            elif idx == 2:
+                self._set_current(2)
+                self._btn_open_tokens.show()
+                self._status.setStyleSheet(
+                    "font-size:11.5px;color:#1f6f5c;border:none;"
+                )
+                self._status.setText(
+                    "Generate token을 누른 뒤 나온 키를 복사하세요."
+                )
+            else:
+                # idx == 3 — issued / ready to paste
+                self._current = None
+                self._refresh_checklist_labels()
+                self._btn_open_tokens.hide()
+                self._status.setStyleSheet(
+                    "font-size:11.5px;color:#1f6f5c;border:none;"
+                )
+                self._status.setText(
+                    "키를 복사하면 아래 칸에 들어옵니다. 「연결」을 누르세요."
+                )
+            self.adjustSize()
+            self._place_bottom_right()
             return
 
         self._verify_lab.setText("검증: 주소를 분류하지 못함 — 체크리스트 유지")
@@ -593,7 +711,13 @@ class ExternalBrowserPatGuide(QDialog):
         self._clip_seen = text
         self._edit.setText(text)
         self._clear_google_rejected_banner()
+        self._btn_open_tokens.hide()
         self._mark_reached(3)
+        self._apply_progress_copy(3)
+        self._status.setStyleSheet(
+            "font-size:11.5px;color:#1f6f5c;border:none;"
+        )
+        self._status.setText("키를 인식했어요. 「연결」을 누르세요.")
         self.raise_()
         self.activateWindow()
 

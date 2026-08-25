@@ -8,6 +8,8 @@ from app.ui.external_pat_guide import (
     checklist_row_label,
     classify_browser_sample,
     classify_browser_url,
+    progress_guide_for_reached,
+    should_auto_open_token_page,
 )
 from app.util.browser_address import (
     _normalize_url,
@@ -198,6 +200,44 @@ def test_github_logged_out_via_sign_in_sign_up_ui() -> None:
         )
         == "github"
     )
+
+
+def test_progress_guide_after_login_confirmed() -> None:
+    """After github.com login, guide nudges toward token create (auto-open once)."""
+    kind, idx = classify_browser_url("https://github.com/")
+    assert kind == "reached" and idx == 1
+
+    title, lead, verify = progress_guide_for_reached(1)
+    assert "로그인" in title or "키" in title
+    assert "Generate" in lead or "키" in lead
+    assert "로그인" in verify or "키" in verify
+
+    title2, lead2, _v2 = progress_guide_for_reached(2)
+    assert "키" in title2
+    assert "Generate" in lead2
+
+    title3, lead3, _v3 = progress_guide_for_reached(3)
+    assert "복사" in title3 or "키" in title3
+    assert "연결" in lead3 or "복사" in lead3
+
+    assert should_auto_open_token_page(
+        kind="reached", idx=1, already_opened=False
+    )
+    assert not should_auto_open_token_page(
+        kind="reached", idx=1, already_opened=True
+    )
+    assert not should_auto_open_token_page(
+        kind="reached", idx=2, already_opened=False
+    )
+    assert not should_auto_open_token_page(
+        kind="logged_out", idx=0, already_opened=False
+    )
+
+    # Checklist: login done → next row is "make key"
+    row2 = checklist_row_label(2, reached=1, current=2, google_rejected=False)
+    assert row2.startswith("→")
+    row1 = checklist_row_label(1, reached=1, current=2, google_rejected=False)
+    assert row1.startswith("✓")
 
 
 def test_checklist_row_reflects_google_rejected() -> None:
