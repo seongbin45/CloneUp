@@ -8,6 +8,10 @@ PySide6>=6.6.0
 # Qt WebEngine (Chromium) — in-app GitHub connect wizard. Same version as PySide6.
 PySide6-Addons>=6.6.0
 
+# Optional: read Chrome/Edge address bar for external Google handoff guide
+#   pip install uiautomation
+uiautomation>=2.0.18
+
 # Optional experimental Device Flow helper (CLONEUP_PLAYWRIGHT=1):
 #   pip install playwright && playwright install chromium
 # playwright>=1.40.0
