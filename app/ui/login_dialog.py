@@ -605,13 +605,14 @@ class ConnectGitHubWizard(QDialog):
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowOpacity(1.0)
         # Normal chrome: title bar + close (X). Never frameless / FullScreen.
+        # Do not use WindowStaysOnTopHint — other apps (browser) must be able
+        # to come in front of this dialog.
         self.setWindowFlags(
             Qt.WindowType.Dialog
             | Qt.WindowType.WindowTitleHint
             | Qt.WindowType.WindowSystemMenuHint
             | Qt.WindowType.WindowMinMaxButtonsHint
             | Qt.WindowType.WindowCloseButtonHint
-            | Qt.WindowType.WindowStaysOnTopHint
         )
         try:
             from app.ui.icons import load_app_icon
@@ -895,14 +896,13 @@ class ConnectGitHubWizard(QDialog):
     def _open_url_in_external_browser(self, url: str) -> None:
         """Open ``url`` in the OS browser and yield the screen (minimize).
 
-        ``WindowStaysOnTopHint`` otherwise keeps this dialog over Chrome/Edge.
         Clipboard watch stays on so a copied key can restore the dialog.
         """
         QDesktopServices.openUrl(QUrl(url))
         self._browser_opened = True
         if not self._clip_timer.isActive():
             self._clip_timer.start()
-        # Let the browser take the foreground
+        # Get out of the way so the browser can be used comfortably
         self.showMinimized()
 
     def _restore_from_yield(self) -> None:
