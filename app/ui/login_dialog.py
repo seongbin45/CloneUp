@@ -1628,31 +1628,81 @@ class ConnectGitHubWizard(QDialog):
     def _on_web_url_edit_finished(self) -> None:
         # Focus left the field without Enter — resume syncing from the page
         self._web_url_editing = False
+        self._sync_address_bar_from_view(force=False)
+
+    def _sync_address_bar_from_view(self, *, force: bool = False) -> None:
+        """Copy the WebView URL into the address field.
+
+        ``force=True`` after ←/→ so the bar always matches the page even if
+        the field still has focus. While the user is actively typing
+        (``_web_url_editing``), skip unless forced.
+        """
+        if self._web_url is None or self._web_pane is None:
+            return
+        if not force and self._web_url_editing:
+            return
+        try:
+            url = self._web_pane._view.url().toString()
+        except Exception:
+            url = ""
+        text = url or "https://github.com/"
+        # Avoid cursor jumps when nothing changed
+        if self._web_url.text() == text:
+            return
+        self._web_url.blockSignals(True)
+        try:
+            self._web_url.setText(text)
+            if not self._web_url.hasFocus():
+                self._web_url.setCursorPosition(0)
+        finally:
+            self._web_url.blockSignals(False)
 
     def _on_web_url(self, url: str) -> None:
         if self._web_url is None:
             return
-        # Don't clobber what the user is typing
-        if self._web_url_editing or self._web_url.hasFocus():
+        # Only skip while the user is typing — focus alone must not block sync
+        # (← left the bar focused and the URL never updated).
+        if self._web_url_editing:
             return
-        self._web_url.setText(url or "https://github.com/")
-        self._web_url.setCursorPosition(0)
+        text = url or "https://github.com/"
+        if self._web_url.text() == text:
+            return
+        self._web_url.blockSignals(True)
+        try:
+            self._web_url.setText(text)
+            if not self._web_url.hasFocus():
+                self._web_url.setCursorPosition(0)
+        finally:
+            self._web_url.blockSignals(False)
 
     def _on_web_history(self, can_back: bool, can_fwd: bool) -> None:
         if self._web_back_btn is not None:
             self._web_back_btn.setEnabled(bool(can_back))
         if self._web_fwd_btn is not None:
             self._web_fwd_btn.setEnabled(bool(can_fwd))
+        # History updates on every nav including ←/→ — keep the bar in sync
+        self._sync_address_bar_from_view(force=False)
 
     def _on_web_back(self) -> None:
-        if self._web_pane is not None:
-            self._web_url_editing = False
-            self._web_pane.go_back()
+        if self._web_pane is None:
+            return
+        self._web_url_editing = False
+        if self._web_url is not None:
+            self._web_url.clearFocus()
+        self._web_pane.go_back()
+        # urlChanged is async — force sync on the next tick too
+        QTimer.singleShot(0, lambda: self._sync_address_bar_from_view(force=True))
+        QTimer.singleShot(100, lambda: self._sync_address_bar_from_view(force=True))
 
     def _on_web_forward(self) -> None:
-        if self._web_pane is not None:
-            self._web_url_editing = False
-            self._web_pane.go_forward()
+        if self._web_pane is None:
+            return
+        self._web_url_editing = False
+        if self._web_url is not None:
+            self._web_url.clearFocus()
+        self._web_pane.go_forward()
+        QTimer.singleShot(0, lambda: self._sync_address_bar_from_view(force=True))
+        QTimer.singleShot(100, lambda: self._sync_address_bar_from_view(force=True))
 
     def _on_web_url_commit(self) -> None:
         """Enter in the address bar → navigate."""
@@ -1665,12 +1715,7 @@ class ConnectGitHubWizard(QDialog):
             self._web_hint.setText(
                 "주소를 확인하세요. https:// 로 시작하는 웹 주소만 열 수 있습니다."
             )
-            # Restore current page URL into the field
-            try:
-                cur = self._web_pane._view.url().toString()
-            except Exception:
-                cur = "https://github.com/"
-            self._web_url.setText(cur or "https://github.com/")
+            self._sync_address_bar_from_view(force=True)
 
     def _on_web_stage(self, stage: object) -> None:
         from app.auth.github_page_stage import GitHubPageStage
