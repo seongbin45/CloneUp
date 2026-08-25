@@ -187,6 +187,33 @@ def is_apple_signin_url(url: str) -> bool:
     return "appleid.apple.com" in u or "idmsa.apple.com" in u
 
 
+def is_github_flow_family_url(
+    url: str,
+    *,
+    window_title: str = "",
+    ui_text: str = "",
+) -> bool:
+    """
+    True if the page belongs to the GitHub connect flow "family".
+
+    Family (parent) hosts: github.com, Google accounts sign-in, Apple ID.
+    Also Windows Security passkey sheet (often no useful omnibox URL).
+    """
+    if looks_like_passkey_os_prompt(window_title, ui_text):
+        return True
+    u = (url or "").strip()
+    if not u:
+        return False
+    host = _hostname(u)
+    if host == "github.com" or host.endswith(".github.com"):
+        return True
+    if _host_is_google_accounts(u):
+        return True
+    if is_apple_signin_url(u):
+        return True
+    return False
+
+
 def looks_like_passkey_os_prompt(window_title: str, ui_text: str = "") -> bool:
     """True if foreground looks like Windows Security passkey sheet."""
     blob = f"{window_title or ''}\n{ui_text or ''}".lower()

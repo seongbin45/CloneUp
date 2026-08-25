@@ -29,6 +29,7 @@ from app.util.browser_address import (
     browser_address_available,
     detect_signin_method,
     is_apple_signin_url,
+    is_github_flow_family_url,
     looks_like_passkey_os_prompt,
     looks_like_token_note_taken,
     read_browser_page_sample,
@@ -84,7 +85,8 @@ def classify_browser_sample(
       - ``token_error``: PAT form flash (e.g. Note has already been taken)
       - ``current``: sign-in in progress (password / passkey / Apple / Google)
       - ``reached``: past login (sticky progress OK)
-      - ``unknown``: cannot classify
+      - ``away``: browser is off the GitHub-flow family (soft nudge only)
+      - ``unknown``: cannot classify (empty sample, etc.)
 
     meta includes ``method`` (google_blocked|google|apple|passkey|…) and
     optional ``analysis`` for Google block details.
@@ -151,10 +153,36 @@ def classify_browser_sample(
             return ("current", 0, meta)
         return ("reached", 1, meta)
 
-    # Apple/passkey already handled; leftover non-github hosts
+    # Apple/passkey already handled above via method; leftover family hosts
     if is_apple_signin_url(u) or looks_like_passkey_os_prompt(window_title, ui_text):
         return ("current", 0, meta)
+
+    # Off-family page (YouTube, news, …) — soft invite back, never force
+    if u and not is_github_flow_family_url(
+        u, window_title=window_title, ui_text=ui_text
+    ):
+        meta["method"] = "away"
+        return ("away", None, meta)
+
     return ("unknown", None, meta)
+
+
+def away_from_flow_guide_copy() -> tuple[str, str, str]:
+    """title, lead, verify — soft, non-coercive (user may stay elsewhere)."""
+    return (
+        "지금은 GitHub 작업 화면이 아니에요",
+        "괜찮아요. 원하시면 이전 작업으로 돌아와도 됩니다.",
+        "검증: GitHub 연계 주소가 아님",
+    )
+
+
+def fallback_return_url(*, reached: int) -> str:
+    """When no remembered family URL, suggest a sensible resume target."""
+    if reached >= 2:
+        return build_pat_create_url()
+    if reached >= 1:
+        return "https://github.com/"
+    return _GITHUB_LOGIN
 
 
 def classify_browser_url(url: str) -> tuple[str, int | None]:
@@ -308,6 +336,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._google_rejected = False
         self._token_note_taken = False  # UIA: Note has already been taken
         self._token_nav_opened = False  # auto-open tokens/new at most once
+        self._last_family_url = ""  # last GitHub-flow family URL (soft return)
         self._check_labels: list[QLabel] = []
         self._last_url = ""
 
@@ -402,6 +431,14 @@ class ExternalBrowserPatGuide(QDialog):
         self._btn_open_tokens.clicked.connect(self._on_open_token_page_clicked)
         self._btn_open_tokens.hide()
 
+        self._btn_return_flow = QPushButton("이전 작업으로 돌아가기")
+        self._btn_return_flow.setToolTip(
+            "직전에 보던 GitHub·로그인 연계 화면을 엽니다. "
+            "원하지 않으면 누르지 않아도 됩니다."
+        )
+        self._btn_return_flow.clicked.connect(self._on_return_to_flow_clicked)
+        self._btn_return_flow.hide()
+
         btn_cancel = QPushButton("취소")
         btn_cancel.clicked.connect(self._on_cancel)
         self._btn_connect = QPushButton("연결")
@@ -424,6 +461,7 @@ class ExternalBrowserPatGuide(QDialog):
         root.addWidget(steps_box)
         root.addWidget(self._btn_reopen)
         root.addWidget(self._btn_open_tokens)
+        root.addWidget(self._btn_return_flow)
         root.addLayout(key_row)
         root.addWidget(self._status)
         root.addLayout(nav)
@@ -638,9 +676,11 @@ class ExternalBrowserPatGuide(QDialog):
         url = build_pat_create_url() if unique_note else build_pat_create_url(note="CloneUp")
         QDesktopServices.openUrl(QUrl(url))
         self._token_nav_opened = True
+        self._last_family_url = url
 
     def _on_open_token_page_clicked(self) -> None:
         self._clear_token_note_taken()
+        self._btn_return_flow.hide()
         self._open_token_create_page(unique_note=True)
         self._set_current(2)
         self._apply_progress_copy(1)
@@ -652,6 +692,55 @@ class ExternalBrowserPatGuide(QDialog):
         )
         self._sync_open_tokens_button()
 
+    def _remember_family_url(self, url: str) -> None:
+        u = (url or "").strip()
+        if not u:
+            return
+        if not is_github_flow_family_url(u):
+            return
+        # Prefer https github / oauth URLs; skip javascript: etc.
+        low = u.lower()
+        if not (low.startswith("http://") or low.startswith("https://")):
+            return
+        self._last_family_url = u
+
+    def _show_away_from_flow(self) -> None:
+        """Soft invite back — never auto-navigate."""
+        title, lead, verify = away_from_flow_guide_copy()
+        self._title.setText(title)
+        self._lead.setText(lead)
+        self._verify_lab.setText(verify)
+        self._verify_lab.setStyleSheet(
+            "font-size:11.5px;color:#6d675c;border:none;"
+        )
+        self._status.setStyleSheet(
+            "font-size:11.5px;color:#6d675c;border:none;"
+        )
+        self._status.setText(
+            "다른 탭을 보셔도 됩니다. 준비가 되면 "
+            "「이전 작업으로 돌아가기」를 눌러 주세요."
+        )
+        self._btn_return_flow.show()
+        # Don't hide token/reopen buttons aggressively — user may still want them
+        self.adjustSize()
+        self._place_bottom_right()
+
+    def _on_return_to_flow_clicked(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        target = (self._last_family_url or "").strip()
+        if not target:
+            target = fallback_return_url(reached=self._reached)
+        QDesktopServices.openUrl(QUrl(target))
+        self._btn_return_flow.hide()
+        self._status.setStyleSheet(
+            "font-size:11.5px;color:#1f6f5c;border:none;"
+        )
+        self._status.setText(
+            "이전 작업 화면을 열었어요. 이어서 진행해 주세요."
+        )
+
     def _reopen_github_login(self) -> None:
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
@@ -660,6 +749,8 @@ class ExternalBrowserPatGuide(QDialog):
         self._clear_google_rejected_banner()
         self._clear_token_note_taken()
         self._btn_open_tokens.hide()
+        self._btn_return_flow.hide()
+        self._last_family_url = _GITHUB_LOGIN
         self._set_current(0)
         self._apply_method_copy("github_login")
         self._status.setText(
@@ -692,12 +783,23 @@ class ExternalBrowserPatGuide(QDialog):
         )
         method = str((meta or {}).get("method") or "other")
 
+        # Remember last in-family URL for soft "return" (never auto-navigate away)
+        if kind != "away" and url:
+            self._remember_family_url(url)
+
         if kind == "rejected":
+            self._btn_return_flow.hide()
             self._show_google_rejected(url, meta)
             return
 
         if kind == "token_error":
+            self._btn_return_flow.hide()
             self._show_token_note_taken(meta)
+            return
+
+        if kind == "away":
+            # Soft nudge only — keep checklist sticky; do not open URLs
+            self._show_away_from_flow()
             return
 
         if kind == "logged_out":
@@ -705,6 +807,7 @@ class ExternalBrowserPatGuide(QDialog):
             # wipe sticky progress so old ✓ marks disappear
             self._clear_google_rejected_banner()
             self._clear_token_note_taken()
+            self._btn_return_flow.hide()
             self._reached = -1
             self._current = 0
             self._token_nav_opened = False
@@ -731,6 +834,7 @@ class ExternalBrowserPatGuide(QDialog):
         if kind == "current" and idx is not None:
             self._clear_google_rejected_banner()
             self._clear_token_note_taken()
+            self._btn_return_flow.hide()
             self._btn_open_tokens.hide()
             self._set_current(idx)
             self._apply_method_copy(method)
@@ -739,6 +843,7 @@ class ExternalBrowserPatGuide(QDialog):
         if kind == "reached" and idx is not None:
             self._clear_google_rejected_banner()
             self._clear_token_note_taken()
+            self._btn_return_flow.hide()
             self._btn_reopen.hide()
             self._mark_reached(idx)
             self._apply_progress_copy(idx)
@@ -793,6 +898,7 @@ class ExternalBrowserPatGuide(QDialog):
             self._place_bottom_right()
             return
 
+        self._btn_return_flow.hide()
         self._verify_lab.setText("검증: 주소를 분류하지 못함 — 체크리스트 유지")
 
     def _poll_clipboard(self) -> None:

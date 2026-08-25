@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from app.ui.connect_webview import is_google_signin_rejected
 from app.ui.external_pat_guide import (
+    away_from_flow_guide_copy,
     build_pat_create_url,
     checklist_index_for_url,
     checklist_row_label,
     classify_browser_sample,
     classify_browser_url,
+    fallback_return_url,
     progress_guide_for_reached,
     should_auto_open_token_page,
     token_note_error_guide_copy,
@@ -19,6 +21,7 @@ from app.util.browser_address import (
     browser_address_available,
     detect_signin_method,
     is_apple_signin_url,
+    is_github_flow_family_url,
     looks_like_github_logged_out_ui,
     looks_like_passkey_os_prompt,
     looks_like_token_note_taken,
@@ -204,6 +207,47 @@ def test_github_logged_out_via_sign_in_sign_up_ui() -> None:
         )
         == "github"
     )
+
+
+def test_away_from_github_flow_family() -> None:
+    """Off-family URLs get soft away copy — never treated as progress."""
+    assert is_github_flow_family_url("https://github.com/settings/tokens")
+    assert is_github_flow_family_url(
+        "https://accounts.google.com/v3/signin/identifier"
+    )
+    assert is_github_flow_family_url(
+        "https://appleid.apple.com/auth/authorize?client_id=x"
+    )
+    assert not is_github_flow_family_url("https://www.youtube.com/watch?v=1")
+    assert not is_github_flow_family_url("https://news.naver.com/")
+
+    kind, idx = classify_browser_url("https://www.youtube.com/watch?v=abc")
+    assert kind == "away" and idx is None
+    kind2, idx2, meta = classify_browser_sample(
+        "https://news.naver.com/",
+        window_title="네이버 뉴스",
+        ui_text="속보",
+    )
+    assert kind2 == "away" and idx2 is None
+    assert meta.get("method") == "away"
+
+    # Family pages still classified normally
+    assert classify_browser_url("https://github.com/login")[0] == "current"
+    assert (
+        classify_browser_url(
+            "https://accounts.google.com/v3/signin/identifier"
+        )[0]
+        == "current"
+    )
+
+    title, lead, verify = away_from_flow_guide_copy()
+    assert "GitHub" in title
+    assert "괜찮" in lead or "원하" in lead  # soft, non-coercive
+    assert "연계" in verify or "아님" in verify
+
+    assert fallback_return_url(reached=-1).endswith("/login")
+    assert fallback_return_url(reached=1) == "https://github.com/"
+    assert "tokens/new" in fallback_return_url(reached=2)
 
 
 def test_token_note_already_taken_uia() -> None:
