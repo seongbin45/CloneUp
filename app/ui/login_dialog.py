@@ -1786,8 +1786,11 @@ class ConnectGitHubWizard(QDialog):
         self._browser_opened = True
         self._stop_clipboard_watch()
 
-        # Keep this QDialog alive (hidden) so wiz.exec() can still accept().
-        self.hide()
+        # CRITICAL: do NOT hide() an ApplicationModal dialog while exec() is
+        # running — on Windows Qt ends the modal loop as Rejected, so the
+        # main window never starts PatLoginWorker (no log, no success dialog).
+        # Minimize to the taskbar instead; exec() stays alive until accept/reject.
+        self.showMinimized()
         guide = ExternalBrowserPatGuide(anchor=self._anchor)
         self._external_guide = guide
         guide.token_accepted.connect(self._on_external_guide_token)
@@ -1800,17 +1803,24 @@ class ConnectGitHubWizard(QDialog):
         self._token = (token or "").strip()
         self._want_device = False
         guide = getattr(self, "_external_guide", None)
-        if guide is not None:
-            guide.close()
-            self._external_guide = None
-        self.accept()
+        self._external_guide = None
+        # Guide closes itself via accept() after emitting; do not close here
+        # (avoids cancel/closeEvent races). Leave a no-op if already gone.
+        if guide is not None and guide.isVisible():
+            try:
+                guide._done = True  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        # Restore before finishing so modality/teardown is orderly
+        if self.isMinimized():
+            self.showNormal()
+        self.done(int(QDialog.DialogCode.Accepted))
 
     def _on_external_guide_cancelled(self) -> None:
-        guide = getattr(self, "_external_guide", None)
-        if guide is not None:
-            guide.close()
-            self._external_guide = None
-        self.reject()
+        self._external_guide = None
+        if self.isMinimized():
+            self.showNormal()
+        self.done(int(QDialog.DialogCode.Rejected))
 
     def _open_external_from_web(self) -> None:
         url = PAT_CREATE_URL_FINE if self._via_fine else PAT_CREATE_URL

@@ -968,6 +968,8 @@ class ExternalBrowserPatGuide(QDialog):
             return
         self._stop_timers()
         self._done = True
+        # Emit before accept so the parent wizard can done(Accepted) while
+        # this dialog is still alive; then close without emitting cancelled.
         self.token_accepted.emit(raw)
         self.accept()
 
@@ -985,6 +987,8 @@ class ExternalBrowserPatGuide(QDialog):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._stop_timers()
+        # Only treat as cancel when the user dismissed without Connect.
+        # Success path sets _done before accept()/close.
         if not self._done:
             self._done = True
             self.cancelled.emit()
