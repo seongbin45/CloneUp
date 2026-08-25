@@ -31,6 +31,42 @@ _ZOOM_MAX = 3.0
 _ZOOM_STEP = 0.1
 _ZOOM_DEFAULT = 1.0
 
+# Google blocks sign-in inside embedded WebViews ("may not be secure").
+_GOOGLE_OAUTH_HOSTS = frozenset(
+    {
+        "accounts.google.com",
+        "account.google.com",
+    }
+)
+
+
+def is_google_oauth_url(url: str) -> bool:
+    """True if ``url`` is a Google account / OAuth sign-in page."""
+    try:
+        host = (QUrl(url).host() or "").lower()
+    except Exception:
+        host = ""
+    if not host:
+        u = (url or "").lower()
+        return "accounts.google.com" in u
+    if host in _GOOGLE_OAUTH_HOSTS:
+        return True
+    # Rare regional / mirror hosts
+    return host.endswith(".google.com") and host.startswith("accounts.")
+
+
+def looks_like_insecure_browser_block(title: str, html: str) -> bool:
+    """Google/GitHub 'This browser or app may not be secure' interstitial."""
+    blob = f"{title or ''}\n{html or ''}".lower()
+    needles = (
+        "may not be secure",
+        "couldn't sign you in",
+        "couldn’t sign you in",
+        "try using a different browser",
+        "browser or app may not be secure",
+    )
+    return any(n in blob for n in needles)
+
 # Prefer a mainstream desktop Chrome UA so GitHub is less likely to treat
 # the embed as a bot. Version string is cosmetic.
 _CHROME_UA = (
@@ -196,6 +232,36 @@ def checklist_text(reached: set[GitHubPageStage], current: GitHubPageStage) -> s
     return "  →  ".join(parts)
 
 
+class _ConnectWebPage:
+    """QWebEnginePage subclass created at runtime (WebEngine optional)."""
+
+
+def _make_connect_web_page(profile, parent, on_external):
+    from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+
+    class ConnectWebPage(QWebEnginePage):
+        def __init__(self) -> None:
+            super().__init__(profile, parent)
+            self._on_external = on_external
+            self._handed_off = False
+
+        def acceptNavigationRequest(  # noqa: N802
+            self, url: QUrl, nav_type, is_main_frame: bool
+        ) -> bool:
+            if is_main_frame and is_google_oauth_url(url.toString()):
+                # Do not load Google SSO in-process — hand off once.
+                if not self._handed_off:
+                    self._handed_off = True
+                    self._on_external(url.toString())
+                return False
+            return bool(super().acceptNavigationRequest(url, nav_type, is_main_frame))
+
+        def reset_handoff(self) -> None:
+            self._handed_off = False
+
+    return ConnectWebPage()
+
+
 class GitHubConnectWebPane(QWidget):
     """
     QWebEngineView that emits stage / optional token detections.
@@ -207,6 +273,8 @@ class GitHubConnectWebPane(QWidget):
     url_changed = Signal(str)
     token_found = Signal(str)
     load_failed = Signal(str)
+    # Google SSO cannot run inside Qt WebEngine — open system browser.
+    external_oauth_needed = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -217,6 +285,7 @@ class GitHubConnectWebPane(QWidget):
         self._reached: set[GitHubPageStage] = set()
         self._last_token = ""
         self._zoom = _ZOOM_DEFAULT
+        self._oauth_hand_off_done = False
 
         self._view = QWebEngineView(self)
         # Default sizeHint is tiny (~100×30) and will collapse layouts.
@@ -229,13 +298,27 @@ class GitHubConnectWebPane(QWidget):
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
+        profile = None
         try:
-            self._view.page().profile().setHttpUserAgent(_CHROME_UA)
+            profile = self._view.page().profile()
+            profile.setHttpUserAgent(_CHROME_UA)
         except Exception:
             try:
-                QWebEngineProfile.defaultProfile().setHttpUserAgent(_CHROME_UA)
+                profile = QWebEngineProfile.defaultProfile()
+                profile.setHttpUserAgent(_CHROME_UA)
             except Exception:
-                pass
+                profile = None
+        try:
+            if profile is not None:
+                page = _make_connect_web_page(
+                    profile, self._view, self._emit_external_oauth
+                )
+                self._view.setPage(page)
+                self._connect_page = page
+            else:
+                self._connect_page = None
+        except Exception:
+            self._connect_page = None
 
         self._view.urlChanged.connect(self._on_url)
         self._view.titleChanged.connect(self._on_title)
@@ -417,12 +500,22 @@ class GitHubConnectWebPane(QWidget):
         return set(self._reached)
 
     def load_url(self, url: str) -> None:
+        self._oauth_hand_off_done = False
+        page = getattr(self, "_connect_page", None)
+        if page is not None and hasattr(page, "reset_handoff"):
+            page.reset_handoff()
         self._view.setUrl(QUrl(url))
 
     def open_external_fallback(self, url: str) -> None:
         from PySide6.QtGui import QDesktopServices
 
         QDesktopServices.openUrl(QUrl(url))
+
+    def _emit_external_oauth(self, url: str) -> None:
+        if self._oauth_hand_off_done:
+            return
+        self._oauth_hand_off_done = True
+        self.external_oauth_needed.emit(url or "https://accounts.google.com/")
 
     def _snapshot(self) -> PageSnapshot:
         url = self._view.url().toString()
@@ -454,11 +547,18 @@ class GitHubConnectWebPane(QWidget):
 
     @Slot(QUrl)
     def _on_url(self, url: QUrl) -> None:
-        self.url_changed.emit(url.toString())
+        text = url.toString()
+        self.url_changed.emit(text)
+        if is_google_oauth_url(text):
+            self._emit_external_oauth(text)
+            return
         self._refresh_stage()
 
     @Slot(str)
-    def _on_title(self, _title: str) -> None:
+    def _on_title(self, title: str) -> None:
+        if looks_like_insecure_browser_block(title, ""):
+            self._emit_external_oauth(self._view.url().toString())
+            return
         self._refresh_stage()
 
     @Slot(bool)
@@ -474,7 +574,14 @@ class GitHubConnectWebPane(QWidget):
             pass
 
     def _on_html(self, html: str) -> None:
-        self._refresh_stage(html=html or "")
+        html = html or ""
+        title = self._view.title() or ""
+        if looks_like_insecure_browser_block(title, html) or is_google_oauth_url(
+            self._view.url().toString()
+        ):
+            self._emit_external_oauth(self._view.url().toString())
+            return
+        self._refresh_stage(html=html)
 
     def _try_scrape_token(self) -> None:
         def _done(result: object) -> None:

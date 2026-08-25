@@ -1312,6 +1312,7 @@ class ConnectGitHubWizard(QDialog):
         self._web_pane.url_changed.connect(self._on_web_url)
         self._web_pane.token_found.connect(self._apply_detected_token)
         self._web_pane.load_failed.connect(self._on_web_load_failed)
+        self._web_pane.external_oauth_needed.connect(self._on_google_oauth_external)
         br_lay.addWidget(addr)
         br_lay.addWidget(self._web_pane, 1)
         bw.addWidget(browser, 1)
@@ -1630,6 +1631,43 @@ class ConnectGitHubWizard(QDialog):
                 "페이지를 불러오지 못했습니다. "
                 "「외부 브라우저로 열기」로 진행한 뒤 키를 복사하세요."
             )
+
+    def _on_google_oauth_external(self, url: str) -> None:
+        """
+        Google blocks sign-in inside Qt WebEngine.
+
+        Hand off only the Google OAuth URL to the system browser. After Google
+        finishes, GitHub continues in that browser — user creates the key there
+        and copies it; clipboard watch fills this dialog.
+        """
+        msg = (
+            "Google 로그인은 앱 안 화면에서 보안상 막혀 있습니다. "
+            "방금 연 브라우저에서 Google 로그인을 마치면 GitHub으로 돌아갑니다. "
+            "거기서 키를 만든 뒤 복사하세요. 복사되면 이 창이 다시 받습니다."
+        )
+        if self._web_hint is not None:
+            self._web_hint.setText(msg)
+        if self._web_watch_tag is not None:
+            self._web_watch_tag.setText("외부 브라우저")
+            self._web_watch_tag.setObjectName("connWatchTagWarn")
+            self._web_watch_tag.style().unpolish(self._web_watch_tag)
+            self._web_watch_tag.style().polish(self._web_watch_tag)
+        if self._web_watch_body is not None:
+            self._web_watch_body.setText(
+                "Google → GitHub 로그인 → 키 만들기 → 복사. "
+                "이 창은 잠시 내려 둡니다."
+            )
+        if self._web_watch is not None:
+            self._web_watch.setObjectName("connWatchWarn")
+            self._web_watch.style().unpolish(self._web_watch)
+            self._web_watch.style().polish(self._web_watch)
+        if self._web_cta_note is not None:
+            self._web_cta_note.setText("외부 브라우저에서 키를 복사하면 이어집니다")
+        # Prefer the Google URL; fall back to PAT create page
+        handoff = (url or "").strip() or (
+            PAT_CREATE_URL_FINE if self._via_fine else PAT_CREATE_URL
+        )
+        self._open_url_in_external_browser(handoff)
 
     def _open_external_from_web(self) -> None:
         url = PAT_CREATE_URL_FINE if self._via_fine else PAT_CREATE_URL
