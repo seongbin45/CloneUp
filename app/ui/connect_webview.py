@@ -121,6 +121,46 @@ _JS_FIND_TOKEN = r"""
 })()
 """
 
+# Click the classic/fine "Generate token" submit (not list "Generate new token").
+_JS_CLICK_GENERATE_TOKEN = r"""
+(() => {
+  const labelOf = (el) =>
+    ((el.innerText || el.textContent || el.value || el.getAttribute("aria-label") || "") + "")
+      .replace(/\s+/g, " ")
+      .trim();
+  const isGenerateToken = (t) => /^Generate token$/i.test(t);
+  // Prefer exact "Generate token" (create form). Skip "Generate new token…".
+  const nodes = Array.from(
+    document.querySelectorAll(
+      "button, input[type=submit], input[type=button], a.Button"
+    )
+  );
+  for (const el of nodes) {
+    const t = labelOf(el);
+    if (!t) continue;
+    if (/Generate new token/i.test(t)) continue;
+    if (isGenerateToken(t)) {
+      el.click();
+      return "clicked:" + t;
+    }
+  }
+  const form = document.querySelector(
+    "#new_oauth_access, form[action*='settings/tokens'], form[action*='personal-access-tokens']"
+  );
+  if (form) {
+    const sub = form.querySelector("button[type=submit], input[type=submit]");
+    if (sub) {
+      const t = labelOf(sub);
+      if (!/Generate new token/i.test(t)) {
+        sub.click();
+        return "clicked:form-submit:" + t;
+      }
+    }
+  }
+  return "not-found";
+})()
+"""
+
 # User-facing 4 steps (desin/CloneUp GitHub 연결.dc.html)
 UI_STEP_NAMES: tuple[str, ...] = ("로그인", "인증 코드", "키 만들기", "키 복사")
 
@@ -264,7 +304,7 @@ def step_copy(i: int) -> dict[str, str | bool]:
             "stepName": "키 만들기",
             "title": "키를 만들어 주세요",
             "lead": guide_lead(
-                "Note는 날짜·시간으로 채웠습니다. Generate token을 누르세요."
+                "Note는 날짜·시간입니다. Generate token을 자동으로 누릅니다."
             ),
             "watchTag": "확인",
             "watchBody": (
@@ -272,7 +312,7 @@ def step_copy(i: int) -> dict[str, str | bool]:
                 "계정 설정을 바꾸는 권한은 들어 있지 않습니다."
             ),
             "watchWarn": False,
-            "ctaNote": "키가 만들어지면 자동으로 진행됩니다",
+            "ctaNote": "Generate token 후 키가 나오면 자동 연결됩니다",
             "showKey": False,
         },
         {
@@ -378,6 +418,8 @@ class GitHubConnectWebPane(QWidget):
         self._zoom = _ZOOM_DEFAULT
         self._oauth_hand_off_done = False
         self._last_form_error = ""
+        self._generate_clicked_url = ""  # auto-click Generate token once per URL
+        self._generate_scheduled_url = ""
 
         self._view = QWebEngineView(self)
         # Default sizeHint is tiny (~100×30) and will collapse layouts.
@@ -671,8 +713,62 @@ class GitHubConnectWebPane(QWidget):
         )
         if stage != prev or force:
             self.stage_changed.emit(stage)
+        if stage in (
+            GitHubPageStage.TOKEN_CLASSIC_NEW,
+            GitHubPageStage.TOKEN_FINE_NEW,
+        ):
+            self._schedule_click_generate_token()
         if stage == GitHubPageStage.TOKEN_ISSUED:
             self._try_scrape_token()
+
+    def _schedule_click_generate_token(self) -> None:
+        """Auto-press Generate token once the create form is ready (once per URL)."""
+        from PySide6.QtCore import QTimer
+
+        url = ""
+        try:
+            url = self._view.url().toString()
+        except Exception:
+            url = ""
+        if not url or url == self._generate_clicked_url:
+            return
+        # Avoid stacking timers on every HTML refresh of the same form
+        if url == self._generate_scheduled_url:
+            return
+        self._generate_scheduled_url = url
+        # Small delay so Note/scopes paint before submit
+        QTimer.singleShot(600, lambda u=url: self._try_click_generate_token(u))
+
+    def _try_click_generate_token(self, expected_url: str) -> None:
+        try:
+            cur = self._view.url().toString()
+        except Exception:
+            return
+        if cur != expected_url:
+            return
+        if cur == self._generate_clicked_url:
+            return
+        # Still on a create form?
+        st = detect_github_page_stage(PageSnapshot(url=cur))
+        if st not in (
+            GitHubPageStage.TOKEN_CLASSIC_NEW,
+            GitHubPageStage.TOKEN_FINE_NEW,
+        ):
+            return
+
+        def _done(result: object) -> None:
+            text = str(result) if result is not None else ""
+            if text.startswith("clicked:"):
+                self._generate_clicked_url = expected_url
+            # Allow one retry on a later navigation to a new Note URL
+            if self._generate_scheduled_url == expected_url:
+                self._generate_scheduled_url = ""
+
+        try:
+            self._view.page().runJavaScript(_JS_CLICK_GENERATE_TOKEN, _done)
+        except Exception:
+            if self._generate_scheduled_url == expected_url:
+                self._generate_scheduled_url = ""
 
     def _refresh_stage(self, html: str = "") -> None:
         snap = self._snapshot()
