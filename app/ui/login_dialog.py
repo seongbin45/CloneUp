@@ -722,50 +722,42 @@ class ConnectGitHubWizard(QDialog):
 
     def _fit_choice_dialog(self) -> None:
         """Compact window sized to the choice card only (stable — no resize loop)."""
-        from app.util.screen_fit import clear_size_locks, read_screen_info, screen_for_widget
+        from app.util.screen_fit import read_screen_info, screen_for_widget
         from PySide6.QtCore import Qt
 
         if getattr(self, "_fitting_choice", False):
             return
         self._fitting_choice = True
         try:
-            # Suppress changeEvent → _place_normal_web_size (that fought this fit
-            # and made the window pulse tall↔short).
+            # Suppress changeEvent → _place_normal_web_size (fought this fit).
             self._suppress_state_fit = True
             st = self.windowState()
             if st & (
                 Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen
             ):
-                self.setWindowState(
-                    Qt.WindowState.WindowNoState
-                )
+                self.setWindowState(Qt.WindowState.WindowNoState)
             self.showNormal()
-            clear_size_locks(self)
-            self.setMinimumSize(440, 260)
-            self.setMaximumWidth(560)
-            # IMPORTANT: size from choice *page* only. Do not collapse the
-            # WebEngine page to 0×0 — that thrashes layout with the view.
+            # Size from choice *page* only (dialog sizeHint includes WebView ~900px).
             page = self._stack.widget(self._choice_index)
             ph = page.sizeHint() if page is not None else None
             pw = int(ph.width()) if ph is not None and ph.width() > 0 else 520
             phh = int(ph.height()) if ph is not None and ph.height() > 0 else 340
-            w = max(480, min(560, pw + 8))
-            h = max(280, min(400, phh + 36))
+            w = max(480, min(560, max(pw, 520)))
+            h = max(300, min(380, phh + 48))
             info = read_screen_info(screen_for_widget(self, anchor=self._anchor))
             if info is not None:
                 w = min(w, max(400, info.available_w - 48))
-                h = min(h, max(260, info.available_h - 48))
-            # Direct resize — avoid fit_client processEvents feedback loops
-            self.resize(w, h)
-            self.setMaximumHeight(h)
+                h = min(h, max(280, info.available_h - 48))
+            # Fixed size so the stack/WebView cannot stretch the shell again
+            self.setMinimumSize(w, h)
+            self.setFixedSize(w, h)
             self._place_center_on_anchor()
         except Exception:
-            self.resize(520, 340)
+            self.setFixedSize(520, 340)
             self._place_center_on_anchor()
         finally:
             self._fitting_choice = False
-            # Keep suppress briefly so deferred WindowStateChange cannot enlarge us
-            QTimer.singleShot(200, self._clear_suppress_state_fit)
+            QTimer.singleShot(300, self._clear_suppress_state_fit)
 
     def _clear_suppress_state_fit(self) -> None:
         self._suppress_state_fit = False
@@ -781,9 +773,9 @@ class ConnectGitHubWizard(QDialog):
 
         try:
             self._suppress_state_fit = True
-            self.setMaximumWidth(16777215)
-            self.setMaximumHeight(16777215)
+            # Unlock choice setFixedSize before maximizing
             self.setMinimumSize(640, 360)
+            self.setMaximumSize(16777215, 16777215)
             self.showNormal()
             self._place_normal_web_size()
             clear_size_locks(self)
@@ -791,7 +783,7 @@ class ConnectGitHubWizard(QDialog):
         except Exception:
             self.resize(1280, 720)
         finally:
-            QTimer.singleShot(200, self._clear_suppress_state_fit)
+            QTimer.singleShot(300, self._clear_suppress_state_fit)
 
     def changeEvent(self, event) -> None:  # noqa: N802
         super().changeEvent(event)
