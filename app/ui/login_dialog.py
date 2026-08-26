@@ -656,12 +656,14 @@ class ConnectGitHubWizard(QDialog):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
         if self._use_web:
-            # 0=path choice (first), 1=WebView only (Path A). No library/start page.
+            # Choice only at first — WebView page is added lazily on Path A.
+            # Keeping WebEngine in the stack made sizeHint/~layout thrash the
+            # choice window height (tall↔short pulse).
             self._stack.addWidget(self._page_choice())
-            self._stack.addWidget(self._page_web())
             self._choice_index = _WEB_PAGE_CHOICE
-            self._web_index = _WEB_PAGE_WEB
-            self._paste_index = _WEB_PAGE_WEB  # token field lives on web page
+            self._web_index = -1
+            self._paste_index = -1
+            self._web_page_built = False
             self._progress.hide()  # counter lives inside the card
         else:
             for i, (title, body) in enumerate(_STEPS):
@@ -959,12 +961,22 @@ class ConnectGitHubWizard(QDialog):
             _CONNECT_GUIDE_OPACITY if over_browser else 1.0
         )
 
+    def _ensure_web_page(self) -> None:
+        """Build the WebView stack page once (Path A only)."""
+        if not self._use_web or getattr(self, "_web_page_built", False):
+            return
+        self._stack.addWidget(self._page_web())
+        self._web_index = self._stack.count() - 1
+        self._paste_index = self._web_index
+        self._web_page_built = True
+
     def _go(self, index: int) -> None:
         if self._use_web:
-            # CHOICE (0) · WEB (1) — never nest external guide here
+            # CHOICE (0) · WEB (lazy) — never nest external guide here
             if index == self._choice_index or index <= _WEB_PAGE_CHOICE:
                 index = self._choice_index
             else:
+                self._ensure_web_page()
                 index = self._web_index
             self._stack.setCurrentIndex(index)
             self.setWindowOpacity(1.0)
@@ -987,6 +999,7 @@ class ConnectGitHubWizard(QDialog):
             self._edit.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _go_web(self) -> None:
+        self._ensure_web_page()
         self._stack.setCurrentIndex(self._web_index)
         self.setWindowOpacity(1.0)
         if self._ui_now == 0 and self._ui_max == 0:
@@ -1015,6 +1028,7 @@ class ConnectGitHubWizard(QDialog):
         self._go(_STEP_WORK)
 
     def _start_web(self, url: str) -> None:
+        self._ensure_web_page()
         self._browser_opened = True
         if not self._clip_timer.isActive():
             self._clip_timer.start()
