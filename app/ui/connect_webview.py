@@ -121,6 +121,25 @@ _JS_FIND_TOKEN = r"""
 })()
 """
 
+# Read Expiration control (classic select) or issued-page text.
+_JS_READ_EXPIRATION = r"""
+(() => {
+  const out = { value: "", label: "", bodyHint: "" };
+  const sel = document.querySelector(
+    "#oauth_access_expires_at, select[name='oauth_access[expires_at]'], select[name*='expires']"
+  );
+  if (sel && sel.options && sel.selectedIndex >= 0) {
+    const opt = sel.options[sel.selectedIndex];
+    out.value = (sel.value || "").trim();
+    out.label = ((opt && (opt.textContent || opt.label)) || "").trim();
+  }
+  const body = document.body ? (document.body.innerText || "") : "";
+  const m = body.match(/Expires?(?:\s+on)?\s*[:\s]+([^\n]+)/i);
+  if (m) out.bodyHint = (m[1] || "").trim().slice(0, 80);
+  return JSON.stringify(out);
+})()
+"""
+
 # Click the classic/fine "Generate token" submit (not list "Generate new token").
 _JS_CLICK_GENERATE_TOKEN = r"""
 (() => {
@@ -421,6 +440,7 @@ class GitHubConnectWebPane(QWidget):
         self._stage = GitHubPageStage.UNKNOWN
         self._reached: set[GitHubPageStage] = set()
         self._last_token = ""
+        self._last_expires_at: str | None = None  # ISO Z / "none" from page
         self._zoom = _ZOOM_DEFAULT
         self._oauth_hand_off_done = False
         self._last_form_error = ""
@@ -729,17 +749,57 @@ class GitHubConnectWebPane(QWidget):
             GitHubPageStage.TOKEN_CLASSIC_NEW,
             GitHubPageStage.TOKEN_FINE_NEW,
         ):
+            self._schedule_read_expiration()
             self._schedule_click_generate_token()
         if stage == GitHubPageStage.TOKEN_ISSUED:
             self._reissue_count = 0
             self._reissue_exhausted = False
+            self._schedule_read_expiration()
             self._try_scrape_token()
         if stage in (
             GitHubPageStage.TOKEN_CLASSIC_LIST,
             GitHubPageStage.TOKEN_FINE_LIST,
         ):
-            # List without a fresh PAT → may need reissue loop (after HTML classify)
+            self._schedule_read_expiration()
+
+    def _schedule_read_expiration(self) -> None:
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(400, self._try_read_expiration)
+
+    def _try_read_expiration(self) -> None:
+        def _done(result: object) -> None:
+            import json
+
+            from app.auth.token_expiry import (
+                parse_expires_from_page_text,
+                parse_expires_label,
+            )
+
+            raw = str(result) if result is not None else ""
+            value = label = body = ""
+            try:
+                data = json.loads(raw) if raw else {}
+                if isinstance(data, dict):
+                    value = str(data.get("value") or "")
+                    label = str(data.get("label") or "")
+                    body = str(data.get("bodyHint") or "")
+            except Exception:
+                body = raw
+            exp = parse_expires_label(value, label) or parse_expires_from_page_text(
+                body
+            )
+            if exp:
+                self._last_expires_at = exp
+
+        try:
+            self._view.page().runJavaScript(_JS_READ_EXPIRATION, _done)
+        except Exception:
             pass
+
+    @property
+    def last_token_expires_at(self) -> str | None:
+        return self._last_expires_at
 
     def _schedule_click_generate_token(self) -> None:
         """Auto-press Generate token once the create form is ready (once per URL)."""
@@ -756,8 +816,9 @@ class GitHubConnectWebPane(QWidget):
         if url == self._generate_scheduled_url:
             return
         self._generate_scheduled_url = url
-        # Small delay so Note/scopes paint before submit
-        QTimer.singleShot(600, lambda u=url: self._try_click_generate_token(u))
+        # Read expiration before submit, then click
+        self._schedule_read_expiration()
+        QTimer.singleShot(700, lambda u=url: self._try_click_generate_token(u))
 
     def _try_click_generate_token(self, expected_url: str) -> None:
         try:

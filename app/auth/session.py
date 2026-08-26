@@ -208,12 +208,17 @@ def refresh_scopes_from_github(
     return scope, user
 
 
-def login_with_pat(token: str) -> tuple[str, dict]:
+def login_with_pat(
+    token: str, *, expires_at: str | None = None
+) -> tuple[str, dict]:
     """
     Validate a user-supplied Personal Access Token and store it.
 
     Does **not** use CloneUp's OAuth client_id. User creates the token on
     github.com; malware cannot complete this without the user's token string.
+
+    ``expires_at``: ISO-8601 UTC or ``none`` from page scrape; if missing,
+    best-effort API lookup may fill it for fine-grained tokens.
     """
     cleaned = (token or "").strip()
     if not cleaned:
@@ -265,12 +270,66 @@ def login_with_pat(token: str) -> tuple[str, dict]:
         )
         store_scope = SCOPE_UNKNOWN
 
-    save_token(cleaned, store_scope, auth_kind=AUTH_KIND_PAT)
+    exp = (expires_at or "").strip() or None
+    if not exp:
+        exp = _lookup_expires_at_via_api(cleaned, user=user)
+    save_token(
+        cleaned, store_scope, auth_kind=AUTH_KIND_PAT, expires_at=exp or ""
+    )
     print(f"키 저장됨 (masked): {mask_token(cleaned)}")
     print(f"granted scope (stored): {store_scope!r}")
     print(f"auth kind: {AUTH_KIND_PAT}")
+    print(f"expires_at: {exp!r}")
     print(f"user: {user.get('login')!r}")
+    user = dict(user)
+    user["_expires_at"] = exp
     return cleaned, user
+
+
+def _lookup_expires_at_via_api(token: str, *, user: dict | None = None) -> str | None:
+    """Best-effort: fine-grained token list may expose expires_at."""
+    import requests
+
+    from app.auth.token_expiry import parse_expires_label
+
+    _ = user
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    # Fine-grained personal access tokens (may 403 for classic ghp_)
+    try:
+        r = requests.get(
+            "https://api.github.com/user/personal-access-tokens",
+            headers=headers,
+            timeout=20,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            items = data if isinstance(data, list) else data.get("tokens") or []
+            best = None
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+                name = str(it.get("name") or it.get("token_name") or "")
+                if name.startswith("CloneUp"):
+                    best = it
+                    break
+                if best is None:
+                    best = it
+            if isinstance(best, dict):
+                exp = best.get("expires_at") or best.get("expiration")
+                if exp in (None, "", "null"):
+                    return "none"
+                if isinstance(exp, str):
+                    parsed = parse_expires_label(exp, exp)
+                    return parsed or exp
+        else:
+            print(f"만료일 API 조회 생략 (HTTP {r.status_code})")
+    except Exception as e:
+        print(f"만료일 API 조회 실패: {e}")
+    return None
 
 
 def ensure_valid_token(

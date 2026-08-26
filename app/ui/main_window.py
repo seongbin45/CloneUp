@@ -1271,7 +1271,9 @@ class MainController(QObject):
             self._run_external_pat_guide()
             return
 
-        self._start_pat_login(token=wiz.token())
+        self._start_pat_login(
+            token=wiz.token(), expires_at=wiz.token_expires_at()
+        )
 
     def _run_external_pat_guide(self) -> None:
         """Path B: floating/browser guide alone (never nested under WebView wizard)."""
@@ -1291,9 +1293,12 @@ class MainController(QObject):
             return
         self._start_pat_login(token=raw)
 
-    def _start_pat_login(self, token: str | None = None) -> None:
+    def _start_pat_login(
+        self, token: str | None = None, *, expires_at: str | None = None
+    ) -> None:
         """Store user-issued PAT after GET /user (no OAuth App)."""
         raw = (token or "").strip()
+        exp = expires_at
         if not raw:
             wiz = ConnectGitHubWizard(self.window, reauth=False)
             if wiz.exec() != ConnectGitHubWizard.DialogCode.Accepted:
@@ -1306,12 +1311,15 @@ class MainController(QObject):
                 self._run_external_pat_guide()
                 return
             raw = wiz.token()
+            exp = wiz.token_expires_at()
         if not raw.strip():
             self._log("키가 비어 연결 취소")
             return
         self._device_cancel_label = "로그인 취소"
         self._log("--- GitHub 연결 (키) ---")
-        w = PatLoginWorker(raw, parent=self)
+        if exp:
+            self._log(f"만료일(감지): {exp}")
+        w = PatLoginWorker(raw, parent=self, expires_at=exp)
         w.succeeded.connect(self._on_login_ok)
         w.failed.connect(self._on_fail_msg)
         self._start_worker(w)
@@ -1334,18 +1342,27 @@ class MainController(QObject):
         self.auth_status.set_login_name(str(login) if login else None)
         self.auth_status.refresh()
         self._update_logout_button()
+        exp_disp = str(info.get("expires_display") or "").strip()
+        exp_raw = info.get("expires_at")
         self._log(
             f"연결 완료 ({kind_label}): {login}"
+            + (f" · 만료: {exp_disp or exp_raw}" if (exp_disp or exp_raw) else "")
         )
         # 받기 탭: 로그인 → 내 저장소 목록 모드
         self._clone_repos_loaded_for = None
         self._sync_clone_url_login_mode(force=True)
         # Browser often still has focus after Path B — lift CloneUp first
         self._raise_app_over_browser()
+        exp_line = (
+            f"만료일: {exp_disp}\n"
+            if exp_disp
+            else "만료일: 확인되지 않음 (GitHub에서 키를 만들 때 정한 날짜)\n"
+        )
         QMessageBox.information(
             self.window,
             "연결 완료",
             f"{login} 님, 연결되었습니다.\n"
+            f"{exp_line}"
             "만료일이 지나면 「GitHub: 연결」으로 새 키를 넣으세요.\n"
             "「받기」탭에서 내 저장소 목록을 고를 수 있습니다.",
         )

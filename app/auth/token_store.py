@@ -15,6 +15,8 @@ AUTH_KIND_USERNAME = "github_auth_kind"
 # When CloneUp last successfully stored this token (ISO-8601 UTC).
 # GitHub does not always expose PAT expiry via API — we track *connect age*.
 CONNECTED_AT_USERNAME = "github_token_connected_at"
+# GitHub PAT expiration when known: ISO-8601 UTC ``…Z``, or ``none``.
+EXPIRES_AT_USERNAME = "github_token_expires_at"
 
 AUTH_KIND_DEVICE = "device"
 AUTH_KIND_PAT = "pat"
@@ -43,6 +45,7 @@ def save_token(
     *,
     auth_kind: str | None = None,
     connected_at: str | None = None,
+    expires_at: str | None = None,
 ) -> None:
     if not token or not token.strip():
         raise ValueError("refusing to store empty token")
@@ -58,6 +61,12 @@ def save_token(
     # Stamp connect time on every successful save (new key or re-login).
     stamp = (connected_at or "").strip() or _iso_now()
     keyring.set_password(SERVICE_NAME, CONNECTED_AT_USERNAME, stamp)
+    if expires_at is not None:
+        exp = (expires_at or "").strip()
+        if exp:
+            keyring.set_password(SERVICE_NAME, EXPIRES_AT_USERNAME, exp)
+        else:
+            _delete_key(EXPIRES_AT_USERNAME)
 
 
 def load_token() -> str | None:
@@ -95,6 +104,30 @@ def load_connected_at() -> datetime | None:
     """Parse stored connect time as timezone-aware UTC datetime."""
     raw = load_connected_at_raw()
     if not raw:
+        return None
+    text = raw.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def load_expires_at_raw() -> str | None:
+    """ISO-8601 UTC, ``none``, or None if never recorded."""
+    raw = keyring.get_password(SERVICE_NAME, EXPIRES_AT_USERNAME)
+    if raw is None:
+        return None
+    s = raw.strip()
+    return s or None
+
+
+def load_expires_at() -> datetime | None:
+    """Parsed expiry, or None when unknown / ``none`` (no expiration)."""
+    raw = load_expires_at_raw()
+    if not raw or raw.lower() == "none":
         return None
     text = raw.replace("Z", "+00:00")
     try:
@@ -206,6 +239,7 @@ def delete_token() -> None:
         SCOPE_USERNAME,
         AUTH_KIND_USERNAME,
         CONNECTED_AT_USERNAME,
+        EXPIRES_AT_USERNAME,
     ):
         _delete_key(username)
 

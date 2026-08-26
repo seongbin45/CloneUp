@@ -112,15 +112,20 @@ class PatLoginWorker(QThread):
     succeeded = Signal(dict)
     failed = Signal(str)
 
-    def __init__(self, token: str, parent=None) -> None:
+    def __init__(
+        self, token: str, parent=None, *, expires_at: str | None = None
+    ) -> None:
         super().__init__(parent)
         self._token = token
+        self._expires_at = expires_at
 
     def _log(self, msg: str) -> None:
         self.log_line.emit(mask_secrets_in_text(msg))
 
     def run(self) -> None:
         from app.auth.session import login_with_pat
+        from app.auth.token_expiry import format_expires_display
+        from app.auth.token_store import load_expires_at_raw
 
         sink = _SignalStdout(self._log)
         try:
@@ -129,16 +134,23 @@ class PatLoginWorker(QThread):
                     self.failed.emit("취소됨")
                     return
                 self._log("GitHub 키로 연결 중…")
-                token, user = login_with_pat(self._token)
+                token, user = login_with_pat(
+                    self._token, expires_at=self._expires_at
+                )
                 if self.isInterruptionRequested():
                     self.failed.emit("연결이 취소되었습니다.")
                     return
+                exp = user.get("_expires_at") or load_expires_at_raw()
                 self.succeeded.emit(
                     {
                         "login": user.get("login"),
                         "scope": load_scope(),
                         "token_masked": mask_token(token),
                         "auth_kind": "pat",
+                        "expires_at": exp,
+                        "expires_display": format_expires_display(
+                            str(exp) if exp else None
+                        ),
                     }
                 )
         except AuthError as e:

@@ -583,6 +583,7 @@ class ConnectGitHubWizard(QDialog):
         self._anchor = parent
         super().__init__(None)
         self._token = ""
+        self._token_expires_at: str | None = None  # from WebView page scrape
         self._want_device = False
         self._want_external = False  # Path B: close wizard, main runs Guide alone
         self._reauth = reauth
@@ -923,6 +924,11 @@ class ConnectGitHubWizard(QDialog):
     def _apply_detected_token(self, text: str) -> None:
         if hasattr(self, "_edit") and self._edit is not None:
             self._edit.setText(text)
+        # Capture expiration scraped from the create/issued page (if any)
+        if self._web_pane is not None:
+            exp = getattr(self._web_pane, "last_token_expires_at", None)
+            if exp:
+                self._token_expires_at = str(exp)
         if self._use_web:
             if self._stack.currentIndex() != self._web_index:
                 self._go_web()
@@ -977,6 +983,10 @@ class ConnectGitHubWizard(QDialog):
 
     def token(self) -> str:
         return self._token
+
+    def token_expires_at(self) -> str | None:
+        """ISO-8601 / ``none`` from WebView page scrape, if known."""
+        return self._token_expires_at
 
     def wants_device_flow(self) -> bool:
         return self._want_device
@@ -2112,6 +2122,10 @@ class ConnectGitHubWizard(QDialog):
             )
             return
         self._token = raw
+        if not self._token_expires_at and self._web_pane is not None:
+            exp = getattr(self._web_pane, "last_token_expires_at", None)
+            if exp:
+                self._token_expires_at = str(exp)
         self._want_device = False
         self.accept()
 
