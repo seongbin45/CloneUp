@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
     QFrame,
     QHBoxLayout,
@@ -407,6 +408,19 @@ def _dialog_style(p: Palette) -> str:
         border: none;
         border-top: 1px solid #e6e1d8;
     }}
+    QComboBox#connExpiryCombo {{
+        background: #fbfaf8;
+        border: 1px solid #cdc8bf;
+        border-radius: 6px;
+        padding: 6px 10px;
+        min-height: 28px;
+        font-size: 12.5px;
+        color: #3d382f;
+    }}
+    QComboBox#connExpiryCombo::drop-down {{
+        border: none;
+        width: 22px;
+    }}
     QPushButton#connNavMini {{
         background: #fbfaf8;
         border: 1px solid #cdc8bf;
@@ -612,6 +626,8 @@ class ConnectGitHubWizard(QDialog):
         self._web_stage_title: QLabel | None = None
         self._web_hint: QLabel | None = None
         self._btn_switch_external: QPushButton | None = None
+        self._expiry_combo: QComboBox | None = None
+        self._expiry_lab: QLabel | None = None
         self._external_guide = None  # must stay unused (no nested guide)
         from app.ui.connect_webview import webengine_available
 
@@ -1476,7 +1492,7 @@ class ConnectGitHubWizard(QDialog):
         # footer
         footer = QFrame()
         footer.setObjectName("connFooter")
-        footer.setFixedHeight(68)
+        footer.setFixedHeight(72)
         foot = QHBoxLayout(footer)
         foot.setContentsMargins(22, 0, 22, 0)
         foot.setSpacing(12)
@@ -1494,6 +1510,28 @@ class ConnectGitHubWizard(QDialog):
         )
         self._btn_switch_external.clicked.connect(self._start_external_path)
         self._btn_switch_external.hide()
+
+        # Center: PAT Expiration (mirrors GitHub classic options)
+        self._expiry_lab = QLabel("만료일")
+        self._expiry_lab.setObjectName("wizMeta")
+        self._expiry_combo = QComboBox()
+        self._expiry_combo.setObjectName("connExpiryCombo")
+        self._expiry_combo.setMinimumWidth(140)
+        self._expiry_combo.setToolTip(
+            "GitHub 키 만료 기간입니다. 폼의 Expiration과 맞추고 연결 시 함께 저장합니다."
+        )
+        for label, value in (
+            ("7일", "7"),
+            ("30일", "30"),
+            ("60일", "60"),
+            ("90일 (권장)", "90"),
+            ("만료 없음", ""),
+        ):
+            self._expiry_combo.addItem(label, value)
+        # Default: 90 days (beginner-friendly)
+        self._expiry_combo.setCurrentIndex(3)
+        self._expiry_combo.currentIndexChanged.connect(self._on_expiry_choice_changed)
+
         self._web_cta_note = QLabel("로그인하면 자동으로 진행됩니다")
         self._web_cta_note.setObjectName("wizMeta")
         self._web_cta = QPushButton("다음")
@@ -1503,6 +1541,9 @@ class ConnectGitHubWizard(QDialog):
         foot.addWidget(btn_cancel)
         foot.addWidget(btn_back)
         foot.addWidget(self._btn_switch_external)
+        foot.addStretch(1)
+        foot.addWidget(self._expiry_lab)
+        foot.addWidget(self._expiry_combo)
         foot.addStretch(1)
         foot.addWidget(self._web_cta_note)
         foot.addWidget(self._web_cta)
@@ -1747,6 +1788,31 @@ class ConnectGitHubWizard(QDialog):
         if self._ui_now >= 3:
             self._finish()
 
+    def _expiry_combo_value(self) -> str:
+        if self._expiry_combo is None:
+            return "90"
+        data = self._expiry_combo.currentData()
+        return "" if data is None else str(data)
+
+    def _on_expiry_choice_changed(self, _index: int = 0) -> None:
+        """Sync footer expiry → WebView Expiration select + pending store value."""
+        from app.auth.token_expiry import parse_expires_label
+
+        val = self._expiry_combo_value()
+        exp = parse_expires_label(
+            val or "none", "No expiration" if not val else f"{val} days"
+        )
+        if exp:
+            self._token_expires_at = exp
+        if self._web_pane is not None:
+            self._web_pane.apply_expiration_choice(val)
+
+    def _sync_expiry_to_webview(self) -> None:
+        """Push current combo selection into the page (after tokens/new loads)."""
+        if self._expiry_combo is None or self._web_pane is None:
+            return
+        self._on_expiry_choice_changed(self._expiry_combo.currentIndex())
+
     def _mark_web_url_editing(self, editing: bool) -> None:
         self._web_url_editing = editing
 
@@ -1852,6 +1918,12 @@ class ConnectGitHubWizard(QDialog):
             # Advance sticky max; current follows live page
             self._ui_max = max(self._ui_max, ui)
             self._paint_web_guide(ui, live_stage=st)
+            # On create form, apply footer Expiration before auto Generate
+            if st in (
+                GitHubPageStage.TOKEN_CLASSIC_NEW,
+                GitHubPageStage.TOKEN_FINE_NEW,
+            ):
+                QTimer.singleShot(200, self._sync_expiry_to_webview)
             return
         # Off-map page (e.g. profile) — keep track, refresh title/lead if useful
         if self._ui_max >= 1 or self._ui_now >= 1:

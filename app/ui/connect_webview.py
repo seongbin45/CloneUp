@@ -140,6 +140,40 @@ _JS_READ_EXPIRATION = r"""
 })()
 """
 
+# Set classic Expiration <select> to a day count ("" = no expiration).
+_JS_SET_EXPIRATION = r"""
+(function(want) {
+  const sel = document.querySelector(
+    "#oauth_access_expires_at, select[name='oauth_access[expires_at]'], select[name*='expires']"
+  );
+  if (!sel) return "no-select";
+  const w = (want == null ? "" : String(want)).trim();
+  let matched = false;
+  for (const opt of Array.from(sel.options || [])) {
+    const v = (opt.value || "").trim();
+    if (v === w) {
+      sel.value = v;
+      matched = true;
+      break;
+    }
+  }
+  if (!matched && w === "") {
+    // Prefer explicit empty / none option
+    for (const opt of Array.from(sel.options || [])) {
+      const t = ((opt.textContent || "") + "").toLowerCase();
+      if (!opt.value || t.indexOf("no expiration") >= 0 || t.indexOf("만료 없음") >= 0) {
+        sel.value = opt.value;
+        matched = true;
+        break;
+      }
+    }
+  }
+  if (!matched) return "no-option:" + w;
+  sel.dispatchEvent(new Event("input", { bubbles: true }));
+  sel.dispatchEvent(new Event("change", { bubbles: true }));
+  return "set:" + (sel.value || "");
+})"""
+
 # Click the classic/fine "Generate token" submit (not list "Generate new token").
 _JS_CLICK_GENERATE_TOKEN = r"""
 (() => {
@@ -800,6 +834,32 @@ class GitHubConnectWebPane(QWidget):
     @property
     def last_token_expires_at(self) -> str | None:
         return self._last_expires_at
+
+    def apply_expiration_choice(self, days_value: str) -> None:
+        """
+        Set GitHub classic Expiration dropdown to ``days_value``
+        (``\"7\"``/``\"30\"``/``\"60\"``/``\"90\"`` or ``\"\"`` for no expiration).
+        """
+        from app.auth.token_expiry import parse_expires_label
+
+        want = "" if days_value in (None, "none", "NONE") else str(days_value).strip()
+        # Optimistically record for keyring even if the DOM select is missing
+        exp = parse_expires_label(want or "none", "No expiration" if not want else f"{want} days")
+        if exp:
+            self._last_expires_at = exp
+
+        def _done(result: object) -> None:
+            text = str(result) if result is not None else ""
+            if text.startswith("set:"):
+                # Re-read so custom labels stay accurate
+                self._try_read_expiration()
+
+        try:
+            # runJavaScript(script, worldId?) — pass arg by wrapping call
+            js = f"{_JS_SET_EXPIRATION}({want!r});"
+            self._view.page().runJavaScript(js, _done)
+        except Exception:
+            pass
 
     def _schedule_click_generate_token(self) -> None:
         """Auto-press Generate token once the create form is ready (once per URL)."""
