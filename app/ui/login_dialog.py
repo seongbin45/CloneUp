@@ -1873,23 +1873,22 @@ class ConnectGitHubWizard(QDialog):
 
     def _on_google_oauth_external(self, url: str) -> None:
         """
-        Google blocks sign-in inside Qt WebEngine.
+        Google sign-in cannot run inside Qt WebEngine.
 
-        Do **not** nest ExternalBrowserPatGuide under this wizard (two windows
-        + broken Connect). Offer an explicit switch to Path B instead.
+        Immediately switch to Path B (same as clicking
+        「브라우저에서 로그인으로 바꾸기」) — do not nest a guide under this wizard.
         """
         _ = url
         if self._web_hint is not None:
             self._web_hint.setText(
-                "앱 안에서는 Google 로그인이 막힐 수 있어요. "
-                "원하시면 「브라우저에서 로그인으로 바꾸기」를 누르세요."
+                "Google 로그인은 브라우저에서 이어갑니다. 안내 창으로 바꿉니다…"
             )
         if self._btn_switch_external is not None:
             self._btn_switch_external.show()
         if self._web_cta_note is not None:
-            self._web_cta_note.setText(
-                "브라우저 경로로 바꾸면 이 창은 닫힙니다"
-            )
+            self._web_cta_note.setText("브라우저 안내로 전환 중…")
+        # Defer so the WebView navigation handler can finish cleanly
+        QTimer.singleShot(0, self._start_external_path)
 
     def _open_external_from_web(self) -> None:
         """Legacy name — switching paths closes wizard; Guide runs alone."""

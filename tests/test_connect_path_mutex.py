@@ -43,22 +43,24 @@ def test_wizard_external_path_closes_without_nested_guide() -> None:
     assert getattr(wiz, "_external_guide", None) is None
 
 
-def test_google_oauth_handler_does_not_spawn_guide() -> None:
+def test_google_oauth_auto_switches_to_external_path() -> None:
     _app()
     wiz = ConnectGitHubWizard(None, reauth=False)
     if not wiz._use_web:
         wiz.close()
         return
-    # Switch button lives on the lazy WebView page
     wiz._ensure_web_page()
-    wiz._on_google_oauth_external(
-        "https://accounts.google.com/v3/signin/rejected"
+    # Google in WebView → same as clicking 「브라우저에서 로그인으로 바꾸기」
+    QTimer.singleShot(
+        20,
+        lambda: wiz._on_google_oauth_external(
+            "https://accounts.google.com/v3/signin/identifier"
+        ),
     )
+    code = wiz.exec()
+    assert int(code) == int(QDialog.DialogCode.Accepted)
+    assert wiz.wants_external_browser() is True
     assert getattr(wiz, "_external_guide", None) is None
-    assert wiz._btn_switch_external is not None
-    # Parent may be hidden in unit test; show() clears the explicit hide flag
-    assert not wiz._btn_switch_external.isHidden()
-    wiz.close()
 
 
 def test_guide_connect_accepts_with_token_standalone() -> None:
