@@ -197,6 +197,7 @@ def guide_overlay_for_stage(stage: GitHubPageStage) -> dict[str, str] | None:
             "lead": guide_lead(
                 "키 목록입니다. 「Generate new token (classic)」을 누르세요."
             ),
+            "stepName": "키 목록",
         }
     if stage == GitHubPageStage.TOKEN_FINE_LIST:
         return {
@@ -204,6 +205,7 @@ def guide_overlay_for_stage(stage: GitHubPageStage) -> dict[str, str] | None:
             "lead": guide_lead(
                 "세분 키 목록입니다. 「Generate new token」을 누르세요."
             ),
+            "stepName": "키 목록",
         }
     if stage == GitHubPageStage.SUDO_OR_OTHER:
         return {
@@ -650,12 +652,23 @@ class GitHubConnectWebPane(QWidget):
                 GitHubPageStage.TOKEN_CLASSIC_NEW,
                 GitHubPageStage.TOKEN_FINE_NEW,
                 GitHubPageStage.TOKEN_ISSUED,
+                GitHubPageStage.TOKEN_CLASSIC_LIST,
+                GitHubPageStage.TOKEN_FINE_LIST,
             ):
                 self._reached.add(GitHubPageStage.LOGIN)
-        if stage == self._stage:
-            return
+        prev = self._stage
         self._stage = stage
-        self.stage_changed.emit(stage)
+        # Always notify for token settings pages so title/lead stay in sync
+        # even when the stage value did not change (e.g. HTML refresh).
+        force = stage in (
+            GitHubPageStage.TOKEN_CLASSIC_LIST,
+            GitHubPageStage.TOKEN_FINE_LIST,
+            GitHubPageStage.TOKEN_CLASSIC_NEW,
+            GitHubPageStage.TOKEN_FINE_NEW,
+            GitHubPageStage.TOKEN_ISSUED,
+        )
+        if stage != prev or force:
+            self.stage_changed.emit(stage)
         if stage == GitHubPageStage.TOKEN_ISSUED:
             self._try_scrape_token()
 

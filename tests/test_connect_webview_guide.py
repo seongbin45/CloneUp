@@ -59,16 +59,30 @@ def test_guide_overlay_tokens_list() -> None:
     assert "Generate new token" in ov["title"]
     assert "목록" in ov["lead"]
     assert "Generate new token" in ov["lead"]
+    assert ov.get("stepName") == "키 목록"
     assert len(ov["lead"]) <= GUIDE_LEAD_MAX_CHARS
     assert "Generate new token" in guide_line_for_stage(GitHubPageStage.TOKEN_CLASSIC_LIST)
 
     ov_fine = guide_overlay_for_stage(GitHubPageStage.TOKEN_FINE_LIST)
     assert ov_fine is not None
     assert "Generate new token" in ov_fine["lead"]
+    assert ov_fine.get("stepName") == "키 목록"
     assert len(ov_fine["lead"]) <= GUIDE_LEAD_MAX_CHARS
 
     # Exact create form has no overlay — uses step_copy title
     assert guide_overlay_for_stage(GitHubPageStage.TOKEN_CLASSIC_NEW) is None
+
+
+def test_settings_tokens_url_maps_to_list_stage() -> None:
+    from app.auth.github_page_stage import PageSnapshot, detect_github_page_stage
+
+    st = detect_github_page_stage(
+        PageSnapshot(url="https://github.com/settings/tokens")
+    )
+    assert st == GitHubPageStage.TOKEN_CLASSIC_LIST
+    ov = guide_overlay_for_stage(st)
+    assert ov is not None
+    assert ov["title"].startswith("Generate new token")
 
 
 def test_guide_lead_max_chars_rule() -> None:

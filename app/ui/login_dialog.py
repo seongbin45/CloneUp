@@ -1639,9 +1639,10 @@ class ConnectGitHubWizard(QDialog):
             self._web_live_stage = live_stage
         copy = step_copy(now)
 
-        # Title/lead only — list / off-path pages get Generate new token guidance
+        # Title/lead — /settings/tokens list overrides with Generate new token copy
         title = str(copy["title"])
         lead = str(copy["lead"])
+        step_name = str(copy["stepName"])
         st = self._web_live_stage
         if isinstance(st, GitHubPageStage):
             overlay = guide_overlay_for_stage(st)
@@ -1655,12 +1656,14 @@ class ConnectGitHubWizard(QDialog):
             if overlay is not None:
                 title = str(overlay["title"])
                 lead = str(overlay["lead"])
+                if overlay.get("stepName"):
+                    step_name = str(overlay["stepName"])
 
         if self._web_counter is not None:
             self._web_counter.setText(f"{now + 1} / 4")
         if self._web_step_name is not None:
-            self._web_step_name.setText(str(copy["stepName"]))
-        self._progress.setText(f"{now + 1} / 4  ·  {copy['stepName']}")
+            self._web_step_name.setText(step_name)
+        self._progress.setText(f"{now + 1} / 4  ·  {step_name}")
         if self._web_stage_title is not None:
             self._web_stage_title.setText(title)
         if self._web_hint is not None:
