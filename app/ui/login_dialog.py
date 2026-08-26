@@ -23,31 +23,34 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.auth.pat_urls import (
+    classic_pat_create_url,
+    fine_pat_create_url,
+    workflow_pat_create_url,
+)
 from app.config import is_device_flow_allowed
 from app.ui.theme import Palette, active_palette
 
 # Default path matches 「만들고 올리기」 = POST /user/repos + push.
 # Classic `repo` can create private/public repos. Fine-grained "this repo only
 # + Contents" cannot: the new name is not in the list yet, and Contents ≠ create.
-PAT_CREATE_URL = (
-    "https://github.com/settings/tokens/new"
-    "?scopes=repo&description=CloneUp"
-)
-# Existing-repo sync only (push/pull Contents). Not default for first publish.
-PAT_CREATE_URL_FINE = (
-    "https://github.com/settings/personal-access-tokens/new"
-    "?name=CloneUp"
-    "&contents=write"
-)
+# Note = CloneUp-YYYYMMDD-HHMMSS via classic_pat_create_url() each open.
+
 PAT_LIST_URL = "https://github.com/settings/tokens"
 
-# Only used by show_missing_workflow_scope_help below — a *reactive* dialog
-# shown after a push actually fails for lacking `workflow`. Never used by
-# the default connect wizard (_page_make_key).
-WORKFLOW_PAT_CREATE_URL = (
-    "https://github.com/settings/tokens/new"
-    "?scopes=repo,workflow&description=CloneUp"
-)
+
+def _pat_create_url() -> str:
+    return classic_pat_create_url()
+
+
+def _pat_create_url_fine() -> str:
+    return fine_pat_create_url()
+
+
+# Public aliases for scripts / help dialogs (call each time for a fresh Note)
+PAT_CREATE_URL = classic_pat_create_url  # callable
+PAT_CREATE_URL_FINE = fine_pat_create_url  # callable
+WORKFLOW_PAT_CREATE_URL = workflow_pat_create_url  # callable
 
 
 def show_missing_repo_help(
@@ -109,7 +112,7 @@ def show_missing_repo_help(
     btn_create.setObjectName("btnPrimary")
     btn_create.setDefault(True)
     btn_create.clicked.connect(
-        lambda: QDesktopServices.openUrl(QUrl(PAT_CREATE_URL))
+        lambda: QDesktopServices.openUrl(QUrl(_pat_create_url()))
     )
 
     reconnect = {"go": False}
@@ -214,7 +217,7 @@ def show_missing_workflow_scope_help(
     btn_create.setObjectName("btnPrimary")
     btn_create.setDefault(True)
     btn_create.clicked.connect(
-        lambda: QDesktopServices.openUrl(QUrl(WORKFLOW_PAT_CREATE_URL))
+        lambda: QDesktopServices.openUrl(QUrl(workflow_pat_create_url()))
     )
 
     reconnect = {"go": False}
@@ -1011,21 +1014,37 @@ class ConnectGitHubWizard(QDialog):
     def _open_create_page(self) -> None:
         # Classic + repo — required path for 「만들고 올리기」 (create repo).
         self._via_fine = False
+        url = _pat_create_url()
         if self._use_web:
-            self._start_web(PAT_CREATE_URL)
+            self._start_web(url)
             return
-        QDesktopServices.openUrl(QUrl(PAT_CREATE_URL))
+        QDesktopServices.openUrl(QUrl(url))
         self._mark_browser_opened()
         self._go(_STEP_WORK)
 
     def _open_fine_and_paste(self) -> None:
         self._via_fine = True
+        url = _pat_create_url_fine()
         if self._use_web:
-            self._start_web(PAT_CREATE_URL_FINE)
+            self._start_web(url)
             return
-        QDesktopServices.openUrl(QUrl(PAT_CREATE_URL_FINE))
+        QDesktopServices.openUrl(QUrl(url))
         self._mark_browser_opened()
         self._go(_STEP_WORK)
+
+    def _reload_pat_create_fresh_note(self) -> None:
+        """After Note collision — open classic form with a new CloneUp-date-time Note."""
+        url = _pat_create_url_fine() if self._via_fine else _pat_create_url()
+        if self._use_web and self._web_pane is not None:
+            self._web_pane.load_url(url)
+            if self._web_hint is not None:
+                from app.ui.connect_webview import guide_lead
+
+                self._web_hint.setText(
+                    guide_lead("새 Note 이름으로 다시 열었습니다. Generate token을 누르세요.")
+                )
+            return
+        QDesktopServices.openUrl(QUrl(url))
 
     def _start_web(self, url: str) -> None:
         self._ensure_web_page()
@@ -1356,6 +1375,7 @@ class ConnectGitHubWizard(QDialog):
         self._web_pane.token_found.connect(self._apply_detected_token)
         self._web_pane.load_failed.connect(self._on_web_load_failed)
         self._web_pane.external_oauth_needed.connect(self._on_google_oauth_external)
+        self._web_pane.token_form_error.connect(self._on_web_token_form_error)
         br_lay.addWidget(addr)
         br_lay.addWidget(self._web_pane, 1)
         bw.addWidget(browser, 1)
@@ -1791,8 +1811,27 @@ class ConnectGitHubWizard(QDialog):
         if self._web_hint is not None:
             self._web_hint.setText(
                 "페이지를 불러오지 못했습니다. "
-                "「외부 브라우저로 열기」로 진행한 뒤 키를 복사하세요."
+                "「브라우저에서 로그인으로 바꾸기」를 눌러 주세요."
             )
+
+    def _on_web_token_form_error(self, code: str) -> None:
+        """WebView PAT form flash — e.g. Note has already been taken."""
+        from app.ui.connect_webview import guide_lead
+
+        if code != "note_taken":
+            return
+        if self._web_hint is not None:
+            self._web_hint.setText(
+                guide_lead(
+                    "Note 이름이 이미 있어요. 새 이름(날짜·시간)으로 다시 엽니다."
+                )
+            )
+        if self._web_stage_title is not None:
+            self._web_stage_title.setText("Note 이름이 중복되었습니다")
+        if self._btn_switch_external is not None:
+            self._btn_switch_external.show()
+        # Auto-recover with CloneUp-YYYYMMDD-HHMMSS
+        QTimer.singleShot(400, self._reload_pat_create_fresh_note)
 
     def _on_google_oauth_external(self, url: str) -> None:
         """

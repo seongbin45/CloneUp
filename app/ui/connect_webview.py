@@ -262,7 +262,7 @@ def step_copy(i: int) -> dict[str, str | bool]:
             "stepName": "키 만들기",
             "title": "키를 만들어 주세요",
             "lead": guide_lead(
-                "미리 채워 두었습니다. Generate token 버튼만 누르면 됩니다."
+                "Note는 날짜·시간으로 채웠습니다. Generate token을 누르세요."
             ),
             "watchTag": "확인",
             "watchBody": (
@@ -358,6 +358,8 @@ class GitHubConnectWebPane(QWidget):
     load_failed = Signal(str)
     # Google SSO cannot run inside Qt WebEngine — open system browser.
     external_oauth_needed = Signal(str)
+    # PAT form flash errors (e.g. note_taken)
+    token_form_error = Signal(str)
     # (can_go_back, can_go_forward) after navigation / load
     history_changed = Signal(bool, bool)
 
@@ -371,6 +373,7 @@ class GitHubConnectWebPane(QWidget):
         self._last_token = ""
         self._zoom = _ZOOM_DEFAULT
         self._oauth_hand_off_done = False
+        self._last_form_error = ""
 
         self._view = QWebEngineView(self)
         # Default sizeHint is tiny (~100×30) and will collapse layouts.
@@ -695,12 +698,25 @@ class GitHubConnectWebPane(QWidget):
     def _on_html(self, html: str) -> None:
         html = html or ""
         title = self._view.title() or ""
-        if looks_like_insecure_browser_block(title, html) or is_google_oauth_url(
-            self._view.url().toString()
-        ):
-            self._emit_external_oauth(self._view.url().toString())
+        url = self._view.url().toString()
+        if looks_like_insecure_browser_block(title, html) or is_google_oauth_url(url):
+            self._emit_external_oauth(url)
             return
+        self._detect_token_form_errors(title, html, url)
         self._refresh_stage(html=html)
+
+    def _detect_token_form_errors(self, title: str, html: str, url: str) -> None:
+        """Surface GitHub PAT form flashes (Note collision, etc.)."""
+        from app.util.browser_address import looks_like_token_note_taken
+
+        if looks_like_token_note_taken(title, html, url=url):
+            if self._last_form_error != "note_taken":
+                self._last_form_error = "note_taken"
+                self.token_form_error.emit("note_taken")
+            return
+        # Cleared when the flash is gone
+        if self._last_form_error:
+            self._last_form_error = ""
 
     def _try_scrape_token(self) -> None:
         def _done(result: object) -> None:

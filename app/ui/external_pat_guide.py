@@ -22,9 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from urllib.parse import quote
-
 from app.auth.github_page_stage import GitHubPageStage, PageSnapshot, detect_github_page_stage
+from app.auth.pat_urls import classic_pat_create_url, make_pat_note
 from app.util.browser_address import (
     browser_address_available,
     detect_signin_method,
@@ -46,14 +45,8 @@ _GITHUB_LOGIN = "https://github.com/login"
 
 
 def build_pat_create_url(*, note: str | None = None) -> str:
-    """classic ``repo`` token form; unique Note avoids 'already been taken'."""
-    from datetime import datetime
-
-    n = (note or "").strip() or f"CloneUp-{datetime.now().strftime('%m%d-%H%M')}"
-    return (
-        "https://github.com/settings/tokens/new"
-        f"?scopes=repo&description={quote(n, safe='')}"
-    )
+    """classic ``repo`` token form; Note = CloneUp-YYYYMMDD-HHMMSS by default."""
+    return classic_pat_create_url(note=note or make_pat_note())
 
 # Method-neutral checklist — do not force Google-only wording
 _CHECKLIST = (

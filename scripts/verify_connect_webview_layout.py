@@ -29,7 +29,8 @@ def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv)
 
     from app.ui.connect_webview import webengine_available
-    from app.ui.login_dialog import PAT_CREATE_URL, ConnectGitHubWizard
+    from app.auth.pat_urls import classic_pat_create_url
+    from app.ui.login_dialog import ConnectGitHubWizard
 
     if not webengine_available():
         print("SKIP: Qt WebEngine not available")
@@ -38,7 +39,7 @@ def main() -> int:
     wiz = ConnectGitHubWizard(None)
     assert wiz._use_web, "expected web mode"
     wiz.show()
-    wiz._start_web(PAT_CREATE_URL)
+    wiz._start_web(classic_pat_create_url())
 
     errors: list[str] = []
 
