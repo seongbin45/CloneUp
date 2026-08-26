@@ -46,8 +46,13 @@
 | A7 | classic scope 있을 때만 pre-check | `scopes_known() and has_scope` | 정적 | **PASS** |
 | A8 | UI: unknown ≠ 권한 부족 오인 | `auth_status` 연결됨 + 권한 미확인 툴팁 | 정적 | **PASS** |
 | A9 | 토큰 OS keyring | `token_store` / keyring | 정적 | **PASS** |
+| A10 | 선택 마스터 보호: 비번 디스크 미저장 · 일상은 DPAPI | `secret_vault` · `enable_master_protection` | `test_secret_vault` | **PASS** |
+| A11 | 보호 ON 시 keyring `enc.v1.` · 평문 미저장 | `token_store.save_token` / `load_token` | `test_secret_vault` | **PASS** |
 
-**잔여 (Low):** PAT 붙여넣기 중 클립보드·메모리 잔존 — 데스크톱 앱 공통 한계.
+**잔여 (Low):** PAT 붙여넣기 중 클립보드·메모리 잔존 — 데스크톱 앱 공통 한계.  
+**잔여 (설계):** 동일 Windows 사용자 악성코드는 DPAPI로 DEK를 풀 수 있음 —  
+마스터 보호는 keyring 덤프·다른 사용자 대비 **추가 계층**이지 완전한 샌드박스가 아님.  
+상세: [MASTER_PASSWORD_VAULT.md](MASTER_PASSWORD_VAULT.md).
 
 ---
 
@@ -181,7 +186,8 @@
 3. 로그 창에 `ghp_`/`github_pat_` 전체 문자열 없음  
 4. 폴더에 `ghp_…` 넣은 텍스트 → 올리기 차단  
 5. Device Flow: env 없이 UI에 장치 코드 로그인 안 뜸  
-6. (선택) Git 없는 PC 또는 `CLONEUP_FORCE_NO_GIT=1` 로 설치 안내 → 설치 파일 검증 메시지
+6. (선택) Git 없는 PC 또는 `CLONEUP_FORCE_NO_GIT=1` 로 설치 안내 → 설치 파일 검증 메시지  
+7. (선택) 설정 → 안전 → 보호 켜기 → 올리기 동작 · keyring 값이 `enc.v1.` 로 시작 · 보호 끄기 후 평문 복귀
 
 ---
 
@@ -194,6 +200,7 @@
 | 하드닝 1 | M1 cred orphan · M2 마스킹 · M6 branch · H1 lite |
 | 하드닝 2 | M3 scope unknown · M4 내용 시크릿 |
 | **이번 재검증** | 전면 매트릭스 + `verify_security_crosscheck.py` 고정 |
+| 마스터 보호 | 선택 AES-GCM + DPAPI DEK · Settings 안전 탭 · A10/A11 |
 
 ---
 

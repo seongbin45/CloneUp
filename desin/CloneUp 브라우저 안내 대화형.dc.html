@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #d8d5cf; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 32px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; overflow-x: auto;">
+
+  <div style="width: 1080px; flex-shrink: 0; margin-inline: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+    <div style="font-size: 12px; color: #6d675c;">대화 순서</div>
+    <div style="display: flex; gap: 6px;">
+      <sc-for list="{{ picker }}" as="p" hint-placeholder-count="6">
+        <div onClick="{{ p.go }}" style="padding: 7px 12px; border-radius: 5px; cursor: pointer; font-size: 12.5px; border: 1px solid {{ p.border }}; background: {{ p.bg }}; color: {{ p.fg }}; font-weight: {{ p.weight }};">{{ p.label }}</div>
+      </sc-for>
+    </div>
+    <div style="margin-left: auto; font-size: 11.5px; color: #4a453b;">사용자가 하는 일: 로그인 · 인증 · 한 줄 답 두 번</div>
+  </div>
+
+  <div style="width: 1080px; height: 640px; flex-shrink: 0; margin-inline: auto; box-sizing: border-box; position: relative; border-radius: 10px; overflow: hidden; box-shadow: 0 18px 48px rgba(40,36,30,.22);">
+
+    <div style="position: absolute; inset: 0; display: flex; flex-direction: column; background: #fff;">
+      <div style="flex-shrink: 0; display: flex; align-items: center; gap: 11px; padding: 9px 13px; background: #ebe9e4; border-bottom: 1px solid #d5d1ca;">
+        <div style="display: flex; gap: 6px; flex-shrink: 0;">
+          <div style="width: 10px; height: 10px; border-radius: 50%; background: #c9c5bd;"></div>
+          <div style="width: 10px; height: 10px; border-radius: 50%; background: #c9c5bd;"></div>
+          <div style="width: 10px; height: 10px; border-radius: 50%; background: #c9c5bd;"></div>
+        </div>
+        <div style="flex: 1; min-width: 0; height: 26px; padding: 0 12px; display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #d5d1ca; border-radius: 999px;">
+          <span style="font-size: 10px; color: #1f6f5c; flex-shrink: 0;">🔒</span>
+          <span style="font-size: 11.5px; color: #4a453b; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ sc.url }}</span>
+        </div>
+        <div style="flex-shrink: 0; font-size: 11px; color: #5c574d;">기본 브라우저</div>
+      </div>
+
+      <div style="flex: 1; min-height: 0; position: relative; display: flex; align-items: flex-start; justify-content: flex-end; padding: 30px 46px 30px 24px; overflow: hidden;">
+
+        <sc-if value="{{ sc.mockSignin }}" hint-placeholder-val="{{ true }}">
+          <div style="width: 310px; display: flex; flex-direction: column; gap: 13px; padding: 22px; border: 1px solid #d5d1ca; border-radius: 8px;">
+            <div style="font-size: 17px; color: #2f2b24; text-align: center;">Sign in to GitHub</div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="font-size: 12px; color: #4a453b;">Username or email address</div>
+              <div style="height: 32px; background: #f6f5f2; border: 1px solid #cdc8bf; border-radius: 6px;"></div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <div style="font-size: 12px; color: #4a453b;">Password</div>
+              <div style="height: 32px; background: #f6f5f2; border: 1px solid #cdc8bf; border-radius: 6px;"></div>
+            </div>
+            <div style="height: 34px; display: flex; align-items: center; justify-content: center; background: #6d675c; border-radius: 6px; font-size: 13px; color: #fff;">Sign in</div>
+            <div style="height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid #cdc8bf; border-radius: 6px; font-size: 12.5px; color: #4a453b;">Sign in with a passkey</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ sc.mockHome }}" hint-placeholder-val="{{ false }}">
+          <div style="width: 480px; display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; align-items: center; gap: 11px;">
+              <div style="width: 30px; height: 30px; border-radius: 50%; background: #e8e6e1;"></div>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <div style="width: 92px; height: 9px; border-radius: 3px; background: #e0dcd5;"></div>
+                <div style="width: 62px; height: 8px; border-radius: 3px; background: #eae7e1;"></div>
+              </div>
+              <div style="margin-left: auto; font-size: 11.5px; color: #8b8477;">로그인됨</div>
+            </div>
+            <div style="height: 1px; background: #e8e6e1;"></div>
+            <div style="display: flex; flex-direction: column; gap: 9px;">
+              <div style="height: 44px; border: 1px solid #e8e6e1; border-radius: 7px;"></div>
+              <div style="height: 44px; border: 1px solid #e8e6e1; border-radius: 7px;"></div>
+              <div style="height: 44px; border: 1px solid #e8e6e1; border-radius: 7px;"></div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ sc.mockForm }}" hint-placeholder-val="{{ false }}">
+          <div style="width: 440px; display: flex; flex-direction: column; gap: 15px;">
+            <div style="font-size: 16px; color: #2f2b24;">New personal access token (classic)</div>
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <div style="font-size: 11.5px; color: #2f2b24; font-weight: 500;">Note</div>
+              <div style="height: 30px; padding: 0 10px; display: flex; align-items: center; background: #fff; border: 1px solid #1f6f5c; border-radius: 6px; font-size: 11.5px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">CloneUp-20260826-1642</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <div style="font-size: 11.5px; color: #2f2b24; font-weight: 500;">Expiration</div>
+              <div style="height: 30px; padding: 0 10px; display: flex; align-items: center; background: #fff; border: 1px solid #1f6f5c; border-radius: 6px; font-size: 11.5px; color: #2f2b24;">90 days</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 7px;">
+              <div style="font-size: 11.5px; color: #2f2b24; font-weight: 500;">Select scopes</div>
+              <div style="display: flex; align-items: center; gap: 9px;">
+                <span style="width: 13px; height: 13px; flex-shrink: 0; border-radius: 3px; background: #1f6f5c; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #fff;">✓</span>
+                <span style="font-size: 12px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">repo</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 9px;">
+                <span style="width: 13px; height: 13px; flex-shrink: 0; border-radius: 3px; border: 1px solid #cdc8bf; background: #fff;"></span>
+                <span style="font-size: 12px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">workflow</span>
+              </div>
+            </div>
+            <div style="height: 36px; width: 152px; display: flex; align-items: center; justify-content: center; background: #1f6f5c; border-radius: 6px; font-size: 13px; font-weight: 500; color: #fff; box-shadow: 0 0 0 4px rgba(31,111,92,.18);">Generate token</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ sc.mockIssued }}" hint-placeholder-val="{{ false }}">
+          <div style="width: 490px; display: flex; flex-direction: column; gap: 15px;">
+            <div style="font-size: 16px; color: #2f2b24;">Personal access tokens (classic)</div>
+            <div style="padding: 12px 14px; background: #eaf5ee; border: 1px solid #a8cdb5; border-radius: 6px; font-size: 12px; color: #2f2b24; line-height: 1.6;">Make sure to copy your personal access token now. You won't be able to see it again.</div>
+            <div style="display: flex; align-items: center; gap: 10px; padding: 10px 13px; border: 1px solid #d5d1ca; border-radius: 6px;">
+              <span style="font-size: 12px; color: #1f6f5c; font-family: 'IBM Plex Mono', monospace; overflow: hidden; white-space: nowrap;">ghp_4Kd9 ························</span>
+              <div style="margin-left: auto; flex-shrink: 0; width: 25px; height: 25px; display: flex; align-items: center; justify-content: center; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 11px; color: #4a453b;">⧉</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ sc.mockPasskey }}" hint-placeholder-val="{{ false }}">
+          <div style="position: absolute; inset: 0; background: rgba(40,38,32,.34); display: flex; align-items: center; justify-content: center;">
+            <div style="width: 330px; background: #f7f7f5; border: 1px solid #c9c5bd; border-radius: 10px; box-shadow: 0 14px 34px rgba(0,0,0,.26); overflow: hidden;">
+              <div style="padding: 18px 20px; display: flex; flex-direction: column; gap: 13px;">
+                <div style="font-size: 14px; font-weight: 600; color: #2f2b24;">Windows 보안</div>
+                <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">github.com 에 로그인하려면 패스키를 확인하세요.</div>
+                <div style="display: flex; flex-direction: column; gap: 7px;">
+                  <div style="height: 34px; display: flex; align-items: center; padding: 0 12px; background: #fff; border: 1px solid #cdc8bf; border-radius: 6px; font-size: 12.5px; color: #2f2b24;">이 기기에서 확인</div>
+                  <div style="height: 34px; display: flex; align-items: center; padding: 0 12px; background: #fff; border: 1px solid #cdc8bf; border-radius: 6px; font-size: 12.5px; color: #2f2b24;">휴대폰으로 QR 스캔</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+
+    <div style="position: absolute; left: 26px; bottom: 26px; width: 428px; background: #fbfaf8; border: 1px solid #c9c5bd; border-radius: 12px; box-shadow: 0 10px 30px rgba(40,36,30,.28); overflow: hidden; display: flex; flex-direction: column;">
+
+      <div style="flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+        <img src="assets/icon-32.png" alt="클론업" style="width: 15px; height: 15px; display: block; flex-shrink: 0;">
+        <div style="font-size: 12px; font-weight: 600; color: #3d382f;">GitHub 연결</div>
+        <div style="margin-left: auto; flex-shrink: 0; font-size: 11.5px; color: #6d675c;">{{ sc.rightTag }}</div>
+      </div>
+
+      <div style="padding: 15px 16px 16px; display: flex; flex-direction: column; gap: 12px;">
+
+        <sc-for list="{{ history }}" as="h" hint-placeholder-count="0">
+          <div style="display: flex; align-items: center; gap: 9px;">
+            <span style="width: 13px; flex-shrink: 0; text-align: center; font-size: 10px; color: #1f6f5c;">✓</span>
+            <span style="font-size: 12px; color: #6d675c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ h.text }}</span>
+            <sc-if value="{{ h.editable }}" hint-placeholder-val="{{ false }}">
+              <span onClick="{{ h.change }}" style="margin-left: auto; flex-shrink: 0; font-size: 11.5px; color: #1f6f5c; cursor: pointer;" style-hover="color: #14503f;">변경</span>
+            </sc-if>
+          </div>
+        </sc-for>
+
+        <div style="display: flex; flex-direction: column; gap: 7px;">
+          <div style="font-size: 16px; font-weight: 600; color: #232019; letter-spacing: -0.01em; line-height: 1.45; text-wrap: pretty;">{{ sc.say }}</div>
+          <div style="font-size: 12.5px; color: #6d675c; line-height: 1.6; text-wrap: pretty;">{{ sc.sub }}</div>
+        </div>
+
+        <sc-if value="{{ sc.hasChips }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <sc-for list="{{ chips }}" as="c" hint-placeholder-count="3">
+              <div onClick="{{ c.pick }}" style="padding: 10px 15px; border-radius: 999px; cursor: pointer; display: flex; align-items: center; gap: 7px; background: {{ c.bg }}; border: 1px solid {{ c.border }};" style-hover="background: #e9e5dd;">
+                <span style="font-size: 13px; font-weight: {{ c.weight }}; color: {{ c.fg }};">{{ c.label }}</span>
+                <sc-if value="{{ c.showTag }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size: 10.5px; color: #1f6f5c; font-weight: 600;">권장</span>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ sc.isWaiting }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #f2efe9; border-radius: 10px;">
+            <div style="display: flex; gap: 4px; flex-shrink: 0;">
+              <div style="width: 5px; height: 5px; border-radius: 50%; background: #1f6f5c;"></div>
+              <div style="width: 5px; height: 5px; border-radius: 50%; background: #a9c4bb;"></div>
+              <div style="width: 5px; height: 5px; border-radius: 50%; background: #cdd9d4;"></div>
+            </div>
+            <div style="font-size: 12.5px; color: #4a453b; line-height: 1.55;">{{ sc.waitText }}</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ sc.isNudge }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 13px 15px; background: #fbf6ee; border: 1px solid #c4a94e; border-radius: 10px; display: flex; flex-direction: column; gap: 9px;">
+            <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">{{ sc.nudgeText }}</div>
+            <div style="height: 32px; padding: 0 13px; display: flex; align-items: center; align-self: flex-start; background: #fbfaf8; border: 1px solid #c4a94e; border-radius: 7px; font-size: 12px; color: #3d382f; cursor: pointer;" style-hover="background: #f7f0e2;">{{ sc.nudgeBtn }}</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ sc.isDone }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 7px;">
+            <sc-for list="{{ receipt }}" as="r" hint-placeholder-count="3">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; background: #f2efe9; border-radius: 9px;">
+                <span style="font-size: 12px; color: #6d675c;">{{ r.key }}</span>
+                <span style="font-size: 12px; color: #232019; font-family: 'IBM Plex Mono', monospace;">{{ r.value }}</span>
+              </div>
+            </sc-for>
+            <div style="height: 46px; margin-top: 4px; display: flex; align-items: center; justify-content: center; background: #1f6f5c; border-radius: 11px; font-size: 14.5px; font-weight: 600; color: #fbfaf8; cursor: pointer;" style-hover="background: #185b4b;">클론업으로 돌아가기</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ sc.showCancel }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; align-items: center; padding-top: 1px;">
+            <div style="font-size: 12px; color: #6d675c; cursor: pointer;" style-hover="color: #3d382f;">그만하기</div>
+            <div style="margin-left: auto; font-size: 11.5px; color: #6d675c;">{{ sc.footNote }}</div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div style="width: 1080px; flex-shrink: 0; margin-inline: auto; box-sizing: border-box; padding: 15px 20px; background: #fbfaf8; border: 1px solid #cdc8bf; border-radius: 10px; display: flex; flex-direction: column; gap: 9px;">
+    <div style="font-size: 12.5px; font-weight: 600; color: #232019;">무엇을 바꿨는지</div>
+    <div style="font-size: 12.5px; color: #4a453b; line-height: 1.7;">4단계 체크리스트를 없앴습니다. 진행 상황을 사용자가 읽고 따라가는 대신, 앱이 한 번에 한 마디만 하고 답이 필요할 때만 짧게 묻습니다. 답한 것은 위로 접혀 <strong style="color: #232019;">변경</strong>으로 되돌릴 수 있습니다.</div>
+    <div style="font-size: 12.5px; color: #4a453b; line-height: 1.7;">사용자가 직접 하는 일은 셋뿐입니다. 로그인, 인증 확인(패스키·이메일 코드), 그리고 초록 버튼 한 번. 이름·만료·권한은 답을 듣고 앱이 채웁니다.</div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1160,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  state = { i: 0, expiry: "90일", scope: "저장소만" };
+
+  renderVals() {
+    const s = this.state;
+    const labels = ["로그인 대기", "인증 확인", "만료 묻기", "권한 묻기", "버튼 한 번", "완료"];
+    const i = Math.max(0, Math.min(s.i, 5));
+
+    const chipsFor = (list, current, set) =>
+      list.map((o) => ({
+        label: o.label,
+        showTag: !!o.rec,
+        bg: current === o.label ? "#fbfaf8" : "#f2efe9",
+        border: current === o.label ? "#1f6f5c" : "transparent",
+        fg: "#232019",
+        weight: current === o.label ? "600" : "500",
+        pick: () => this.setState({ [set]: o.label, i: i + 1 }),
+      }));
+
+    const expiryChips = chipsFor(
+      [{ label: "90일", rec: true }, { label: "30일" }, { label: "만료 없음" }],
+      s.expiry, "expiry");
+    const scopeChips = chipsFor(
+      [{ label: "저장소만", rec: true }, { label: "저장소 + 워크플로" }],
+      s.scope, "scope");
+
+    const hist = [];
+    if (i >= 2) hist.push({ text: "로그인했어요", editable: false });
+    if (i >= 3) hist.push({ text: "만료 " + s.expiry, editable: true, change: () => this.setState({ i: 2 }) });
+    if (i >= 4) hist.push({ text: "권한 " + s.scope, editable: true, change: () => this.setState({ i: 3 }) });
+    if (i >= 5) hist.push({ text: "키를 받았어요", editable: false });
+
+    const scenes = [
+      {
+        url: "https://github.com/login",
+        mockSignin: true,
+        rightTag: "1 / 3",
+        say: "로그인만 해주시면 돼요",
+        sub: "브라우저를 열어 두었습니다. 편한 방법으로 로그인해 주세요. 나머지는 제가 합니다.",
+        isWaiting: true,
+        waitText: "로그인이 끝나는 것을 지켜보고 있어요.",
+        showCancel: true,
+        footNote: "비밀번호는 저를 거치지 않아요",
+      },
+      {
+        url: "https://github.com/login",
+        mockSignin: true, mockPasskey: true,
+        rightTag: "1 / 3",
+        say: "이건 직접 확인해 주세요",
+        sub: "패스키 창이 떴습니다. 제가 대신 누를 수 없는 부분이라 잠시 기다릴게요.",
+        isWaiting: true,
+        waitText: "확인이 끝나면 알아서 이어갑니다.",
+        showCancel: true,
+        footNote: "이메일 코드도 같은 방식이에요",
+      },
+      {
+        url: "https://github.com/",
+        mockHome: true,
+        rightTag: "2 / 3",
+        say: "키는 언제까지 쓸까요?",
+        sub: "짧게 두면 안전하고, 길게 두면 다시 만들 일이 줄어요.",
+        hasChips: true, chips: expiryChips,
+        showCancel: true,
+        footNote: "나중에 설정에서 바꿀 수 있어요",
+      },
+      {
+        url: "https://github.com/",
+        mockHome: true,
+        rightTag: "2 / 3",
+        say: "권한은 어디까지 줄까요?",
+        sub: "올리고 받는 데는 저장소만으로 충분합니다.",
+        hasChips: true, chips: scopeChips,
+        showCancel: true,
+        footNote: "워크플로 파일이 있는 저장소만 두 번째가 필요해요",
+      },
+      {
+        url: "https://github.com/settings/tokens/new?scopes=repo&description=CloneUp-20260826-1642",
+        mockForm: true,
+        rightTag: "3 / 3",
+        say: "초록 버튼만 눌러 주세요",
+        sub: "이름과 만료, 권한은 답해주신 대로 채워 두었습니다.",
+        isNudge: true,
+        nudgeText: "브라우저 아래쪽 Generate token 버튼입니다. 이것만 누르면 끝나요.",
+        nudgeBtn: "버튼이 안 보여요",
+        showCancel: true,
+        footNote: "누르면 키를 알아서 받아옵니다",
+      },
+      {
+        url: "https://github.com/settings/tokens",
+        mockIssued: true,
+        rightTag: "끝",
+        say: "연결됐어요",
+        sub: "키는 이 컴퓨터에만 넣어 두었습니다. 복사하거나 적어 둘 필요 없어요.",
+        isDone: true,
+        showCancel: false,
+        footNote: "",
+      },
+    ];
+
+    const sc = scenes[i];
+    return {
+      picker: labels.map((label, n) => ({
+        label,
+        bg: n === i ? "#fbfaf8" : "transparent",
+        fg: n === i ? "#1f6f5c" : "#4a453b",
+        border: n === i ? "#1f6f5c" : "#b7b1a5",
+        weight: n === i ? "600" : "400",
+        go: () => this.setState({ i: n }),
+      })),
+      sc,
+      chips: sc.chips || [],
+      history: hist,
+      receipt: [
+        { key: "계정", value: "seong" },
+        { key: "권한", value: s.scope === "저장소만" ? "repo" : "repo · workflow" },
+        { key: "만료", value: s.expiry },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

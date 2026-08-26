@@ -116,3 +116,18 @@ def format_expires_display(raw: str | None) -> str:
         return dt.astimezone(timezone.utc).strftime("%Y-%m-%d") + " (UTC)"
     except ValueError:
         return s
+
+
+def format_connected_at_display(raw: str | None) -> str:
+    """Connect / issue stamp for Settings (CloneUp stored time ≈ 발급·연결 시각)."""
+    if raw is None or not str(raw).strip():
+        return "기록 없음"
+    s = str(raw).strip()
+    text = s.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M") + " (UTC)"
+    except ValueError:
+        return s

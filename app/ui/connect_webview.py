@@ -24,12 +24,17 @@ from app.auth.github_page_stage import (
     detect_github_page_stage,
     stage_label_ko,
 )
+from app.auth.pat_form_js import (
+    JS_CLICK_GENERATE_TOKEN as _JS_CLICK_GENERATE_TOKEN,
+    JS_SET_EXPIRATION as _JS_SET_EXPIRATION,
+)
 
 # Browser-like page zoom (QWebEngineView.setZoomFactor)
 _ZOOM_MIN = 0.5
 _ZOOM_MAX = 3.0
 _ZOOM_STEP = 0.1
-_ZOOM_DEFAULT = 1.0
+# Open 2 zoom-out steps below 100% (was 3 out, then +1 in → 80%)
+_ZOOM_DEFAULT = round(1.0 - 2 * _ZOOM_STEP, 2)  # 0.8
 
 # Google blocks sign-in inside embedded WebViews ("may not be secure").
 _GOOGLE_OAUTH_HOSTS = frozenset(
@@ -121,7 +126,7 @@ _JS_FIND_TOKEN = r"""
 })()
 """
 
-# Read Expiration control (classic select) or issued-page text.
+# Read Expiration — classic <select> OR Primer action-menu hidden input.
 _JS_READ_EXPIRATION = r"""
 (() => {
   const out = { value: "", label: "", bodyHint: "" };
@@ -133,6 +138,23 @@ _JS_READ_EXPIRATION = r"""
     out.value = (sel.value || "").trim();
     out.label = ((opt && (opt.textContent || opt.label)) || "").trim();
   }
+  // GitHub classic (2025+): action-menu + hidden default_expires_at
+  if (!out.value) {
+    const hid = document.querySelector(
+      "input[name='oauth_access[default_expires_at]'], input[name='oauth_access[expires_at]'], #token-expiration input[type=hidden]"
+    );
+    if (hid) out.value = (hid.value || "").trim();
+    const btn = document.querySelector(
+      ".js-new-default-token-expiration-select button, #token-expiration action-menu button, #token-expiration button[aria-haspopup]"
+    );
+    if (btn) out.label = ((btn.innerText || btn.textContent || "") + "").replace(/\s+/g, " ").trim();
+    const checked = document.querySelector(
+      "#token-expiration [role=menuitemradio][aria-checked=true], .js-new-default-token-expiration-item [aria-checked=true]"
+    );
+    if (checked && !out.label) {
+      out.label = ((checked.innerText || checked.textContent || "") + "").replace(/\s+/g, " ").trim();
+    }
+  }
   const body = document.body ? (document.body.innerText || "") : "";
   const m = body.match(/Expires?(?:\s+on)?\s*[:\s]+([^\n]+)/i);
   if (m) out.bodyHint = (m[1] || "").trim().slice(0, 80);
@@ -140,142 +162,39 @@ _JS_READ_EXPIRATION = r"""
 })()
 """
 
-# Set Expiration on the create form BEFORE Generate token.
-# Handles native <select> and Primer-style dropdowns (click open → click option).
-_JS_SET_EXPIRATION = r"""
-(function(want) {
-  const w = (want == null ? "" : String(want)).trim();
-  const txt = (el) => ((el && (el.innerText || el.textContent || el.value || el.getAttribute("aria-label") || "")) + "").replace(/\s+/g, " ").trim();
-  const isNoneLabel = (t) => /no expiration|만료 없음|never|없음/i.test(t || "");
-  const isDaysLabel = (t, days) => {
-    if (!days) return false;
-    const re = new RegExp("(^|\\b)" + days + "\\s*days?(\\b|$)", "i");
-    return re.test(t || "");
-  };
-  const fire = (el) => {
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-  };
-  const pickSelect = (sel) => {
-    let matched = false;
-    for (const opt of Array.from(sel.options || [])) {
-      const v = (opt.value || "").trim();
-      const t = txt(opt);
-      if (w === "" && (v === "" || isNoneLabel(t))) {
-        sel.value = opt.value;
-        matched = true;
-        break;
-      }
-      if (w && (v === w || isDaysLabel(t, w))) {
-        sel.value = opt.value;
-        matched = true;
-        break;
-      }
-    }
-    if (!matched) return "";
-    fire(sel);
-    return "set-select:" + (sel.value || "");
-  };
-
-  // 1) Native selects (classic PAT form)
-  const sels = Array.from(document.querySelectorAll("select"));
-  for (const sel of sels) {
-    const idn = ((sel.id || "") + " " + (sel.name || "")).toLowerCase();
-    const near = (sel.getAttribute("aria-label") || "") + " " + (sel.title || "");
-    if (
-      idn.indexOf("expire") >= 0 ||
-      idn.indexOf("oauth_access") >= 0 ||
-      /expire/i.test(near)
-    ) {
-      const r = pickSelect(sel);
-      if (r) return r;
-    }
-  }
-  // Any select that has 7/30/60/90 day options
-  for (const sel of sels) {
-    const labels = Array.from(sel.options || []).map(txt).join(" | ");
-    if (/7\s*days?/i.test(labels) && /90\s*days?/i.test(labels)) {
-      const r = pickSelect(sel);
-      if (r) return r;
-    }
-  }
-
-  // 2) Open a visible Expiration control, then click the matching option
-  const openers = Array.from(
-    document.querySelectorAll(
-      "summary, button, [role='button'], [aria-haspopup='listbox'], [aria-haspopup='true']"
-    )
-  );
-  let opener = null;
-  for (const el of openers) {
-    const t = txt(el);
-    if (/^Expiration$/i.test(t) || /^만료/i.test(t) || (/Expiration/i.test(t) && t.length < 48)) {
-      opener = el;
-      break;
-    }
-  }
-  if (opener) {
-    try { opener.click(); } catch (e) {}
-  }
-  const options = Array.from(
-    document.querySelectorAll(
-      "[role='option'], [role='menuitem'], [role='menuitemradio'], label, button, a, li"
-    )
-  );
-  for (const el of options) {
-    const t = txt(el);
-    if (!t || t.length > 60) continue;
-    const ok =
-      (w === "" && isNoneLabel(t)) ||
-      (w && isDaysLabel(t, w));
-    if (!ok) continue;
-    try {
-      el.click();
-      return "set-click:" + t;
-    } catch (e) {}
-  }
-  return "no-select:" + w;
-})"""
-
-# Click the classic/fine "Generate token" submit (not list "Generate new token").
-_JS_CLICK_GENERATE_TOKEN = r"""
+# True when classic PAT create form controls are in the DOM.
+_JS_PAT_FORM_READY = r"""
 (() => {
-  const labelOf = (el) =>
-    ((el.innerText || el.textContent || el.value || el.getAttribute("aria-label") || "") + "")
-      .replace(/\s+/g, " ")
-      .trim();
-  const isGenerateToken = (t) => /^Generate token$/i.test(t);
-  // Prefer exact "Generate token" (create form). Skip "Generate new token…".
-  const nodes = Array.from(
-    document.querySelectorAll(
-      "button, input[type=submit], input[type=button], a.Button"
-    )
-  );
-  for (const el of nodes) {
-    const t = labelOf(el);
-    if (!t) continue;
-    if (/Generate new token/i.test(t)) continue;
-    if (isGenerateToken(t)) {
-      el.click();
-      return "clicked:" + t;
-    }
-  }
   const form = document.querySelector(
-    "#new_oauth_access, form[action*='settings/tokens'], form[action*='personal-access-tokens']"
+    "#new_oauth_access, form.new_oauth_access, form[action*='settings/tokens']"
   );
-  if (form) {
-    const sub = form.querySelector("button[type=submit], input[type=submit]");
-    if (sub) {
-      const t = labelOf(sub);
-      if (!/Generate new token/i.test(t)) {
-        sub.click();
-        return "clicked:form-submit:" + t;
-      }
-    }
+  const hid = document.querySelector(
+    "input[name='oauth_access[default_expires_at]'], input[name='oauth_access[expires_at]'], #oauth_access_expires_at, select[name*='expires']"
+  );
+  const nodes = Array.from(document.querySelectorAll(
+    "button, input[type=submit], input[type=button]"
+  ));
+  let hasGen = false;
+  for (const el of nodes) {
+    const t = ((el.innerText || el.textContent || el.value || "") + "").replace(/\s+/g, " ").trim();
+    if (/^Generate token$/i.test(t)) { hasGen = true; break; }
   }
-  return "not-found";
+  return JSON.stringify({
+    ok: !!(form && (hid || hasGen)),
+    hasForm: !!form,
+    hasExpiry: !!hid,
+    hasGenerate: hasGen
+  });
 })()
 """
+
+# _JS_SET_EXPIRATION / _JS_CLICK_GENERATE_TOKEN imported from app.auth.pat_form_js
+
+# How long / how often to wait for PAT form DOM before expiry→generate.
+_PAT_FORM_READY_ATTEMPTS = 12
+_PAT_FORM_READY_GAP_MS = 250
+_GENERATE_RETRY_MAX = 4
+_GENERATE_RETRY_GAP_MS = 350
 
 # Re-open tokens/new when list page has no visible PAT (after Generate).
 _TOKEN_REISSUE_MAX = 3
@@ -526,6 +445,8 @@ class GitHubConnectWebPane(QWidget):
     flow_classified = Signal(str, object, dict)
     # Reissue loop: (attempt, max_attempts) when list has no PAT
     token_reissue = Signal(int, int)
+    # Classic/fine create URL Note — emitted synchronously from load_url
+    pat_create_note = Signal(str)
     # (can_go_back, can_go_forward) after navigation / load
     history_changed = Signal(bool, bool)
 
@@ -543,10 +464,13 @@ class GitHubConnectWebPane(QWidget):
         self._last_form_error = ""
         self._generate_clicked_url = ""  # auto-click Generate token once per URL
         self._generate_scheduled_url = ""
+        self._generate_in_flight = False  # expiry→generate chain running
         self._pending_expiry_days = "90"  # footer combo → GitHub Expiration
         self._reissue_count = 0
         self._reissue_scheduled = False
         self._reissue_exhausted = False
+        self._token_nav_opened = False  # auto-open tokens/new at most once
+        self._automation_paused = False  # session confirm overlay — freeze auto actions
 
         self._view = QWebEngineView(self)
         # Default sizeHint is tiny (~100×30) and will collapse layouts.
@@ -760,11 +684,78 @@ class GitHubConnectWebPane(QWidget):
     def reached(self) -> set[GitHubPageStage]:
         return set(self._reached)
 
-    def load_url(self, url: str) -> None:
+    def engine_profile(self):
+        """QWebEngineProfile used by this pane (for cookie probe/clear)."""
+        try:
+            return self._view.page().profile()
+        except Exception:
+            return None
+
+    def reset_connect_flow_state(self) -> None:
+        """Clear auto-nav / reissue flags after discarding a browser session."""
+        self._oauth_hand_off_done = False
+        self._last_form_error = ""
+        self._generate_clicked_url = ""
+        self._generate_scheduled_url = ""
+        self._generate_in_flight = False
+        self._reissue_count = 0
+        self._reissue_scheduled = False
+        self._reissue_exhausted = False
+        self._token_nav_opened = False
+        self._automation_paused = False
+        self._last_token = ""
+        self._last_expires_at = None
+        self._reached = set()
+        self._stage = GitHubPageStage.UNKNOWN
+        page = getattr(self, "_connect_page", None)
+        if page is not None and hasattr(page, "reset_handoff"):
+            try:
+                page.reset_handoff()
+            except Exception:
+                pass
+
+    def set_automation_paused(self, paused: bool) -> None:
+        """
+        Freeze all WebView work while the session keep/logout UI is shown.
+
+        Stops page load, blocks navigation/classify/Generate/token auto-nav.
+        """
+        self._automation_paused = bool(paused)
+        if paused:
+            self._generate_scheduled_url = ""
+            self._generate_clicked_url = ""
+            self._generate_in_flight = False
+            self._reissue_scheduled = False
+            try:
+                from PySide6.QtWebEngineCore import QWebEnginePage
+
+                self._view.page().triggerAction(
+                    QWebEnginePage.WebAction.Stop
+                )
+            except Exception:
+                pass
+
+    def is_automation_paused(self) -> bool:
+        return bool(getattr(self, "_automation_paused", False))
+
+    def load_url(self, url: str, *, force: bool = False) -> None:
+        if self._automation_paused and not force:
+            return
         self._oauth_hand_off_done = False
         # New create URL → allow Generate click again
         self._generate_clicked_url = ""
         self._generate_scheduled_url = ""
+        self._generate_in_flight = False
+        # Sync Note to parent wizard before navigation (reissue / away-return /
+        # auto-open must not leave token_note() on a stale value).
+        try:
+            from app.auth.pat_urls import note_from_pat_create_url
+
+            note = note_from_pat_create_url(url or "")
+            if note:
+                self.pat_create_note.emit(note)
+        except Exception:
+            pass
         page = getattr(self, "_connect_page", None)
         if page is not None and hasattr(page, "reset_handoff"):
             page.reset_handoff()
@@ -773,6 +764,8 @@ class GitHubConnectWebPane(QWidget):
 
     def navigate_to(self, text: str) -> bool:
         """Load a user-typed address. Returns False if the text is empty/invalid."""
+        if self._automation_paused:
+            return False
         q = _normalize_nav_url(text)
         if q is None or not q.isValid():
             return False
@@ -780,12 +773,16 @@ class GitHubConnectWebPane(QWidget):
         return True
 
     def go_back(self) -> None:
+        if self._automation_paused:
+            return
         hist = self._view.history()
         if hist is not None and hist.canGoBack():
             hist.back()
             self._emit_history()
 
     def go_forward(self) -> None:
+        if self._automation_paused:
+            return
         hist = self._view.history()
         if hist is not None and hist.canGoForward():
             hist.forward()
@@ -843,6 +840,8 @@ class GitHubConnectWebPane(QWidget):
         )
         if stage != prev or force:
             self.stage_changed.emit(stage)
+        if getattr(self, "_automation_paused", False):
+            return
         if stage in (
             GitHubPageStage.TOKEN_CLASSIC_NEW,
             GitHubPageStage.TOKEN_FINE_NEW,
@@ -900,22 +899,43 @@ class GitHubConnectWebPane(QWidget):
         return self._last_expires_at
 
     def apply_expiration_choice(
-        self, days_value: str, *, on_done=None, retries: int = 4
+        self,
+        days_value: str,
+        *,
+        on_done=None,
+        retries: int | None = None,
+        fast: bool = False,
     ) -> None:
         """
         Set GitHub Expiration to ``days_value`` **before** Generate token.
 
-        1) JS value/click  2) physical click by text rect  3) cross-check read-back
+        ``fast=True`` (auto Generate path): trust hidden-input write, skip
+        verify / physical fallback so Generate is not delayed.
         """
         from PySide6.QtCore import QTimer
 
         from app.auth.token_expiry import parse_expires_label
         from app.ui.webview_physical_click import find_target_and_physical_click
 
-        want = "" if days_value in (None, "none", "NONE") else str(days_value).strip()
-        self._pending_expiry_days = want
+        if getattr(self, "_automation_paused", False):
+            if on_done is not None:
+                on_done(False, "paused")
+            return
+
+        if retries is None:
+            retries = 1 if fast else 3
+
+        # Footer uses "" for 만료 없음; GitHub hidden input uses "none"
+        raw = "" if days_value in (None,) else str(days_value).strip()
+        want = (
+            "none"
+            if raw in ("", "none", "NONE")
+            else raw
+        )
+        self._pending_expiry_days = "" if want == "none" else want
         exp = parse_expires_label(
-            want or "none", "No expiration" if not want else f"{want} days"
+            "none" if want == "none" else want,
+            "No expiration" if want == "none" else f"{want} days",
         )
         if exp:
             self._last_expires_at = exp
@@ -949,15 +969,28 @@ class GitHubConnectWebPane(QWidget):
                 if got:
                     self._last_expires_at = got
                 want_exp = parse_expires_label(
-                    want or "none", "No expiration" if not want else f"{want} days"
+                    "none" if want == "none" else want,
+                    "No expiration" if want == "none" else f"{want} days",
                 )
                 # Accept match on day-count value, ISO date, or none
                 matched = False
-                if want == "" and (got == "none" or value == "" or "no expiration" in (label or "").lower()):
+                vnorm = (value or "").strip().lower()
+                if want == "none" and (
+                    got == "none"
+                    or vnorm in ("", "none")
+                    or "no expiration" in (label or "").lower()
+                ):
                     matched = True
-                elif want and (value == want or (got and want_exp and got[:10] == want_exp[:10])):
+                elif want != "none" and (
+                    value == want
+                    or (got and want_exp and got[:10] == want_exp[:10])
+                    or want in (label or "")
+                ):
                     matched = True
-                elif want and want in (label or ""):
+                # Hidden-input write counts as success even if label lags
+                if not matched and want != "none" and value == want:
+                    matched = True
+                if not matched and "set-hidden:" in detail:
                     matched = True
                 _finish(matched or bool(got), f"{detail}|verify={got!r}|value={value!r}")
 
@@ -971,7 +1004,7 @@ class GitHubConnectWebPane(QWidget):
             def _after_open(ok_open: bool, det_open: str) -> None:
                 def _after_opt(ok_opt: bool, det_opt: str) -> None:
                     QTimer.singleShot(
-                        250,
+                        120,
                         lambda: _verify_then_finish(
                             f"{prev_detail}|phys:{det_open}|{det_opt}"
                         ),
@@ -979,7 +1012,7 @@ class GitHubConnectWebPane(QWidget):
 
                 # Delay so listbox/menu can open after opener click
                 QTimer.singleShot(
-                    220,
+                    100,
                     lambda: find_target_and_physical_click(
                         self._view,
                         kind="expiry",
@@ -1000,29 +1033,48 @@ class GitHubConnectWebPane(QWidget):
         def _js_done(result: object) -> None:
             text = str(result) if result is not None else ""
             if text.startswith("set-"):
-                QTimer.singleShot(150, lambda: _verify_then_finish("js:" + text))
+                if fast:
+                    # Hidden input / menu write OK — do not block Generate
+                    _finish(True, "js-fast:" + text)
+                    return
+                QTimer.singleShot(80, lambda: _verify_then_finish("js:" + text))
                 return
             if retries > 0:
                 QTimer.singleShot(
-                    350,
+                    120 if fast else 280,
                     lambda: self.apply_expiration_choice(
-                        want, on_done=on_done, retries=retries - 1
+                        want,
+                        on_done=on_done,
+                        retries=retries - 1,
+                        fast=fast,
                     ),
                 )
                 return
-            # JS failed — physical text-based click
+            if fast:
+                # Still proceed to Generate; pending days + last attempt value used
+                _finish(False, "js-fail-fast:" + text)
+                return
+            # Thorough path — physical text-based click
             _physical_fallback("js-fail:" + text)
 
         try:
             js = f"{_JS_SET_EXPIRATION}({want!r});"
             self._view.page().runJavaScript(js, _js_done)
         except Exception:
-            _physical_fallback("js-error")
+            if fast:
+                _finish(False, "js-error-fast")
+            else:
+                _physical_fallback("js-error")
 
     def _schedule_expiry_then_generate(self) -> None:
-        """Physical/JS Expiration first, verify, then Generate token."""
+        """
+        Wait until PAT form DOM is ready → set Expiration hidden field →
+        submit Generate (requestSubmit / physical click) with retries.
+        """
         from PySide6.QtCore import QTimer
 
+        if getattr(self, "_automation_paused", False):
+            return
         url = ""
         try:
             url = self._view.url().toString()
@@ -1030,73 +1082,161 @@ class GitHubConnectWebPane(QWidget):
             url = ""
         if not url or url == self._generate_clicked_url:
             return
-        if url == self._generate_scheduled_url:
+        if self._generate_in_flight and url == self._generate_scheduled_url:
             return
         self._generate_scheduled_url = url
+        self._generate_in_flight = True
         days = getattr(self, "_pending_expiry_days", "90")
 
+        def _fail_chain() -> None:
+            self._generate_in_flight = False
+            # Allow a later stage refresh to retry
+            if self._generate_scheduled_url == url:
+                self._generate_scheduled_url = ""
+
         def _after_expiry(ok: bool, msg: str = "") -> None:
+            _ = ok, msg
             QTimer.singleShot(
-                300, lambda u=url: self._try_click_generate_token(u)
+                120, lambda u=url: self._try_click_generate_token(u, attempt=0)
             )
 
-        QTimer.singleShot(
-            500,
-            lambda: self.apply_expiration_choice(days, on_done=_after_expiry),
-        )
+        def _on_ready(ready: bool) -> None:
+            if getattr(self, "_automation_paused", False):
+                _fail_chain()
+                return
+            try:
+                cur = self._view.url().toString()
+            except Exception:
+                cur = ""
+            if cur != url:
+                _fail_chain()
+                return
+            if not ready:
+                _fail_chain()
+                return
+            self.apply_expiration_choice(
+                days, on_done=_after_expiry, fast=True, retries=2
+            )
+
+        def _poll_ready(attempt: int = 0) -> None:
+            if getattr(self, "_automation_paused", False):
+                _fail_chain()
+                return
+            try:
+                cur = self._view.url().toString()
+            except Exception:
+                cur = ""
+            if cur != url:
+                _fail_chain()
+                return
+
+            def _ready_done(result: object) -> None:
+                import json
+
+                ok = False
+                try:
+                    data = json.loads(str(result) if result is not None else "")
+                    ok = bool(isinstance(data, dict) and data.get("ok"))
+                except Exception:
+                    ok = False
+                if ok:
+                    _on_ready(True)
+                    return
+                if attempt + 1 < _PAT_FORM_READY_ATTEMPTS:
+                    QTimer.singleShot(
+                        _PAT_FORM_READY_GAP_MS,
+                        lambda: _poll_ready(attempt + 1),
+                    )
+                else:
+                    # Last resort: try anyway (hidden may appear late)
+                    _on_ready(True)
+
+            try:
+                self._view.page().runJavaScript(_JS_PAT_FORM_READY, _ready_done)
+            except Exception:
+                if attempt + 1 < _PAT_FORM_READY_ATTEMPTS:
+                    QTimer.singleShot(
+                        _PAT_FORM_READY_GAP_MS,
+                        lambda: _poll_ready(attempt + 1),
+                    )
+                else:
+                    _fail_chain()
+
+        QTimer.singleShot(150, lambda: _poll_ready(0))
 
     def _schedule_click_generate_token(self) -> None:
         """Backward-compatible alias — prefer ``_schedule_expiry_then_generate``."""
         self._schedule_expiry_then_generate()
 
-    def _try_click_generate_token(self, expected_url: str) -> None:
+    def _try_click_generate_token(self, expected_url: str, *, attempt: int = 0) -> None:
         from PySide6.QtCore import QTimer
 
         from app.ui.webview_physical_click import find_target_and_physical_click
 
+        if getattr(self, "_automation_paused", False):
+            self._generate_in_flight = False
+            return
         try:
             cur = self._view.url().toString()
         except Exception:
+            self._generate_in_flight = False
             return
         if cur != expected_url:
+            self._generate_in_flight = False
             return
         if cur == self._generate_clicked_url:
+            self._generate_in_flight = False
             return
         st = detect_github_page_stage(PageSnapshot(url=cur))
         if st not in (
             GitHubPageStage.TOKEN_CLASSIC_NEW,
             GitHubPageStage.TOKEN_FINE_NEW,
         ):
+            self._generate_in_flight = False
             return
 
         def _mark_clicked() -> None:
             self._generate_clicked_url = expected_url
+            self._generate_in_flight = False
             if self._generate_scheduled_url == expected_url:
                 self._generate_scheduled_url = ""
 
-        def _physical_generate(_ok: bool = False, _det: str = "") -> None:
+        def _retry_or_physical() -> None:
+            if attempt + 1 < _GENERATE_RETRY_MAX:
+                QTimer.singleShot(
+                    _GENERATE_RETRY_GAP_MS,
+                    lambda: self._try_click_generate_token(
+                        expected_url, attempt=attempt + 1
+                    ),
+                )
+                return
+            def _phys_done(ok: bool, _det: str = "") -> None:
+                if ok:
+                    _mark_clicked()
+                    return
+                self._generate_in_flight = False
+                if self._generate_scheduled_url == expected_url:
+                    self._generate_scheduled_url = ""
+
             find_target_and_physical_click(
                 self._view,
                 kind="generate",
                 want="",
                 zoom=float(getattr(self, "_zoom", 1.0) or 1.0),
-                on_done=lambda ok, det: _mark_clicked() if ok else None,
+                on_done=_phys_done,
             )
 
         def _js_done(result: object) -> None:
             text = str(result) if result is not None else ""
-            if text.startswith("clicked:"):
+            if text.startswith("submitted:") or text.startswith("clicked:"):
                 _mark_clicked()
                 return
-            # JS click ignored — physical click by "Generate token" text
-            QTimer.singleShot(100, _physical_generate)
+            _retry_or_physical()
 
         try:
             self._view.page().runJavaScript(_JS_CLICK_GENERATE_TOKEN, _js_done)
         except Exception:
-            _physical_generate()
-            if self._generate_scheduled_url == expected_url:
-                self._generate_scheduled_url = ""
+            _retry_or_physical()
 
     def _refresh_stage(self, html: str = "") -> None:
         snap = self._snapshot()
@@ -1124,6 +1264,8 @@ class GitHubConnectWebPane(QWidget):
     @Slot(bool)
     def _on_loaded(self, ok: bool) -> None:
         self._emit_history()
+        if getattr(self, "_automation_paused", False):
+            return
         if not ok:
             self.load_failed.emit("페이지를 불러오지 못했습니다.")
             return
@@ -1135,6 +1277,8 @@ class GitHubConnectWebPane(QWidget):
             pass
 
     def _on_html(self, html: str) -> None:
+        if getattr(self, "_automation_paused", False):
+            return
         html = html or ""
         title = self._view.title() or ""
         url = self._view.url().toString()
@@ -1146,6 +1290,8 @@ class GitHubConnectWebPane(QWidget):
         self._refresh_stage(html=html)
 
     def _classify_and_emit(self, url: str, title: str, html: str) -> None:
+        if getattr(self, "_automation_paused", False):
+            return
         from app.ui.webview_flow_detect import classify_webview_sample
 
         kind, idx, meta = classify_webview_sample(url, title=title, html=html)
@@ -1162,7 +1308,48 @@ class GitHubConnectWebPane(QWidget):
             self._reissue_exhausted = False
             self.token_found.emit(visible)
         self.flow_classified.emit(kind, idx, meta or {})
+        if kind == "logged_out":
+            self._token_nav_opened = False
+        if getattr(self, "_automation_paused", False):
+            return
+        self._maybe_auto_open_token_create(url, title, html, kind, idx)
         self._maybe_schedule_token_reissue(url, title, html, kind, meta or {})
+
+    def _maybe_auto_open_token_create(
+        self,
+        url: str,
+        title: str,
+        html: str,
+        kind: str,
+        idx: object,
+    ) -> None:
+        """
+        Logged-in github.com main (no Sign in/Sign up) → classic tokens/new.
+        One-shot until logged_out resets ``_token_nav_opened``.
+        """
+        from app.auth.pat_urls import classic_pat_create_url, make_pat_note
+        from app.ui.webview_flow_detect import should_auto_open_token_page
+
+        if getattr(self, "_automation_paused", False):
+            return
+        try:
+            i = int(idx) if idx is not None else None
+        except (TypeError, ValueError):
+            i = None
+        if not should_auto_open_token_page(
+            kind=kind,
+            idx=i,
+            already_opened=self._token_nav_opened,
+            url=url,
+            title=title,
+            page_text=html,
+        ):
+            return
+        self._token_nav_opened = True
+        try:
+            self.load_url(classic_pat_create_url(note=make_pat_note()))
+        except Exception:
+            self._token_nav_opened = False
 
     def _is_tokens_list_url(self, url: str) -> bool:
         try:
@@ -1193,6 +1380,8 @@ class GitHubConnectWebPane(QWidget):
             looks_like_token_note_taken_html,
         )
 
+        if getattr(self, "_automation_paused", False):
+            return
         if self._last_token or self._reissue_exhausted:
             return
         if not self._is_tokens_list_url(url):
@@ -1255,9 +1444,9 @@ class GitHubConnectWebPane(QWidget):
         self._reissue_count += 1
         self.token_reissue.emit(self._reissue_count, _TOKEN_REISSUE_MAX)
         try:
-            from app.auth.pat_urls import classic_pat_create_url
+            from app.auth.pat_urls import classic_pat_create_url, make_pat_note
 
-            self.load_url(classic_pat_create_url())
+            self.load_url(classic_pat_create_url(note=make_pat_note()))
         except Exception:
             self._reissue_exhausted = True
 

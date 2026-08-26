@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.auth.token_expiry import (
+    format_connected_at_display,
     format_expires_display,
     parse_expires_from_page_text,
     parse_expires_label,
@@ -30,3 +31,5 @@ def test_format_display() -> None:
     assert "만료 없음" in format_expires_display("none")
     assert "확인 불가" in format_expires_display(None)
     assert "2026" in format_expires_display("2026-12-31T23:59:59Z")
+    assert "기록 없음" in format_connected_at_display(None)
+    assert "2026-08-26" in format_connected_at_display("2026-08-26T12:00:00Z")

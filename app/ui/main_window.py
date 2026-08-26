@@ -1243,9 +1243,24 @@ class MainController(QObject):
                 return
 
         # Beginner wizard (PAT). Path A = WebView wizard; Path B = Guide alone.
-        wiz = ConnectGitHubWizard(self.window, reauth=had_session)
+        wiz = ConnectGitHubWizard(
+            self.window, reauth=had_session, log=self._log
+        )
         if wiz.exec() != ConnectGitHubWizard.DialogCode.Accepted:
-            self._log("연결 안내 취소")
+            # Distinguish empty close from a PAT that was recognized but
+            # never accepted (legacy window-flag hide race).
+            pending = ""
+            try:
+                pending = (wiz.token() or "").strip()
+            except Exception:
+                pending = ""
+            if pending:
+                self._log(
+                    "연결 안내가 닫힘 — 키는 보였으나 연결 확정이 안 됨 "
+                    "(다시 「GitHub: 연결」을 눌러 주세요)"
+                )
+            else:
+                self._log("연결 안내 취소")
             return
 
         if wiz.wants_device_flow():
@@ -1272,37 +1287,72 @@ class MainController(QObject):
             return
 
         self._start_pat_login(
-            token=wiz.token(), expires_at=wiz.token_expires_at()
+            token=wiz.token(),
+            expires_at=wiz.token_expires_at(),
+            pat_note=wiz.token_note(),
         )
 
     def _run_external_pat_guide(self) -> None:
         """Path B: floating/browser guide alone (never nested under WebView wizard)."""
         from app.ui.external_pat_guide import ExternalBrowserPatGuide
 
+        from app.util.browser_address import set_path_b_log_sink
+
         self._log("--- GitHub 연결 (브라우저 안내) ---")
         guide = ExternalBrowserPatGuide(
-            anchor=self.window, open_login_on_start=True
+            anchor=self.window,
+            open_login_on_start=True,
+            log=self._log,
         )
-        # Mutual exclusion: wizard must already be closed before Guide.exec
-        if guide.exec() != ExternalBrowserPatGuide.DialogCode.Accepted:
+        # Mutual exclusion: wizard must already be closed before Guide.exec.
+        # finally: clear Path B sink even if exec raises / aborts oddly.
+        try:
+            accepted = (
+                guide.exec() == ExternalBrowserPatGuide.DialogCode.Accepted
+            )
+        finally:
+            set_path_b_log_sink(None)
+        if not accepted:
             self._log("브라우저 안내 취소")
             return
         raw = (guide.token() or "").strip()
         if not raw:
             self._log("키가 비어 연결 취소")
             return
-        self._start_pat_login(token=raw)
+        self._start_pat_login(
+            token=raw,
+            expires_at=guide.token_expires_at(),
+            pat_note=guide.token_note(),
+        )
 
     def _start_pat_login(
-        self, token: str | None = None, *, expires_at: str | None = None
+        self,
+        token: str | None = None,
+        *,
+        expires_at: str | None = None,
+        pat_note: str | None = None,
     ) -> None:
         """Store user-issued PAT after GET /user (no OAuth App)."""
         raw = (token or "").strip()
         exp = expires_at
+        note = pat_note
         if not raw:
-            wiz = ConnectGitHubWizard(self.window, reauth=False)
+            wiz = ConnectGitHubWizard(
+                self.window, reauth=False, log=self._log
+            )
             if wiz.exec() != ConnectGitHubWizard.DialogCode.Accepted:
-                self._log("연결 안내 취소")
+                pending = ""
+                try:
+                    pending = (wiz.token() or "").strip()
+                except Exception:
+                    pending = ""
+                if pending:
+                    self._log(
+                        "연결 안내가 닫힘 — 키는 보였으나 연결 확정이 안 됨 "
+                        "(다시 「GitHub: 연결」을 눌러 주세요)"
+                    )
+                else:
+                    self._log("연결 안내 취소")
                 return
             if wiz.wants_device_flow():
                 self._log("개발용 Device Flow는 상태줄 로그인에서만 가능")
@@ -1312,6 +1362,7 @@ class MainController(QObject):
                 return
             raw = wiz.token()
             exp = wiz.token_expires_at()
+            note = wiz.token_note()
         if not raw.strip():
             self._log("키가 비어 연결 취소")
             return
@@ -1319,7 +1370,9 @@ class MainController(QObject):
         self._log("--- GitHub 연결 (키) ---")
         if exp:
             self._log(f"만료일(감지): {exp}")
-        w = PatLoginWorker(raw, parent=self, expires_at=exp)
+        if note:
+            self._log(f"Note: {note}")
+        w = PatLoginWorker(raw, parent=self, expires_at=exp, pat_note=note)
         w.succeeded.connect(self._on_login_ok)
         w.failed.connect(self._on_fail_msg)
         self._start_worker(w)

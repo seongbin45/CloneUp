@@ -72,42 +72,61 @@ _JS_FIND_TARGET_RECT = r"""
   }
 
   if (kind === "expiry") {
-    // Prefer option/label matching days, else the Expiration opener
+    const ww = (!w || String(w).toLowerCase() === "none") ? "none" : w;
+    // Primer action-menu: match data-value even if popover is closed
+    const byVal = Array.from(document.querySelectorAll(
+      "#token-expiration button[data-value], .js-new-default-token-expiration-item button[data-value], [role=menuitemradio][data-value]"
+    ));
+    for (const el of byVal) {
+      const v = ((el.getAttribute("data-value") || "") + "").trim();
+      const t = txt(el);
+      const ok = (ww === "none" && (v === "none" || isNone(t))) ||
+        (ww !== "none" && (v === ww || isDays(t, ww)));
+      if (!ok) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width >= 2 && r.height >= 2) return pack(el, "expiry-option", t || v);
+    }
     const candidates = Array.from(document.querySelectorAll(
       "option, [role=option], [role=menuitem], [role=menuitemradio], label, button, a, li, summary"
     ));
     for (const el of candidates) {
       const t = txt(el);
-      if (!t || t.length > 64) continue;
-      const ok = (w === "" && isNone(t)) || (w && isDays(t, w));
+      const v = ((el.getAttribute("data-value") || "") + "").trim();
+      if (!t || t.length > 80) continue;
+      const ok = (ww === "none" && (v === "none" || isNone(t))) ||
+        (ww !== "none" && (v === ww || isDays(t, ww)));
       if (!ok || !visible(el)) continue;
-      // For <option>, click the select center first — return select rect + mark option
       if (el.tagName === "OPTION" && el.parentElement) {
         const sel = el.parentElement;
-        // Select via value assignment is done in set-expiration JS;
-        // for physical path return the SELECT rect (user sees dropdown)
         return pack(sel, "expiry-select", t + "|value=" + (el.value || ""));
       }
       return pack(el, "expiry-option", t);
     }
-    // Open Expiration control if options not visible yet
+    // Opener label is often "30 days …", not the word Expiration
+    const primerOpen = document.querySelector(
+      ".js-new-default-token-expiration-select button[aria-haspopup], #token-expiration action-menu button[aria-haspopup], #token-expiration button[aria-haspopup]"
+    );
+    if (primerOpen && visible(primerOpen)) {
+      return pack(primerOpen, "expiry-opener", txt(primerOpen) || "expiration-menu");
+    }
     const openers = Array.from(document.querySelectorAll(
       "summary, button, [role=button], [aria-haspopup], select"
     ));
     for (const el of openers) {
       const t = txt(el);
-      const idn = ((el.id || "") + " " + (el.name || "")).toLowerCase();
+      const idn = ((el.id || "") + " " + (el.name || "") + " " + (el.className || "")).toLowerCase();
       if (
         visible(el) && (
           /^Expiration$/i.test(t) ||
           (/Expiration/i.test(t) && t.length < 40) ||
-          idn.indexOf("expire") >= 0
+          idn.indexOf("expire") >= 0 ||
+          idn.indexOf("token-expiration") >= 0
         )
       ) {
         return pack(el, "expiry-opener", t || idn);
       }
     }
-    out.detail = "expiry-not-found:" + w;
+    out.detail = "expiry-not-found:" + ww;
     return JSON.stringify(out);
   }
 

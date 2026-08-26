@@ -10,6 +10,9 @@
 | `ensure_valid_token` | keyring 검증만. **자동 Device Flow 시작 안 함** |
 
 토큰은 OS **keyring**에만. `.env`·`.git/config`에 두지 않음.  
+선택: 설정 → 안전 **마스터 비밀번호 보호** — keyring에는 `enc.v1.…`만,  
+일상 사용은 Windows DPAPI로 DEK 해제 (마스터 비번은 디스크에 안 둠).  
+상세: [`docs/MASTER_PASSWORD_VAULT.md`](../../docs/MASTER_PASSWORD_VAULT.md).  
 맥락: `docs/DIFFERENTIATION.md` V1.
 
 ## 파일
@@ -17,7 +20,12 @@
 | 파일 | 역할 |
 |------|------|
 | `session.py` | `login_with_pat`, `ensure_valid_token` (제품 핵심) |
-| `token_store.py` | keyring 저장/삭제/scope·auth_kind·연결 시각 |
+| `token_store.py` | keyring 저장/삭제/scope·auth_kind·연결 시각 · 마스터 보호 마이그레이션 |
+| `secret_crypto.py` | 마스터 암호 순수 헬퍼 (AES-GCM · PBKDF2 · WrappedDek) |
+| `secret_vault.py` | `%LOCALAPPDATA%\CloneUp\secret\` · DPAPI DEK · `enc.v1.` |
+| `dpapi_win.py` | Windows CryptProtectData / CryptUnprotectData |
+| `pat_urls.py` | classic PAT 생성 URL · Note |
+| `token_expiry.py` | 연결·만료 표시 문구 |
 | `device_flow.py` | Device Flow 프로토콜 (개발 옵션) |
 | `playwright_device.py` | 선택 실험 (`CLONEUP_PLAYWRIGHT=1`) — 기본 경로 아님 |
 
@@ -29,6 +37,8 @@
 | 연결 방식 UI (마법사) | `app/ui/login_dialog.py` |
 | 로그아웃이 안 됨 | UI `on_logout` + `token_store.delete_token` |
 | 권한(scope) 기본값 | `app/config.py` (`repo`) — 일반 사용자 `.env` 불필요 |
+| 마스터 비밀번호 켜기/끄기 | `token_store` API + `app/ui/settings_dialog.py` (안전 탭) |
+| 암호·vault 버그 | `secret_crypto` / `secret_vault` / `docs/MASTER_PASSWORD_VAULT.md` |
 
 ## 테스트
 
@@ -37,6 +47,13 @@
 ```powershell
 .\.venv\Scripts\python.exe main.py
 # 상태줄 「GitHub: 연결」→ 키 붙여넣기
+# (선택) 설정 → 안전 → 「보호 켜기」
+```
+
+암호·vault 단위 테스트:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/test_secret_crypto.py tests/test_secret_vault.py tests/test_master_protection_settings.py -q
 ```
 
 ### 개발자 전용 (일반 사용자 불필요)

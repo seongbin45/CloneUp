@@ -36,7 +36,9 @@ Windows용 **GitHub 도우미** 데스크톱 앱입니다.
 더 긴 설계 메모: [docs/DIFFERENTIATION.md](docs/DIFFERENTIATION.md) 「왜 Git인가」.
 
 **`.env` 파일은 일반 사용자에게 필요 없습니다.**  
-OAuth client id·scope 기본값이 코드에 들어 있고, 로그인 토큰은 OS keyring에 저장됩니다.
+OAuth client id·scope 기본값이 코드에 들어 있고, 로그인 토큰은 OS keyring에 저장됩니다.  
+(선택) 설정 → 안전에서 **마스터 비밀번호 보호**를 켜면 keyring에는 암호문만 남고,  
+일상 사용 시 비밀번호를 다시 묻지 않습니다 — [docs/MASTER_PASSWORD_VAULT.md](docs/MASTER_PASSWORD_VAULT.md).
 
 로그인: **GitHub에서 만든 키(PAT)만** (기본).  
 브라우저 장치 코드(Device Flow)는 공개 client_id 남용 위험으로 **기본 비활성**입니다.  
@@ -253,7 +255,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 
 | 하지 말 것 | 이유 |
 |------------|------|
-| `.env`에 토큰 저장 | 토큰은 keyring 사용 |
+| `.env`에 토큰 저장 | 토큰은 keyring 사용 (선택: 마스터 비밀번호로 추가 암호화) |
+| 마스터 비밀번호를 파일·exe에 심기 | 추출 가능 — 앱은 디스크에 비번을 두지 않음 |
 | `dist/` · `Output/` 을 git add | 용량 크고 재생성 가능 |
 | `.venv/` 커밋 | 각자 PC에서 만듦 |
 | Setup 없이 `CloneUp.exe`만 배포 | 의존 파일 누락 |

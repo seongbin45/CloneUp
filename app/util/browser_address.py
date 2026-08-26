@@ -10,14 +10,50 @@ Optional dependency: ``uiautomation`` (soft-fail if missing).
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
+
+# Optional sink → main window textLog (Path B). See docs/DEV_LOGGING_GUIDE.md.
+_path_b_log_sink: Callable[[str], None] | None = None
 
 # Visible PAT on GitHub "copy your token now" page (Name / Value via UIA)
 _VISIBLE_PAT_RE = re.compile(
     r"\b(gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b",
     re.IGNORECASE,
 )
+
+
+def set_path_b_log_sink(sink: Callable[[str], None] | None) -> None:
+    """Attach/detach Path B logs to the app log window (tee with print)."""
+    global _path_b_log_sink
+    _path_b_log_sink = sink
+
+
+def path_b_log(message: str) -> None:
+    """
+    Logging-first line for Path B browser assist.
+
+    Always prints (terminal / redirected worker sinks) after secret masking.
+    If :func:`set_path_b_log_sink` was set (ExternalBrowserPatGuide), also
+    forwards to the main ``textLog``.
+    """
+    from app.util.log_mask import mask_secrets_in_text
+
+    line = mask_secrets_in_text(message or "")
+    if not line.strip():
+        return
+    try:
+        print(line)
+    except Exception:
+        pass
+    sink = _path_b_log_sink
+    if sink is not None:
+        try:
+            sink(line)
+        except Exception:
+            pass
+
 
 # Localized / English omnibox names observed on Windows Chrome/Edge
 _ADDRESS_NAMES = (
@@ -320,6 +356,35 @@ _GITHUB_LOGGED_OUT_UI_NEEDLES = (
     "sign up",  # paired with github context below
 )
 
+# Logged-in dashboard / feed signals (override weak Sign in/up noise)
+_GITHUB_LOGGED_IN_UI_NEEDLES = (
+    "for you",
+    "dashboard",
+    "your repositories",
+    "your teams",
+    "your profile",
+    "signed in as",
+    "홈",
+    "대시보드",
+    "알림",
+    "notifications",
+    "create repository",
+    "new repository",
+    "repositories",
+)
+
+
+def looks_like_github_logged_in_ui(
+    window_title: str = "",
+    ui_text: str = "",
+) -> bool:
+    """True if accessible UI looks like a logged-in GitHub dashboard/feed."""
+    blob = f"{window_title or ''}\n{ui_text or ''}".lower()
+    blob = blob.replace("\xa0", " ").replace("\u00a0", " ")
+    if not blob.strip():
+        return False
+    return any(n in blob for n in _GITHUB_LOGGED_IN_UI_NEEDLES)
+
 
 def looks_like_github_logged_out_ui(
     window_title: str = "",
@@ -332,10 +397,14 @@ def looks_like_github_logged_out_ui(
 
     ``github.com`` alone is ambiguous — logged-in dashboard and logged-out
     marketing home share that URL. Cross-check visible Sign in/Sign up.
+    Dashboard signals win over weak Sign in/up noise in the a11y tree.
     """
     blob = f"{window_title or ''}\n{ui_text or ''}".lower()
     blob = blob.replace("\xa0", " ").replace("\u00a0", " ")
     if not blob.strip():
+        return False
+    # Logged-in dashboard must not be treated as logged-out
+    if looks_like_github_logged_in_ui(window_title, ui_text):
         return False
     # Strong phrases first
     strong = (
@@ -540,13 +609,798 @@ def analyze_google_signin_block(
     )
 
 
+# Chromium-family image names for tasklist / PID scoping (Windows).
+_CHROMIUM_IMAGE_NAMES: tuple[str, ...] = (
+    "chrome.exe",
+    "msedge.exe",
+    "brave.exe",
+    "chromium.exe",
+    "opera.exe",
+    "vivaldi.exe",
+)
+
+
+def list_chromium_browser_pids() -> set[int]:
+    """
+    Collect PIDs for Chrome / Edge / Brave / … via ``tasklist`` (no window flash).
+
+    Chrome is multi-process — callers should treat the set as \"any PID that
+    belongs to a Chromium-family browser\", then match top-level UIA windows
+    whose ``ProcessId`` is in this set.
+    """
+    import sys
+
+    if sys.platform != "win32":
+        return set()
+    pids: set[int] = set()
+    try:
+        from app.util.winproc import run_hidden
+    except Exception:
+        run_hidden = None  # type: ignore[assignment]
+
+    for image in _CHROMIUM_IMAGE_NAMES:
+        try:
+            cmd = [
+                "tasklist",
+                "/FI",
+                f"IMAGENAME eq {image}",
+                "/FO",
+                "CSV",
+                "/NH",
+            ]
+            if run_hidden is not None:
+                proc = run_hidden(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=8,
+                )
+            else:
+                import subprocess
+
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=8,
+                )
+            raw = proc.stdout or ""
+        except Exception:
+            continue
+        pids |= parse_tasklist_csv_pids(raw)
+    return pids
+
+
+def parse_tasklist_csv_pids(raw: str) -> set[int]:
+    """Parse ``tasklist /FO CSV /NH`` stdout into a set of PIDs."""
+    import csv
+    import io
+
+    if not (raw or "").strip() or not raw.lstrip().startswith('"'):
+        return set()
+    out: set[int] = set()
+    try:
+        for row in csv.reader(io.StringIO(raw)):
+            if len(row) < 2:
+                continue
+            try:
+                out.add(int(str(row[1]).strip().strip('"')))
+            except ValueError:
+                continue
+    except Exception:
+        return out
+    return out
+
+
+def _window_process_id(win) -> int | None:
+    try:
+        pid = getattr(win, "ProcessId", None)
+        if pid is None:
+            return None
+        return int(pid)
+    except Exception:
+        return None
+
+
+def _window_hwnd(win) -> int:
+    try:
+        return int(getattr(win, "NativeWindowHandle", 0) or 0)
+    except Exception:
+        return 0
+
+
+def _foreground_hwnd() -> int:
+    """Current foreground HWND (0 if unavailable)."""
+    import sys
+
+    if sys.platform != "win32":
+        return 0
+    try:
+        import ctypes
+
+        return int(ctypes.windll.user32.GetForegroundWindow() or 0)
+    except Exception:
+        return 0
+
+
+def window_title_connect_score(title: str) -> int:
+    """
+    Pure score: how likely ``title`` is our GitHub PAT / connect flow tab.
+
+    Window titles reflect the *active* tab (e.g. \"New Personal Access Token
+    (Classic) - Chrome\"). Tab last-access timestamps are not available via
+    UIA — title match is the strongest content clue.
+    """
+    name = (title or "").strip().lower()
+    if not name:
+        return 0
+    score = 0
+    # Strongest: classic PAT create page title observed on Chrome/Edge.
+    if "new personal access token" in name:
+        score += 50
+    elif "personal access token" in name:
+        score += 28
+    if "github" in name:
+        score += 20
+    if "token" in name:
+        score += 10
+    if "settings" in name:
+        score += 4
+    # Login / auth related (Path B early scenes).
+    if "sign in" in name or "로그인" in name:
+        score += 6
+    return score
+
+
+def chromium_window_rank_tuple(
+    *,
+    title: str,
+    is_foreground: bool,
+    z_index: int,
+) -> tuple[int, int, int, int]:
+    """
+    Sort key for Chromium windows (higher = better / try first).
+
+    Per-tab last-access timestamps are not available on Windows. For Path B
+    connect assist we approximate \"the right recent tab\" as:
+
+    1. Strong PAT / connect title (active tab name on the window)
+    2. Foreground browser window (recent focus among peers)
+    3. Remaining title score
+    4. Earlier among top-level siblings (``z_index`` 0 = first under root —
+       treated as closer to front when walking UI Automation children)
+
+    Strong title beats an unrelated foreground tab so a StayOnTop CloneUp
+    guide (or a Google search in front) does not steal Expiration clicks.
+    """
+    title_score = window_title_connect_score(title)
+    strong = 1 if title_score >= 28 else 0
+    return (
+        strong,
+        1 if is_foreground else 0,
+        title_score,
+        -int(z_index),
+    )
+
+
+def _window_github_score(win) -> int:
+    """Higher = more likely the GitHub tokens/new tab we care about."""
+    try:
+        name = win.Name or ""
+    except Exception:
+        name = ""
+    return window_title_connect_score(name)
+
+
+def _iter_chromium_windows(auto, *, pids: set[int] | None = None) -> list:
+    """Top-level ``Chrome_WidgetWin_1`` windows, optionally filtered by PID set.
+
+    When ``pids`` is None, loads current Chromium-family PIDs from tasklist and
+    filters to those. Pass an empty set to skip PID filtering (all Chromium
+    class windows).
+
+    Sorted by :func:`chromium_window_rank_tuple` — strong PAT/connect title,
+    then foreground, then remaining title score, then Z-order proxy (sibling
+    index). Tab wall-clock times are not available on Windows; this is the
+    practical \"most relevant / recent\" order for Path B assist.
+    """
+    out: list = []
+    pid_filter = pids
+    if pid_filter is None:
+        pid_filter = list_chromium_browser_pids()
+    fg_hwnd = _foreground_hwnd()
+    try:
+        root = auto.GetRootControl()
+        z_index = 0
+        for w in root.GetChildren():
+            try:
+                if (w.ClassName or "") != _BROWSER_CLASS:
+                    continue
+                if pid_filter:
+                    wpid = _window_process_id(w)
+                    if wpid is None or wpid not in pid_filter:
+                        continue
+                # Annotate for stable ranking without a parallel meta list.
+                try:
+                    w._cloneup_z_index = z_index  # type: ignore[attr-defined]
+                    w._cloneup_is_fg = bool(  # type: ignore[attr-defined]
+                        fg_hwnd and _window_hwnd(w) == fg_hwnd
+                    )
+                except Exception:
+                    pass
+                out.append(w)
+                z_index += 1
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    def _rank_key(win) -> tuple[int, int, int, int]:
+        try:
+            title = win.Name or ""
+        except Exception:
+            title = ""
+        is_fg = bool(getattr(win, "_cloneup_is_fg", False))
+        if not is_fg and fg_hwnd:
+            is_fg = bool(_window_hwnd(win) == fg_hwnd)
+        z = int(getattr(win, "_cloneup_z_index", 9999))
+        return chromium_window_rank_tuple(
+            title=title, is_foreground=is_fg, z_index=z
+        )
+
+    out.sort(key=_rank_key, reverse=True)
+    return out
+
+
+def _ctrl_clickable_point(ctrl) -> tuple[int, int] | None:
+    """Center of BoundingRectangle, or GetClickablePoint if available."""
+    try:
+        if hasattr(ctrl, "GetClickablePoint"):
+            pt = ctrl.GetClickablePoint()
+            if pt is not None:
+                # uiautomation may return (x, y) or a Point-like object
+                if isinstance(pt, (tuple, list)) and len(pt) >= 2:
+                    return int(pt[0]), int(pt[1])
+                x = getattr(pt, "x", None)
+                y = getattr(pt, "y", None)
+                if x is not None and y is not None:
+                    return int(x), int(y)
+    except Exception:
+        pass
+    try:
+        rect = ctrl.BoundingRectangle
+        left = int(getattr(rect, "left", getattr(rect, "Left", 0)))
+        top = int(getattr(rect, "top", getattr(rect, "Top", 0)))
+        right = int(getattr(rect, "right", getattr(rect, "Right", 0)))
+        bottom = int(getattr(rect, "bottom", getattr(rect, "Bottom", 0)))
+        if right - left < 2 or bottom - top < 2:
+            return None
+        return (left + right) // 2, (top + bottom) // 2
+    except Exception:
+        return None
+
+
+def _bring_uia_window_forward(win) -> bool:
+    """Briefly foreground a browser HWND so coordinate clicks land.
+
+    Does not close or minimize other apps; only SetForegroundWindow / restore.
+    """
+    import sys
+
+    if sys.platform != "win32" or win is None:
+        return False
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        hwnd = int(getattr(win, "NativeWindowHandle", 0) or 0)
+        if not hwnd:
+            return False
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        foreground = user32.GetForegroundWindow()
+        if foreground == hwnd:
+            return True
+        fg_tid = user32.GetWindowThreadProcessId(foreground, None)
+        our_tid = kernel32.GetCurrentThreadId()
+        attached = False
+        if fg_tid and our_tid and fg_tid != our_tid:
+            attached = bool(user32.AttachThreadInput(fg_tid, our_tid, True))
+        try:
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(fg_tid, our_tid, False)
+        return True
+    except Exception:
+        return False
+
+
+def _uia_click_at_control(
+    ctrl,
+    *,
+    owner_window=None,
+    restore_cursor: bool = True,
+) -> tuple[bool, str]:
+    """
+    Left-click the control's screen point (PID-scoped Path B assist).
+
+    Moves the real cursor briefly, then restores it. Prefer Invoke when it
+    works; use this when Primer menus ignore Invoke on a background window.
+    Never sends close / Alt+F4.
+    """
+    import sys
+    import time
+
+    name = ""
+    try:
+        name = (ctrl.Name or "").strip()
+    except Exception:
+        pass
+    point = _ctrl_clickable_point(ctrl)
+    if point is None:
+        return False, f"no-point:{name[:32]}"
+    x, y = point
+    if sys.platform != "win32":
+        return False, "click-non-windows"
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        if owner_window is not None:
+            _bring_uia_window_forward(owner_window)
+
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+        old = POINT()
+        user32.GetCursorPos(ctypes.byref(old))
+        try:
+            user32.SetCursorPos(int(x), int(y))
+            time.sleep(0.04)
+            # MOUSEEVENTF_LEFTDOWN / LEFTUP
+            user32.mouse_event(0x0002, 0, 0, 0, 0)
+            time.sleep(0.03)
+            user32.mouse_event(0x0004, 0, 0, 0, 0)
+        finally:
+            if restore_cursor:
+                try:
+                    user32.SetCursorPos(old.x, old.y)
+                except Exception:
+                    pass
+        return True, f"click:{name[:40]}@{x},{y}"
+    except Exception as e:
+        return False, f"click-fail:{e}"
+
+
+def _uia_invoke_only(ctrl) -> tuple[bool, str]:
+    """Invoke / ExpandCollapse — no mouse, no SetFocus."""
+    name = ""
+    try:
+        name = (ctrl.Name or "").strip()
+    except Exception:
+        pass
+    # Prefer InvokePattern (buttons / menuitemradio).
+    try:
+        if hasattr(ctrl, "GetInvokePattern"):
+            pat = ctrl.GetInvokePattern()
+            if pat is not None:
+                pat.Invoke()
+                return True, f"invoke:{name[:48]}"
+    except Exception as e:
+        invoke_err = f"invoke-fail:{e}"
+    else:
+        invoke_err = ""
+    # Primer action-menu openers sometimes expose ExpandCollapse instead.
+    try:
+        if hasattr(ctrl, "GetExpandCollapsePattern"):
+            pat = ctrl.GetExpandCollapsePattern()
+            if pat is not None:
+                # Expand if collapsed; ignore state read errors.
+                try:
+                    state = getattr(pat, "ExpandCollapseState", None)
+                    # 0=Collapsed, 1=Expanded (uiautomation enum values)
+                    if state is None or int(state) == 0:
+                        pat.Expand()
+                    else:
+                        # Already open — still counts as success for opener.
+                        pass
+                except Exception:
+                    pat.Expand()
+                return True, f"expand:{name[:48]}"
+    except Exception as e:
+        expand_err = f"expand-fail:{e}"
+    else:
+        expand_err = ""
+    detail = "|".join(x for x in (invoke_err, expand_err) if x) or "no-invoke"
+    return False, detail
+
+
+def _uia_activate(ctrl, *, allow_click: bool, owner_window=None) -> tuple[bool, str]:
+    """Try Invoke first; optional coordinate click fallback (cursor restored)."""
+    ok, detail = _uia_invoke_only(ctrl)
+    if ok:
+        return True, detail
+    if not allow_click:
+        return False, detail
+    ok2, detail2 = _uia_click_at_control(ctrl, owner_window=owner_window)
+    if ok2:
+        return True, f"{detail}|{detail2}"
+    return False, f"{detail}|{detail2}"
+
+
+def _collect_named_controls(ctrl, out: list, *, depth: int, max_depth: int = 14) -> None:
+    if depth > max_depth or ctrl is None:
+        return
+    try:
+        ctype = (ctrl.ControlTypeName or "") if hasattr(ctrl, "ControlTypeName") else ""
+        name = (ctrl.Name or "").strip()
+        if name and (
+            "Button" in ctype
+            or "Hyperlink" in ctype
+            or "MenuItem" in ctype
+            or "ListItem" in ctype
+            or "ComboBox" in ctype
+        ):
+            out.append((name, ctype, ctrl))
+        for ch in ctrl.GetChildren():
+            _collect_named_controls(ch, out, depth=depth + 1, max_depth=max_depth)
+    except Exception:
+        return
+
+
+def try_invoke_generate_token_button(*, allow_click: bool = True) -> tuple[bool, str]:
+    """
+    Best-effort activate GitHub 「Generate token」 in a Chromium-PID window.
+
+    Used by Path B 「버튼이 안 보여요」 / auto-assist. Tries Invoke first, then
+    optional coordinate click (cursor restored) inside the PID-scoped window.
+    Soft-fails without uiautomation or when the control is not exposed.
+
+    Returns ``(ok, detail)``.
+    """
+    if not browser_address_available():
+        path_b_log("[Path B] Generate: uiautomation 없음")
+        return False, "uiautomation-missing"
+    try:
+        import uiautomation as auto
+    except Exception as e:
+        path_b_log(f"[Path B] Generate: import 실패 ({e})")
+        return False, f"import:{e}"
+
+    def _match_generate(name: str) -> bool:
+        low = (name or "").strip().lower()
+        if not low:
+            return False
+        if low == "generate token":
+            return True
+        return (
+            ("generate token" in low or "토큰 생성" in low)
+            and "new personal" not in low
+            and "generate new token" not in low
+        )
+
+    try:
+        pids = list_chromium_browser_pids()
+        path_b_log(
+            f"[Path B] Generate 시도 (click={'on' if allow_click else 'off'}, "
+            f"browser_pids={len(pids)})"
+        )
+        # Ranked: strong PAT title → foreground → Z-order proxy.
+        for w in _iter_chromium_windows(auto, pids=pids or None):
+            found: list = []
+            try:
+                for ctrl in w.GetChildren():
+                    _collect_named_controls(ctrl, found, depth=0)
+            except Exception:
+                continue
+            for name, _ctype, ctrl in found:
+                if not _match_generate(name):
+                    continue
+                ok, detail = _uia_activate(
+                    ctrl, allow_click=allow_click, owner_window=w
+                )
+                if ok:
+                    title = ""
+                    try:
+                        title = (w.Name or "")[:48]
+                    except Exception:
+                        pass
+                    msg = f"{detail}|win={title}"
+                    path_b_log(f"[Path B] Generate 성공: {msg}")
+                    return True, msg
+        fail = f"generate-not-found|pids={len(pids)}"
+        path_b_log(f"[Path B] Generate 실패: {fail}")
+        return False, fail
+    except Exception as e:
+        path_b_log(f"[Path B] Generate 오류: {e}")
+        return False, f"scan:{e}"
+
+
+def uia_name_is_expiration_opener(name: str) -> bool:
+    """True if accessible Name looks like the Expiration dropdown button."""
+    low = (name or "").strip().lower()
+    if not low or len(low) > 80:
+        return False
+    if "generate" in low:
+        return False
+    if "no expiration" in low or "만료 없음" in low:
+        return True
+    if re.search(r"\b\d{1,3}\s*days?\b", low):
+        return True
+    if low == "expiration" or low.startswith("expiration"):
+        return True
+    return False
+
+
+def uia_name_matches_expiration_option(name: str, days_value: str) -> bool:
+    """True if Name is the menu option for ``days_value`` (7/30/60/90/none)."""
+    want = (days_value or "90").strip().lower()
+    if want in ("", "no-expiration", "never"):
+        want = "none"
+    low = (name or "").strip().lower()
+    if not low or len(low) > 80:
+        return False
+    if want == "none":
+        return "no expiration" in low or "만료 없음" in low or low == "none"
+    if re.match(rf"^{want}\s*days?\b", low):
+        return True
+    if re.search(rf"(^|\b){want}\s*days?\b", low) and "custom" not in low:
+        return True
+    return False
+
+
+def read_token_expiration_uia() -> tuple[str | None, str]:
+    """
+    Read-only: best-effort Expiration opener label from Chromium a11y tree.
+
+    Returns ``(days_value_or_none_token, detail)``. ``days_value`` is
+    ``\"7\"|\"30\"|\"60\"|\"90\"|\"none\"`` when parsed, else ``None``.
+    Does not Invoke, Click, or SetFocus. Scans PID-scoped Chromium windows.
+    """
+    if not browser_address_available():
+        return None, "uiautomation-missing"
+    try:
+        import uiautomation as auto
+    except Exception as e:
+        return None, f"import:{e}"
+
+    try:
+        pids = list_chromium_browser_pids()
+        # Walk highest-ranked window first; return first solid opener there.
+        for w in _iter_chromium_windows(auto, pids=pids or None):
+            all_ctrls: list = []
+            try:
+                for ctrl in w.GetChildren():
+                    _collect_named_controls(ctrl, all_ctrls, depth=0)
+            except Exception:
+                continue
+            openers = [
+                (n, c) for n, _t, c in all_ctrls if uia_name_is_expiration_opener(n)
+            ]
+            if not openers:
+                continue
+            openers.sort(
+                key=lambda pair: (
+                    0 if re.search(r"\b\d{1,3}\s*days?\b", pair[0], re.I) else 1,
+                    0
+                    if "no expiration" in pair[0].lower() or "만료" in pair[0]
+                    else 1,
+                    len(pair[0]),
+                )
+            )
+            name = openers[0][0]
+            parsed = _parse_expiration_opener_days(name)
+            title = ""
+            try:
+                title = (w.Name or "")[:40]
+            except Exception:
+                pass
+            return parsed, f"opener:{name[:64]}|win={title}|pids={len(pids)}"
+        return None, f"expiry-opener-not-found|pids={len(pids)}"
+    except Exception as e:
+        return None, f"scan:{e}"
+
+
+def _parse_expiration_opener_days(name: str) -> str | None:
+    low = (name or "").strip().lower()
+    if not low:
+        return None
+    if "no expiration" in low or "만료 없음" in low:
+        return "none"
+    m = re.search(r"\b(\d{1,3})\s*days?\b", low)
+    if m:
+        return m.group(1)
+    return None
+
+
+def try_set_token_expiration_uia(
+    days_value: str, *, allow_click: bool = True
+) -> tuple[bool, str]:
+    """
+    Path B: set classic PAT Expiration on a Chromium-PID browser window.
+
+    ``days_value``: ``\"7\"|\"30\"|\"60\"|\"90\"|\"none\"`` (same as WebView path).
+
+    1. Resolve Chrome/Edge/… PIDs via ``tasklist`` and only scan those windows
+       (ranked: strong PAT title → foreground → score → Z-order).
+    2. Activate Expiration opener → matching option via Invoke, then optional
+       coordinate click (cursor restored) if Invoke is ignored.
+    3. Never closes the browser.
+
+    Soft-fails when Chrome hides the menu from a11y.
+    """
+    import time
+
+    if not browser_address_available():
+        path_b_log("[Path B] Expiration: uiautomation 없음")
+        return False, "uiautomation-missing"
+    try:
+        import uiautomation as auto
+    except Exception as e:
+        path_b_log(f"[Path B] Expiration: import 실패 ({e})")
+        return False, f"import:{e}"
+
+    want = (days_value or "90").strip().lower()
+    if want in ("", "no-expiration", "never"):
+        want = "none"
+
+    def _is_opener(name: str) -> bool:
+        return uia_name_is_expiration_opener(name)
+
+    def _is_option(name: str) -> bool:
+        return uia_name_matches_expiration_option(name, want)
+
+    pids = list_chromium_browser_pids()
+    path_b_log(
+        f"[Path B] Expiration 시도 want={want} "
+        f"click={'on' if allow_click else 'off'} browser_pids={len(pids)}"
+    )
+
+    def _find_opener() -> tuple[str, object, object] | None:
+        """Highest-ranked window that exposes an Expiration opener.
+
+        Returns ``(opener_name, opener_ctrl, owner_window)``.
+        """
+        for w in _iter_chromium_windows(auto, pids=pids or None):
+            found: list = []
+            try:
+                for ctrl in w.GetChildren():
+                    _collect_named_controls(ctrl, found, depth=0, max_depth=16)
+            except Exception:
+                continue
+            pairs = [(n, c) for n, _t, c in found if _is_opener(n)]
+            if not pairs:
+                continue
+            pairs.sort(
+                key=lambda pair: (
+                    0 if re.search(r"\b\d{1,3}\s*days?\b", pair[0], re.I) else 1,
+                    0 if "no expiration" in pair[0].lower() else 1,
+                    len(pair[0]),
+                )
+            )
+            n, c = pairs[0]
+            return n, c, w
+        return None
+
+    def _find_option(owner) -> tuple[str, object] | None:
+        """Find expiry option; prefer controls under ``owner`` window."""
+        windows = _iter_chromium_windows(auto, pids=pids or None)
+        ordered = []
+        if owner is not None:
+            ordered.append(owner)
+        for w in windows:
+            if w is not owner:
+                ordered.append(w)
+        for w in ordered:
+            found: list = []
+            try:
+                for ctrl in w.GetChildren():
+                    _collect_named_controls(ctrl, found, depth=0, max_depth=16)
+            except Exception:
+                continue
+            matches = [(n, c) for n, _t, c in found if _is_option(n)]
+            if not matches:
+                continue
+            matches.sort(key=lambda pair: len(pair[0]))
+            return matches[0]
+        return None
+
+    try:
+        # Log top-ranked window (title = active tab) for post-mortem.
+        ranked = _iter_chromium_windows(auto, pids=pids or None)
+        if ranked:
+            top = ranked[0]
+            try:
+                top_title = (top.Name or "")[:64]
+            except Exception:
+                top_title = "?"
+            path_b_log(
+                f"[Path B] 창 순위 1위: {top_title} "
+                f"(score={window_title_connect_score(top_title)}, "
+                f"windows={len(ranked)})"
+            )
+
+        found_opener = _find_opener()
+        if found_opener is None:
+            fail = f"expiry-opener-not-found|pids={len(pids)}"
+            path_b_log(f"[Path B] Expiration 실패: {fail}")
+            return False, fail
+
+        opener_name, opener_ctrl, owner = found_opener
+        already = _parse_expiration_opener_days(opener_name)
+        if already is not None and already == want:
+            ok_msg = f"already:{opener_name[:48]}|want={want}|pids={len(pids)}"
+            path_b_log(f"[Path B] Expiration 이미 일치: {ok_msg}")
+            return True, ok_msg
+
+        ok, detail = _uia_activate(
+            opener_ctrl, allow_click=allow_click, owner_window=owner
+        )
+        if not ok:
+            fail = f"opener-{detail}|pids={len(pids)}"
+            path_b_log(f"[Path B] Expiration opener 실패: {fail}")
+            return False, fail
+
+        time.sleep(0.55)
+
+        found_opt = _find_option(owner)
+        if found_opt is None:
+            fail = f"expiry-option-not-found:{want}|opened:{detail}"
+            path_b_log(f"[Path B] Expiration 옵션 실패: {fail}")
+            return False, fail
+
+        _opt_name, opt_ctrl = found_opt
+        ok2, detail2 = _uia_activate(
+            opt_ctrl, allow_click=allow_click, owner_window=owner
+        )
+        if not ok2:
+            fail = f"option-{detail2}"
+            path_b_log(f"[Path B] Expiration 옵션 활성화 실패: {fail}")
+            return False, fail
+
+        time.sleep(0.35)
+        # Read-back without further interaction.
+        got, read_detail = read_token_expiration_uia()
+        win_title = ""
+        try:
+            win_title = ((owner.Name if owner is not None else "") or "")[:40]
+        except Exception:
+            pass
+        if got is not None and got == want:
+            ok_msg = (
+                f"{detail}|{detail2}|verified:{got}|want={want}|win={win_title}"
+            )
+            path_b_log(f"[Path B] Expiration 성공(검증): {ok_msg}")
+            return True, ok_msg
+        # Activate may have worked even if read-back is stale / hidden.
+        ok_msg = (
+            f"{detail}|{detail2}|want={want}|readback={got}|"
+            f"{read_detail}|win={win_title}"
+        )
+        path_b_log(f"[Path B] Expiration 적용(읽기검증 불완전): {ok_msg}")
+        return True, ok_msg
+    except Exception as e:
+        path_b_log(f"[Path B] Expiration 오류: {e}")
+        return False, f"scan:{e}"
+
+
 def read_browser_page_sample() -> BrowserPageSample | None:
     """
     Best-effort sample: omnibox URL + window title + accessible UI names.
 
     Prefers foreground Chromium, then Apple/Google/GitHub tabs, then any
     Chromium window. Also samples a foreground Windows Security sheet
-    (passkey) which has no omnibox.
+    (passkey). Does not use screenshots (DOM often hidden from a11y);
+    callers may combine with coordinate click if UIA Invoke fails.
     """
     if not browser_address_available():
         return None
@@ -589,6 +1443,7 @@ def read_browser_page_sample() -> BrowserPageSample | None:
                 break
             win = parent
 
+        weak_fg: BrowserPageSample | None = None
         if top is not None:
             title = (top.Name or "").strip()
             ui_text = _harvest_ui_text(top)
@@ -599,22 +1454,39 @@ def read_browser_page_sample() -> BrowserPageSample | None:
                     ui_text=ui_text,
                     source="foreground-os",
                 )
+            # Foreground Chromium: only short-circuit when it looks like our
+            # connect flow. A Google-search tab in front must not hide a
+            # background "New Personal Access Token" window (same as UIA rank).
             if (top.ClassName or "") == _BROWSER_CLASS:
                 sample = _sample_win(top, "foreground")
                 if sample and (sample.url or sample.window_title):
-                    return sample
+                    u_fg = (sample.url or "").lower()
+                    score_fg = window_title_connect_score(
+                        sample.window_title or ""
+                    )
+                    if (
+                        score_fg >= 28
+                        or "github.com" in u_fg
+                        or "accounts.google.com" in u_fg
+                        or "appleid.apple.com" in u_fg
+                        or "idmsa.apple.com" in u_fg
+                    ):
+                        return sample
+                    weak_fg = sample
 
-        # Prefer sign-in related tabs (Google / Apple / GitHub)
-        root = auto.GetRootControl()
-        fallback: BrowserPageSample | None = None
-        for w in root.GetChildren():
+        # CloneUp guide is often StayOnTop, so foreground may not be the
+        # browser. Walk PID-scoped windows in rank order (title / Z-order).
+        pids = list_chromium_browser_pids()
+        fallback: BrowserPageSample | None = weak_fg
+        github_fallback: BrowserPageSample | None = None
+        for w in _iter_chromium_windows(auto, pids=pids or None):
             try:
-                if (w.ClassName or "") != _BROWSER_CLASS:
-                    continue
-                sample = _sample_win(w, "scan")
+                sample = _sample_win(w, "scan-ranked")
                 if sample is None:
                     continue
                 u = (sample.url or "").lower()
+                title_l = (sample.window_title or "").lower()
+                title_score = window_title_connect_score(sample.window_title or "")
                 if (
                     "accounts.google.com" in u
                     or "appleid.apple.com" in u
@@ -622,11 +1494,16 @@ def read_browser_page_sample() -> BrowserPageSample | None:
                     or "github.com" in u
                 ):
                     return sample
-                if fallback is None and sample.url:
+                # Strong PAT / GitHub title — take immediately (ranked first).
+                if title_score >= 28:
+                    return sample
+                if ("github" in title_l or title_score > 0) and github_fallback is None:
+                    github_fallback = sample
+                if fallback is None and (sample.url or sample.window_title):
                     fallback = sample
             except Exception:
                 continue
-        return fallback
+        return github_fallback or fallback
     except Exception:
         return None
 

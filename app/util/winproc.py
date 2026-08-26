@@ -66,7 +66,6 @@ def bring_window_to_front(widget: Any) -> None:
         return
     try:
         import ctypes
-        from ctypes import wintypes
 
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
@@ -94,5 +93,45 @@ def bring_window_to_front(widget: Any) -> None:
         finally:
             if attached:
                 user32.AttachThreadInput(fg_tid, our_tid, False)
+    except Exception:
+        pass
+
+
+def send_window_to_back(widget: Any) -> None:
+    """
+    Push a Qt window behind other top-level windows (near the desktop).
+
+    Used by the Path B browser guide so Chrome/Edge cover it until the user
+    minimizes other apps or explicitly clicks the guide.
+    """
+    if widget is None:
+        return
+    try:
+        widget.lower()
+    except Exception:
+        pass
+
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        hwnd = int(widget.winId())
+        if not hwnd:
+            return
+        # HWND_BOTTOM = 1
+        SWP_NOSIZE = 0x0001
+        SWP_NOMOVE = 0x0002
+        SWP_NOACTIVATE = 0x0010
+        user32.SetWindowPos(
+            hwnd,
+            1,  # HWND_BOTTOM
+            0,
+            0,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE,
+        )
     except Exception:
         pass

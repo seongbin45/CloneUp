@@ -1,19 +1,21 @@
-"""Small floating guide after SSO is handed off to the OS browser.
+"""Path B floating guide — conversational browser connect.
 
-User may sign in with password, passkey, Apple, or Google in a real browser.
-This dialog:
-- shows a method-neutral checklist
-- every 3s reads omnibox + accessible UI text (UI Automation, optional)
-- watches the clipboard for a PAT
-- lets the user paste / connect into Windows keyring via the parent wizard
+Design: ``desin/CloneUp 브라우저 안내 대화형.dc.html``
+
+User signs in (and confirms passkey/email) in the OS browser. The guide asks
+two chip questions (expiry, scopes), opens classic tokens/new with Note+scopes,
+then collects the issued PAT (clipboard / UIA).
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -23,7 +25,12 @@ from PySide6.QtWidgets import (
 )
 
 from app.auth.github_page_stage import GitHubPageStage, PageSnapshot, detect_github_page_stage
-from app.auth.pat_urls import classic_pat_create_url, make_pat_note
+from app.auth.pat_urls import (
+    classic_pat_create_url,
+    make_pat_note,
+    note_from_pat_create_url,
+)
+from app.ui.theme import active_palette
 from app.util.browser_address import (
     browser_address_available,
     detect_signin_method,
@@ -37,7 +44,85 @@ from app.util.browser_address import (
     token_create_error_snippets,
 )
 
+# Slight translucency so the browser behind remains faintly visible.
 _GUIDE_OPACITY = 0.90
+
+
+def _ss(color: str, *, size: str = "12.5px", weight: str | None = None, mono: bool = False) -> str:
+    """Inline label QSS from a palette color (light/dark)."""
+    parts = [f"font-size:{size}", f"color:{color}", "border:none", "background:transparent"]
+    if weight:
+        parts.append(f"font-weight:{weight}")
+    if mono:
+        parts.append("font-family: Consolas, 'IBM Plex Mono', monospace")
+    return ";".join(parts) + ";"
+
+
+def _guide_dialog_qss() -> str:
+    p = active_palette()
+    return f"""
+    QDialog {{
+        background: {p.bg_window};
+        color: {p.text};
+    }}
+    QLineEdit {{
+        background: {p.bg_input};
+        color: {p.text};
+        border: 1px solid {p.border_input};
+        border-radius: 6px;
+        padding: 6px 10px;
+        selection-background-color: {p.primary};
+    }}
+    QPushButton {{
+        background: {p.bg_window};
+        color: {p.text};
+        border: 1px solid {p.border_outline};
+        border-radius: 5px;
+        padding: 6px 12px;
+        font-size: 12.5px;
+        min-height: 28px;
+    }}
+    QPushButton:hover {{
+        background: {p.bg_hint};
+    }}
+    QPushButton:disabled {{
+        color: {p.text_disabled};
+        border: 1px solid {p.border_soft};
+    }}
+    QPushButton:default {{
+        background: {p.primary};
+        color: {p.text_on_primary};
+        border: 1px solid {p.primary};
+        font-weight: 600;
+    }}
+    QPushButton:default:hover {{
+        background: {p.primary_hover};
+    }}
+    """
+
+
+def _c_ok() -> str:
+    return active_palette().primary
+
+
+def _c_warn() -> str:
+    return active_palette().warn_text
+
+
+def _c_meta() -> str:
+    return active_palette().text_muted
+
+
+def _c_body() -> str:
+    return active_palette().text_secondary
+
+
+def _c_faint() -> str:
+    return active_palette().text_faint
+
+
+def _c_title() -> str:
+    return active_palette().text
 _ADDR_POLL_MS = 3000
 _CLIP_POLL_MS = 500
 _TOKEN_PREFIXES = ("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")
@@ -47,6 +132,14 @@ _GITHUB_LOGIN = "https://github.com/login"
 def build_pat_create_url(*, note: str | None = None) -> str:
     """classic ``repo`` token form; Note = CloneUp-YYYYMMDD-HHMMSS by default."""
     return classic_pat_create_url(note=note or make_pat_note())
+
+
+def build_pat_create_url_with_note(
+    *, note: str | None = None, scopes: str = "repo"
+) -> tuple[str, str]:
+    n = (note or "").strip() or make_pat_note()
+    return classic_pat_create_url(note=n, scopes=scopes or "repo"), n
+
 
 # Method-neutral checklist — do not force Google-only wording
 _CHECKLIST = (
@@ -100,9 +193,25 @@ def classify_browser_sample(
     if method == "google_blocked" or analysis.blocked:
         return ("rejected", 0, meta)
 
-    # /logout URL, or github.com showing Sign in / Sign up (logged-out home)
-    if method in ("github_logout", "github_logged_out"):
+    from app.util.browser_address import (
+        looks_like_github_logged_in_ui,
+        looks_like_github_logged_out_ui,
+    )
+
+    # Explicit logout URL
+    if method == "github_logout":
         return ("logged_out", 0, meta)
+
+    # Weak "logged out" from a11y — override when dashboard / settings URL proves login
+    if method == "github_logged_out":
+        u_l = u.lower()
+        if looks_like_github_logged_in_ui(window_title, ui_text):
+            meta["method"] = "github"
+            # fall through — treat as logged-in below
+        elif "/settings/" in u_l or "/tokens" in u_l:
+            meta["method"] = "github"
+        else:
+            return ("logged_out", 0, meta)
 
     # Passkey OS sheet or Apple / Google / GitHub login form → still signing in
     if method in ("passkey", "apple", "google", "github_login"):
@@ -110,6 +219,13 @@ def classify_browser_sample(
 
     if not u and not window_title:
         return ("unknown", None, meta)
+
+    # Title-only GitHub window (omnibox often empty while guide is StayOnTop)
+    if not u and "github" in (window_title or "").lower():
+        if looks_like_github_logged_out_ui(window_title, ui_text, url=""):
+            return ("logged_out", 0, meta)
+        meta["method"] = "github_title"
+        return ("reached", 1, meta)
 
     # PAT Note collision flash — must win over generic token-page "reached"
     if looks_like_token_note_taken(window_title, ui_text, url=u):
@@ -140,7 +256,9 @@ def classify_browser_sample(
     ):
         return ("reached", 2, meta)
     if st == GitHubPageStage.AUTH_2FA:
-        return ("reached", 1, meta)
+        # Not "reached" for dialogue — user must finish OTP/passkey first.
+        meta["method"] = "github_2fa"
+        return ("current", 0, meta)
     if st == GitHubPageStage.LOGIN:
         return ("current", 0, meta)
 
@@ -182,9 +300,14 @@ def away_from_flow_guide_copy() -> tuple[str, str, str]:
 
 
 def fallback_return_url(*, reached: int) -> str:
-    """When no remembered family URL, suggest a sensible resume target."""
+    """When no remembered family URL, suggest a sensible resume target.
+
+    Prefer ``build_pat_create_url_with_note`` at call sites that need to
+    record Note; this helper only returns a URL (Note is embedded in query).
+    """
     if reached >= 2:
-        return build_pat_create_url()
+        url, _note = build_pat_create_url_with_note()
+        return url
     if reached >= 1:
         return "https://github.com/"
     return _GITHUB_LOGIN
@@ -318,20 +441,146 @@ def should_auto_open_token_page(
     kind: str,
     idx: int | None,
     already_opened: bool,
+    url: str = "",
+    title: str = "",
+    page_text: str = "",
 ) -> bool:
-    """Open tokens/new once when login is confirmed on github.com (not yet on PAT pages)."""
-    if already_opened:
-        return False
-    return kind == "reached" and idx == 1
+    """Open tokens/new once when login is confirmed on github.com main."""
+    from app.ui.webview_flow_detect import (
+        should_auto_open_token_page as _shared_should_auto_open,
+    )
+
+    return _shared_should_auto_open(
+        kind=kind,
+        idx=idx,
+        already_opened=already_opened,
+        url=url,
+        title=title,
+        page_text=page_text,
+    )
+
+
+
+# --- conversational Path B panel (concatenated after helpers) ---
+
+from PySide6.QtWidgets import QFrame, QSizePolicy
+
+from app.ui.browser_dialogue_model import (
+    DialogueScene,
+    EXPIRY_OPTIONS,
+    SCOPE_OPTIONS,
+    advance_from_browser_kind,
+    build_history,
+    expires_at_for_chip,
+    expiry_days_value,
+    scene_copy,
+    scope_query_value,
+)
+from app.ui.path_b_assist_worker import PathBAssistWorker
+from app.util.browser_address import (
+    path_b_log,
+    read_token_expiration_uia,
+    set_path_b_log_sink,
+)
+
+
+def _dialogue_qss() -> str:
+    p = active_palette()
+    return _guide_dialog_qss() + f"""
+    QLabel#dlgSay {{
+        font-size: 16px; font-weight: 600; color: {p.text};
+        border: none; background: transparent;
+    }}
+    QLabel#dlgSub {{
+        font-size: 12.5px; color: {p.text_muted};
+        border: none; background: transparent;
+    }}
+    QLabel#dlgHeadTitle {{
+        font-size: 12px; font-weight: 600; color: {p.text};
+        border: none; background: transparent;
+    }}
+    QLabel#dlgRightTag {{
+        font-size: 11.5px; color: {p.text_muted};
+        border: none; background: transparent;
+    }}
+    QLabel#dlgHistText {{
+        font-size: 12px; color: {p.text_muted};
+        border: none; background: transparent;
+    }}
+    QPushButton#dlgHistChange {{
+        background: transparent; border: none;
+        color: {p.primary}; font-size: 11.5px; padding: 0 2px;
+        min-height: 0;
+    }}
+    QPushButton#dlgHistChange:hover {{ color: {p.primary_hover}; }}
+    QPushButton#dlgChip {{
+        background: {p.bg_muted};
+        border: 1px solid {p.border_outline};
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-size: 14px;
+        font-weight: 500;
+        color: {p.text};
+        min-height: 44px;
+        text-align: left;
+    }}
+    QPushButton#dlgChip:hover {{
+        background: {p.hover_muted};
+        border: 1px solid {p.primary};
+    }}
+    QPushButton#dlgChipRec {{
+        background: {p.bg_window};
+        border: 2px solid {p.primary};
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        color: {p.text};
+        min-height: 44px;
+        text-align: left;
+    }}
+    QPushButton#dlgChipRec:hover {{
+        background: {p.bg_hint};
+    }}
+    QFrame#dlgWait {{
+        background: {p.bg_muted}; border: none; border-radius: 10px;
+    }}
+    QFrame#dlgNudge {{
+        background: {_warn_soft()}; border: 1px solid {p.warn_border};
+        border-radius: 10px;
+    }}
+    QPushButton#dlgNudgeBtn {{
+        background: {p.bg_window}; border: 1px solid {p.warn_border};
+        border-radius: 7px; padding: 4px 13px; font-size: 12px;
+        color: {p.text}; min-height: 32px;
+    }}
+    QPushButton#dlgPrimary {{
+        background: {p.primary}; color: {p.text_on_primary};
+        border: 1px solid {p.primary}; border-radius: 11px;
+        font-size: 14.5px; font-weight: 600; min-height: 46px;
+    }}
+    QPushButton#dlgPrimary:hover {{ background: {p.primary_hover}; }}
+    QPushButton#dlgQuit {{
+        background: transparent; border: none; color: {p.text_muted};
+        font-size: 12px; padding: 0; min-height: 0;
+    }}
+    QPushButton#dlgQuit:hover {{ color: {p.text}; }}
+    QFrame#dlgHeader {{
+        background: {p.bg_bar}; border: none;
+        border-bottom: 1px solid {p.border_soft};
+    }}
+    QFrame#dlgReceipt {{
+        background: {p.bg_muted}; border: none; border-radius: 9px;
+    }}
+    """
+
+
+def _warn_soft() -> str:
+    return "#2e2a1e" if active_palette().name == "dark" else "#fbf6ee"
 
 
 class ExternalBrowserPatGuide(QDialog):
-    """Standalone browser-path connect UI (Path B).
-
-    Must not run nested under ConnectGitHubWizard. Main window closes the
-    wizard first, then ``exec()`` this dialog alone. 「연결」 accepts with
-    ``token()`` — independent of WebView ``_finish``.
-    """
+    """Conversational Path B guide (checklist removed)."""
 
     token_accepted = Signal(str)
     cancelled = Signal()
@@ -341,149 +590,170 @@ class ExternalBrowserPatGuide(QDialog):
         anchor: QWidget | None = None,
         *,
         open_login_on_start: bool = False,
+        log: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(None)
         self._anchor = anchor
-        self._clip_seen = ""
         self._done = False
-        self._token = ""  # set on Connect for token() after exec()
-        self._auto_connect_pending = False
-        self._reached = -1  # highest checklist index marked done
-        self._current: int | None = None  # in-progress step (●)
-        self._google_rejected = False
-        self._token_note_taken = False  # UIA: Note has already been taken
-        self._token_nav_opened = False  # auto-open tokens/new at most once
-        self._last_family_url = ""  # last GitHub-flow family URL (soft return)
-        self._check_labels: list[QLabel] = []
-        self._last_url = ""
+        self._token = ""
+        self._pat_note = ""
+        self._expires_at: str | None = None
         self._open_login_on_start = open_login_on_start
+        self._ui_log = log
+        self._scene = DialogueScene.LOGIN_WAIT
+        self._expiry_label: str | None = None
+        self._scope_label: str | None = None
+        self._logged_in = False
+        self._got_token = False
+        self._token_nav_opened = False
+        self._create_url = ""
+        self._last_family_url = ""
+        self._google_blocked = False
+        self._wait_dot_i = 0
+        self._clip_seen = ""
+        self._expiry_uia_ok = False
+        self._expiry_uia_tries = 0
+        self._assist_worker: PathBAssistWorker | None = None
 
-        self.setWindowTitle("CloneUp — 브라우저 안내")
-        # Standalone modal — only this connect UI should be up
+        # Tee Path B UIA helpers into main textLog while this guide is alive.
+        set_path_b_log_sink(self._emit_log)
+        self._guide_log("[Path B] 브라우저 안내 시작")
+
+        self.setWindowTitle("CloneUp — GitHub 연결")
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.WindowTitleHint
+            | Qt.WindowType.WindowSystemMenuHint
+            | Qt.WindowType.WindowCloseButtonHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
         self.setWindowOpacity(_GUIDE_OPACITY)
-        self.setMinimumWidth(380)
+        self.setMinimumWidth(360)
         self.setMaximumWidth(440)
+        self.setStyleSheet(_dialogue_qss())
 
-        self._title = QLabel("브라우저에서 이어서 하세요")
-        self._title.setStyleSheet(
-            "font-size:15px;font-weight:600;color:#232019;border:none;"
+        # Header
+        head = QFrame()
+        head.setObjectName("dlgHeader")
+        hl = QHBoxLayout(head)
+        hl.setContentsMargins(14, 11, 14, 11)
+        hl.setSpacing(10)
+        brand = QLabel("GitHub 연결")
+        brand.setObjectName("dlgHeadTitle")
+        self._right_tag = QLabel("1 / 3")
+        self._right_tag.setObjectName("dlgRightTag")
+        hl.addWidget(brand)
+        hl.addStretch(1)
+        hl.addWidget(self._right_tag)
+
+        self._hist_host = QVBoxLayout()
+        self._hist_host.setContentsMargins(0, 0, 0, 0)
+        self._hist_host.setSpacing(6)
+
+        self._say = QLabel("")
+        self._say.setObjectName("dlgSay")
+        self._say.setWordWrap(True)
+        self._sub = QLabel("")
+        self._sub.setObjectName("dlgSub")
+        self._sub.setWordWrap(True)
+
+        self._chips_host = QWidget()
+        self._chips_host.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
-        self._title.setWordWrap(True)
+        # Vertical stack — horizontal pills were easy to miss / clip at 440px.
+        self._chips_lay = QVBoxLayout(self._chips_host)
+        self._chips_lay.setContentsMargins(0, 4, 0, 4)
+        self._chips_lay.setSpacing(8)
+        self._chips_host.hide()
 
-        self._lead = QLabel(
-            "비밀번호·패스키·Apple·Google 중 편한 방법으로 로그인한 뒤 "
-            "키를 만들어 주세요."
+        self._wait = QFrame()
+        self._wait.setObjectName("dlgWait")
+        wl = QHBoxLayout(self._wait)
+        wl.setContentsMargins(12, 12, 14, 12)
+        wl.setSpacing(10)
+        self._wait_dots = QLabel("●○○")
+        self._wait_dots.setStyleSheet(_ss(_c_ok(), size="10px"))
+        self._wait_text = QLabel("")
+        self._wait_text.setObjectName("dlgSub")
+        self._wait_text.setWordWrap(True)
+        wl.addWidget(self._wait_dots, 0)
+        wl.addWidget(self._wait_text, 1)
+        self._wait.hide()
+
+        self._nudge = QFrame()
+        self._nudge.setObjectName("dlgNudge")
+        nl = QVBoxLayout(self._nudge)
+        nl.setContentsMargins(13, 13, 13, 13)
+        nl.setSpacing(9)
+        self._nudge_text = QLabel("")
+        self._nudge_text.setObjectName("dlgSub")
+        self._nudge_text.setWordWrap(True)
+        self._nudge_btn = QPushButton("버튼이 안 보여요")
+        self._nudge_btn.setObjectName("dlgNudgeBtn")
+        self._nudge_btn.clicked.connect(self._on_nudge_generate)
+        self._nudge_cdp_btn = QPushButton("제어용 브라우저 열기")
+        self._nudge_cdp_btn.setObjectName("dlgNudgeBtn")
+        self._nudge_cdp_btn.setToolTip(
+            "CLONEUP_CDP=1 일 때, 디버깅 포트로 Chrome/Edge를 전용 프로필로 엽니다. "
+            "Expiration을 DOM으로 맞출 수 있습니다."
         )
-        self._lead.setWordWrap(True)
-        self._lead.setStyleSheet("font-size:12.5px;color:#4a453b;border:none;")
+        self._nudge_cdp_btn.clicked.connect(self._on_launch_cdp_browser)
+        nl.addWidget(self._nudge_text)
+        nl.addWidget(self._nudge_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        nl.addWidget(self._nudge_cdp_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        self._nudge.hide()
 
-        self._url_lab = QLabel("주소: (아직 읽지 못함)")
-        self._url_lab.setWordWrap(True)
-        self._url_lab.setStyleSheet(
-            "font-size:11px;color:#6d675c;border:none;"
-            "font-family: Consolas, 'IBM Plex Mono', monospace;"
-        )
-        if not browser_address_available():
-            self._url_lab.setText(
-                "주소: (uiautomation 없음 — pip install uiautomation)"
-            )
-
-        self._verify_lab = QLabel("검증: 주소를 확인하는 중…")
-        self._verify_lab.setWordWrap(True)
-        self._verify_lab.setStyleSheet(
-            "font-size:11.5px;color:#6d675c;border:none;"
-        )
-
-        steps_box = QWidget()
-        steps_lay = QVBoxLayout(steps_box)
-        steps_lay.setContentsMargins(0, 2, 0, 2)
-        steps_lay.setSpacing(3)
-        hint = QLabel("할 일")
-        hint.setStyleSheet(
-            "font-size:12px;font-weight:600;color:#3d382f;border:none;"
-        )
-        steps_lay.addWidget(hint)
-        for label in _CHECKLIST:
-            row = QLabel(f"○  {label}")
-            row.setStyleSheet("font-size:12.5px;color:#4a453b;border:none;")
-            row.setWordWrap(True)
-            self._check_labels.append(row)
-            steps_lay.addWidget(row)
-
-        self._edit = QLineEdit()
-        self._edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._edit.setPlaceholderText("키가 여기 들어오거나, 직접 붙여 넣으세요")
-        self._edit.setClearButtonEnabled(True)
-        self._edit.setMinimumHeight(36)
-        self._edit.textChanged.connect(self._on_text)
-
-        btn_paste = QPushButton("붙여넣기")
-        btn_paste.clicked.connect(self._paste_clipboard)
-        self._btn_toggle = QPushButton("보기")
-        self._btn_toggle.setCheckable(True)
-        self._btn_toggle.toggled.connect(self._on_toggle_visible)
-
-        key_row = QHBoxLayout()
-        key_row.setSpacing(6)
-        key_row.addWidget(self._edit, 1)
-        key_row.addWidget(btn_paste)
-        key_row.addWidget(self._btn_toggle)
-
-        self._status = QLabel("")
-        self._status.setWordWrap(True)
-        self._status.setStyleSheet("font-size:11.5px;color:#1f6f5c;border:none;")
+        self._done_host = QWidget()
+        self._done_lay = QVBoxLayout(self._done_host)
+        self._done_lay.setContentsMargins(0, 0, 0, 0)
+        self._done_lay.setSpacing(7)
+        self._done_host.hide()
 
         self._btn_reopen = QPushButton("GitHub 로그인 다시 열기")
-        self._btn_reopen.setToolTip(
-            "Google 오류 화면이면 이 버튼으로 GitHub 로그인을 새로 여세요."
-        )
         self._btn_reopen.clicked.connect(self._reopen_github_login)
         self._btn_reopen.hide()
 
-        self._btn_open_tokens = QPushButton("키 만들기 페이지 열기")
-        self._btn_open_tokens.setToolTip(
-            "classic 키(repo) 만들기 페이지를 엽니다. "
-            "Note 이름이 겹치면 새 이름으로 다시 엽니다."
+        # Hidden fallback paste (auto-connect still works)
+        self._edit = QLineEdit()
+        self._edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._edit.hide()
+        self._edit.textChanged.connect(self._on_edit_text)
+
+        foot = QHBoxLayout()
+        foot.setContentsMargins(0, 0, 0, 0)
+        self._btn_quit = QPushButton("그만하기")
+        self._btn_quit.setObjectName("dlgQuit")
+        self._btn_quit.clicked.connect(self._on_cancel)
+        self._foot_note = QLabel("")
+        self._foot_note.setObjectName("dlgSub")
+        self._foot_note.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
-        self._btn_open_tokens.clicked.connect(self._on_open_token_page_clicked)
-        self._btn_open_tokens.hide()
+        foot.addWidget(self._btn_quit)
+        foot.addStretch(1)
+        foot.addWidget(self._foot_note)
 
-        self._btn_return_flow = QPushButton("마지막으로 열었던 페이지로 돌아가기")
-        self._btn_return_flow.setToolTip(
-            "직전에 열었던 GitHub·로그인 연계 페이지를 다시 엽니다. "
-            "원하지 않으면 누르지 않아도 됩니다."
-        )
-        self._btn_return_flow.clicked.connect(self._on_return_to_flow_clicked)
-        self._btn_return_flow.hide()
-
-        btn_cancel = QPushButton("취소")
-        btn_cancel.clicked.connect(self._on_cancel)
-        self._btn_connect = QPushButton("연결")
-        self._btn_connect.setEnabled(False)
-        self._btn_connect.setDefault(True)
-        self._btn_connect.clicked.connect(self._on_connect)
-
-        nav = QHBoxLayout()
-        nav.addWidget(btn_cancel)
-        nav.addStretch(1)
-        nav.addWidget(self._btn_connect)
+        body = QVBoxLayout()
+        body.setContentsMargins(16, 15, 16, 16)
+        body.setSpacing(12)
+        body.addLayout(self._hist_host)
+        body.addWidget(self._say)
+        body.addWidget(self._sub)
+        body.addWidget(self._chips_host)
+        body.addWidget(self._wait)
+        body.addWidget(self._nudge)
+        body.addWidget(self._done_host)
+        body.addWidget(self._btn_reopen)
+        body.addWidget(self._edit)
+        body.addLayout(foot)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 12, 14, 12)
-        root.setSpacing(8)
-        root.addWidget(self._title)
-        root.addWidget(self._lead)
-        root.addWidget(self._url_lab)
-        root.addWidget(self._verify_lab)
-        root.addWidget(steps_box)
-        root.addWidget(self._btn_reopen)
-        root.addWidget(self._btn_open_tokens)
-        root.addWidget(self._btn_return_flow)
-        root.addLayout(key_row)
-        root.addWidget(self._status)
-        root.addLayout(nav)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(head)
+        root.addLayout(body)
 
         self._clip_timer = QTimer(self)
         self._clip_timer.setInterval(_CLIP_POLL_MS)
@@ -494,15 +764,45 @@ class ExternalBrowserPatGuide(QDialog):
         self._addr_timer.setInterval(_ADDR_POLL_MS)
         self._addr_timer.timeout.connect(self._poll_address)
         self._addr_timer.start()
-        # First read soon so the user sees feedback quickly
+
+        self._dot_timer = QTimer(self)
+        self._dot_timer.setInterval(420)
+        self._dot_timer.timeout.connect(self._tick_dots)
+
+        self._render()
+        self._place_bottom_left()
         QTimer.singleShot(400, self._poll_address)
         if self._open_login_on_start:
             QTimer.singleShot(200, self._reopen_github_login)
 
-        self._place_top_left()
+    # --- public API ---
+    def token(self) -> str:
+        return (self._token or self._edit.text() or "").strip()
 
-    def _place_top_left(self) -> None:
-        """Default position: top-left of the work area (away from browser center)."""
+    def token_note(self) -> str:
+        return (self._pat_note or "").strip()
+
+    def token_expires_at(self) -> str | None:
+        return self._expires_at
+
+    def _emit_log(self, message: str) -> None:
+        """Sink for ``path_b_log`` — main ``textLog`` only (print already done)."""
+        if self._ui_log is None:
+            return
+        try:
+            self._ui_log(message)
+        except Exception:
+            pass
+
+    def _guide_log(self, message: str) -> None:
+        """Scene / chip events — print + textLog via Path B sink."""
+        path_b_log(message)
+
+    def _place_bottom_left(self) -> None:
+        """Default: lower-left of the work area (taskbar-safe).
+
+        Clamp height so chip buttons are never clipped below the screen.
+        """
         margin = 24
         self.adjustSize()
         try:
@@ -514,473 +814,500 @@ class ExternalBrowserPatGuide(QDialog):
             if screen is None:
                 return
             avail = screen.availableGeometry()
+            max_h = max(280, avail.height() - 2 * margin)
+            if self.height() > max_h:
+                self.resize(self.width(), max_h)
+            fg = self.frameGeometry()
             x = avail.left() + margin
-            y = avail.top() + margin
-            self.move(x, y)
+            y = avail.top() + avail.height() - fg.height() - margin
+            y = max(avail.top() + margin, y)
+            # Keep bottom edge inside the work area
+            if y + fg.height() > avail.top() + avail.height() - margin:
+                y = avail.top() + avail.height() - fg.height() - margin
+            self.move(x, max(avail.top() + margin, y))
         except Exception:
             pass
 
-    def _on_toggle_visible(self, on: bool) -> None:
-        self._edit.setEchoMode(
-            QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password
-        )
-        self._btn_toggle.setText("숨기기" if on else "보기")
-
-    def _paste_clipboard(self) -> None:
-        clip = QGuiApplication.clipboard()
-        if clip is None:
+    # --- scene render ---
+    def _set_scene(self, scene: DialogueScene) -> None:
+        if scene == self._scene:
+            # Still refresh chips/visibility (e.g. after reopen)
+            self._render()
+            self.adjustSize()
+            self._place_bottom_left()
             return
-        text = (clip.text() or "").strip()
-        if text:
-            self._edit.setText(text)
-            # _on_text schedules auto-connect when the value looks like a PAT
+        prev = self._scene
+        self._scene = scene
+        self._guide_log(f"[Path B] 장면 {prev.name} → {scene.name}")
+        self._render()
+        self.adjustSize()
+        self._place_bottom_left()
 
-    def _on_text(self, text: str) -> None:
-        has = bool((text or "").strip())
-        self._btn_connect.setEnabled(has)
-        if _looks_like_token(text or ""):
-            self._google_rejected = False
-            self._clear_token_note_taken()
-            self._btn_reopen.hide()
-            self._btn_open_tokens.hide()
-            self._mark_reached(3)
-            self._status.setStyleSheet(
-                "font-size:11.5px;color:#1f6f5c;border:none;"
+    def _render(self) -> None:
+        sc = scene_copy(
+            self._scene,
+            expiry_label=self._expiry_label or "90일",
+        )
+        self._right_tag.setText(sc.right_tag)
+        self._say.setText(sc.say)
+        self._sub.setText(sc.sub)
+        self._foot_note.setText(sc.foot_note)
+        self._btn_quit.setVisible(sc.show_cancel)
+
+        self._rebuild_history()
+        self._rebuild_chips()
+
+        waiting = self._scene in (
+            DialogueScene.LOGIN_WAIT,
+            DialogueScene.AUTH_WAIT,
+        )
+        self._wait.setVisible(waiting)
+        if waiting:
+            self._wait_text.setText(sc.wait_text)
+            if not self._dot_timer.isActive():
+                self._dot_timer.start()
+        else:
+            self._dot_timer.stop()
+
+        nudge = self._scene == DialogueScene.PRESS_GENERATE
+        self._nudge.setVisible(nudge)
+        if nudge:
+            self._nudge_text.setText(sc.nudge_text)
+            self._nudge_btn.setText(sc.nudge_btn or "버튼이 안 보여요")
+            try:
+                from app.util.browser_cdp import cdp_enabled, probe_cdp_endpoint
+
+                show_cdp = cdp_enabled()
+                self._nudge_cdp_btn.setVisible(show_cdp)
+                if show_cdp and probe_cdp_endpoint() is not None:
+                    self._nudge_cdp_btn.setText("제어용 브라우저 연결됨")
+                    self._nudge_cdp_btn.setEnabled(False)
+                elif show_cdp:
+                    self._nudge_cdp_btn.setText("제어용 브라우저 열기")
+                    self._nudge_cdp_btn.setEnabled(True)
+            except Exception:
+                self._nudge_cdp_btn.hide()
+
+        done = self._scene == DialogueScene.DONE
+        self._done_host.setVisible(done)
+        if done:
+            self._rebuild_receipt()
+
+        self._btn_reopen.setVisible(
+            self._scene == DialogueScene.LOGIN_WAIT and self._google_blocked
+        )
+
+    def _rebuild_history(self) -> None:
+        while self._hist_host.count():
+            item = self._hist_host.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        rows = build_history(
+            self._scene,
+            expiry_label=self._expiry_label,
+            scope_label=self._scope_label,
+            logged_in=self._logged_in,
+            got_token=self._got_token,
+        )
+        for row in rows:
+            bar = QWidget()
+            hl = QHBoxLayout(bar)
+            hl.setContentsMargins(0, 0, 0, 0)
+            hl.setSpacing(9)
+            mark = QLabel("✓")
+            mark.setStyleSheet(_ss(_c_ok(), size="10px"))
+            mark.setFixedWidth(13)
+            mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            text = QLabel(row.text)
+            text.setObjectName("dlgHistText")
+            hl.addWidget(mark)
+            hl.addWidget(text, 1)
+            if row.editable and row.back_to is not None:
+                btn = QPushButton("변경")
+                btn.setObjectName("dlgHistChange")
+                target = row.back_to
+                btn.clicked.connect(lambda _=False, t=target: self._on_history_change(t))
+                hl.addWidget(btn)
+            self._hist_host.addWidget(bar)
+
+    def _rebuild_chips(self) -> None:
+        while self._chips_lay.count():
+            item = self._chips_lay.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+        if self._scene == DialogueScene.ASK_EXPIRY:
+            opts = EXPIRY_OPTIONS
+            handler = self._on_expiry_chip
+        elif self._scene == DialogueScene.ASK_SCOPE:
+            opts = SCOPE_OPTIONS
+            handler = self._on_scope_chip
+        else:
+            self._chips_host.hide()
+            return
+        for label, _val, rec in opts:
+            text = f"{label}    · 권장" if rec else label
+            btn = QPushButton(text)
+            btn.setObjectName("dlgChipRec" if rec else "dlgChip")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setMinimumHeight(44)
+            btn.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
             )
-            self._status.setText("키를 인식했어요. 자동으로 연결합니다…")
-            self._schedule_auto_connect(source="키 인식")
-        elif has:
-            self._status.setText("")
+            btn.clicked.connect(lambda _=False, lab=label: handler(lab))
+            self._chips_lay.addWidget(btn)
+        self._chips_host.show()
+        self._chips_host.raise_()
 
-    def _schedule_auto_connect(self, *, source: str) -> None:
-        """When a PAT is in the field, press Connect without a second click."""
-        if self._done or self._auto_connect_pending:
-            return
-        if not _looks_like_token(self._edit.text() or ""):
-            return
-        self._auto_connect_pending = True
-        self._status.setStyleSheet(
-            "font-size:11.5px;color:#1f6f5c;border:none;"
+    def _rebuild_receipt(self) -> None:
+        while self._done_lay.count():
+            item = self._done_lay.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        scope_disp = "repo" if (self._scope_label or "").startswith("저장소만") else "repo · workflow"
+        rows = (
+            ("권한", scope_disp),
+            ("만료", self._expiry_label or "—"),
         )
-        self._status.setText(f"{source} — 자동으로 연결합니다…")
-        # Defer so textChanged / clipboard handlers finish first
-        QTimer.singleShot(0, self._run_auto_connect)
+        for k, v in rows:
+            card = QFrame()
+            card.setObjectName("dlgReceipt")
+            rl = QHBoxLayout(card)
+            rl.setContentsMargins(14, 11, 14, 11)
+            kl = QLabel(k)
+            kl.setObjectName("dlgSub")
+            vl = QLabel(v)
+            vl.setStyleSheet(_ss(_c_title(), size="12px", mono=True))
+            rl.addWidget(kl)
+            rl.addStretch(1)
+            rl.addWidget(vl)
+            self._done_lay.addWidget(card)
+        go = QPushButton("클론업으로 돌아가기")
+        go.setObjectName("dlgPrimary")
+        go.setDefault(True)
+        go.clicked.connect(self._finish_accept)
+        self._done_lay.addWidget(go)
 
-    def _run_auto_connect(self) -> None:
-        self._auto_connect_pending = False
+    def _tick_dots(self) -> None:
+        self._wait_dot_i = (self._wait_dot_i + 1) % 3
+        dots = ["●○○", "○●○", "○○●"][self._wait_dot_i]
+        self._wait_dots.setText(dots)
+
+    # --- chip / history handlers ---
+    def _on_history_change(self, target: DialogueScene) -> None:
+        if target == DialogueScene.ASK_EXPIRY:
+            self._scope_label = None
+            self._token_nav_opened = False
+            self._expiry_uia_ok = False
+            self._expiry_uia_tries = 0
+        self._set_scene(target)
+
+    def _on_expiry_chip(self, label: str) -> None:
+        self._expiry_label = label
+        self._expires_at = expires_at_for_chip(label)
+        self._expiry_uia_ok = False
+        self._expiry_uia_tries = 0
+        self._guide_log(f"[Path B] 만료 선택: {label} → {self._expires_at}")
+        self._set_scene(DialogueScene.ASK_SCOPE)
+
+    def _on_scope_chip(self, label: str) -> None:
+        self._scope_label = label
+        self._guide_log(f"[Path B] 권한 선택: {label}")
+        # Re-open with chosen scopes + fresh Note (login may have opened defaults).
+        self._open_token_create_page()
+        self._set_scene(DialogueScene.PRESS_GENERATE)
+        # Expiration is not in the create URL — after the page loads, try
+        # Invoke then PID-scoped coordinate click (cursor restored).
+        self._schedule_expiry_invoke_tries()
+
+    def _open_token_create_page(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        scopes = scope_query_value(self._scope_label or "저장소만")
+        url, note = build_pat_create_url_with_note(scopes=scopes)
+        self._pat_note = note
+        self._create_url = url
+        self._last_family_url = url
+        self._token_nav_opened = True
+        QDesktopServices.openUrl(QUrl(url))
+
+    def _wanted_expiry_days(self) -> str:
+        return expiry_days_value(self._expiry_label or "90일")
+
+    def _assist_busy(self) -> bool:
+        w = self._assist_worker
+        return w is not None and w.isRunning()
+
+    def _start_assist_worker(
+        self,
+        op: str,
+        *,
+        days: str | None = None,
+        skip_expiry: bool = False,
+    ) -> bool:
+        """Start background CDP/UIA assist. Returns False if already busy."""
+        if self._assist_busy():
+            return False
+        worker = PathBAssistWorker(
+            op,
+            days=days,
+            skip_expiry=skip_expiry,
+            parent=self,
+        )
+        worker.finished_result.connect(self._on_assist_finished)
+        self._assist_worker = worker
+        worker.start()
+        return True
+
+    def _on_assist_finished(self, op: str, ok: bool, detail: str) -> None:
+        """UI-thread slot: apply background assist result."""
         if self._done:
             return
-        self._on_connect()
-
-    def _refresh_checklist_labels(self) -> None:
-        for i, lab in enumerate(self._check_labels):
-            text = checklist_row_label(
-                i,
-                reached=self._reached,
-                current=self._current,
-                google_rejected=self._google_rejected,
-                token_note_taken=self._token_note_taken,
-            )
-            lab.setText(text)
-            if text.startswith("!"):
-                lab.setStyleSheet(
-                    "font-size:12.5px;color:#8a6d12;font-weight:600;border:none;"
+        if op == "wait_ready":
+            if ok:
+                self._guide_log("[Path B][CDP] 포트 준비됨 — Expiration 재시도")
+                self._sub.setText(
+                    "제어용 브라우저가 연결됐습니다. "
+                    "키 만들기 페이지가 보이면 Expiration을 맞춰 볼게요."
                 )
-            elif text.startswith("✓") or text.startswith("→"):
-                lab.setStyleSheet(
-                    "font-size:12.5px;color:#1f6f5c;font-weight:600;border:none;"
-                )
+                self._expiry_uia_ok = False
+                self._schedule_expiry_invoke_tries()
             else:
-                lab.setStyleSheet(
-                    "font-size:12.5px;color:#8b8477;border:none;"
+                self._guide_log("[Path B][CDP] 포트 미응답 — UIA/수동으로 진행")
+                self._sub.setText(
+                    "제어용 브라우저 포트가 아직 안 열렸습니다. "
+                    "페이지가 뜬 뒤 「버튼이 안 보여요」를 누르거나 "
+                    "Expiration을 직접 맞춰 주세요."
                 )
-
-    def _mark_reached(self, index: int) -> None:
-        if index < 0:
+            self._render()
             return
-        self._reached = max(self._reached, index)
-        self._current = None
-        self._refresh_checklist_labels()
 
-    def _set_current(self, index: int) -> None:
-        self._current = index
-        self._refresh_checklist_labels()
+        if op == "expiry":
+            if ok:
+                self._expiry_uia_ok = True
+                exp = self._expiry_label or "90일"
+                self._sub.setText(
+                    f"Expiration을 {exp}으로 맞춰 봤어요. "
+                    "Generate token을 눌러 주세요."
+                )
+                return
+            if self._expiry_uia_tries >= 3:
+                exp = self._expiry_label or "90일"
+                self._guide_log(f"[Path B] Expiration 자동 맞춤 포기: {detail}")
+                self._sub.setText(
+                    f"자동으로 못 바꿨어요({detail}). "
+                    f"Expiration을 {exp}으로 직접 고른 뒤 Generate token을 눌러 주세요."
+                )
+            return
 
-    def _sync_open_tokens_button(self) -> None:
-        if self._token_note_taken:
-            self._btn_open_tokens.setText("다른 이름으로 키 만들기 열기")
+        if op == "nudge":
+            if ok:
+                self._expiry_uia_ok = True
+                self._sub.setText(
+                    f"Generate를 눌러 봤어요 ({detail}). 키가 나오면 받아올게요."
+                )
+                return
+            # Fallback: reopen create URL so Generate is on screen
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+
+            self._guide_log(f"[Path B] Generate 실패 → URL 다시 염 ({detail})")
+            url = self._create_url or ""
+            if not url:
+                self._open_token_create_page()
+            else:
+                QDesktopServices.openUrl(QUrl(url))
+            self._expiry_uia_ok = False
+            self._schedule_expiry_invoke_tries()
+            self._sub.setText(
+                "페이지를 다시 열었어요. Expiration을 확인한 뒤 "
+                "Generate token을 눌러 주세요."
+            )
+            return
+
+        if op == "generate" and ok:
+            self._sub.setText(
+                f"Generate를 눌러 봤어요 ({detail}). 키가 나오면 받아올게요."
+            )
+
+    def _schedule_expiry_invoke_tries(self) -> None:
+        """Retry expiry assist a few times while the form loads (async)."""
+        self._expiry_uia_tries = 0
+        for delay_ms in (1200, 2800, 5000):
+            QTimer.singleShot(delay_ms, self._try_apply_expiry_invoke)
+
+    def _try_apply_expiry_invoke(self) -> None:
+        """Queue Expiration assist on a worker (CDP then UIA)."""
+        if self._done or self._scene != DialogueScene.PRESS_GENERATE:
+            return
+        if self._expiry_uia_ok:
+            return
+        if self._assist_busy():
+            return
+        want = self._wanted_expiry_days()
+        # Fast read-only check on UI thread (no Playwright).
+        got, _read = read_token_expiration_uia()
+        if got is not None and got == want:
+            self._expiry_uia_ok = True
+            exp = self._expiry_label or "90일"
+            self._guide_log(f"[Path B] Expiration 이미 일치(읽기): {got}")
+            self._sub.setText(
+                f"Expiration이 이미 {exp}입니다. Generate token만 눌러 주세요."
+            )
+            return
+        self._expiry_uia_tries += 1
+        if not self._start_assist_worker("expiry", days=want):
+            self._expiry_uia_tries = max(0, self._expiry_uia_tries - 1)
+
+    def _on_launch_cdp_browser(self) -> None:
+        """Open CloneUp-owned Chrome/Edge with --remote-debugging-port."""
+        from app.util.browser_cdp import (
+            cdp_enabled,
+            launch_cdp_browser,
+            probe_cdp_endpoint,
+        )
+
+        if not cdp_enabled():
+            self._sub.setText(
+                "직접 제어는 CLONEUP_CDP=1 과 Playwright가 필요합니다."
+            )
+            return
+        # Quick probe (short timeout) — if already up, skip launch.
+        if probe_cdp_endpoint(timeout_s=0.4) is not None:
+            self._sub.setText(
+                "제어용 브라우저가 이미 연결되어 있습니다. Expiration을 다시 맞춰 볼게요."
+            )
+            self._schedule_expiry_invoke_tries()
+            self._render()
+            return
+        start = self._create_url or "https://github.com/login"
+        ok, detail = launch_cdp_browser(start_url=start)
+        if ok:
+            self._guide_log(f"[Path B][CDP] 기동: {detail}")
+            self._sub.setText(
+                "제어용 브라우저를 여는 중… 포트가 준비되면 Expiration을 맞춰 볼게요."
+            )
+            QTimer.singleShot(300, self._after_cdp_launch_wait)
         else:
-            self._btn_open_tokens.setText("키 만들기 페이지 열기")
+            self._guide_log(f"[Path B][CDP] 기동 실패: {detail}")
+            self._sub.setText(
+                f"제어용 브라우저를 못 열었습니다 ({detail}). "
+                "수동으로 Expiration을 맞춘 뒤 Generate를 눌러 주세요."
+            )
+        self._render()
 
-    def _show_token_note_taken(self, meta: dict | None = None) -> None:
-        self._token_note_taken = True
-        self._google_rejected = False
-        self._btn_reopen.hide()
-        # Login stays done; key-create row shows "!" not sticky ✓
-        self._reached = max(self._reached, 1)
-        if self._reached >= 2:
-            self._reached = 1
-        self._current = 2
-        self._refresh_checklist_labels()
-        title, lead, verify_fallback = token_note_error_guide_copy()
-        self._title.setText(title)
-        self._lead.setText(lead)
-        snippets = list((meta or {}).get("error_snippets") or [])
-        if snippets:
-            verify = "검증: " + snippets[0][:72]
-        else:
-            verify = verify_fallback
-        self._verify_lab.setText(verify)
-        self._verify_lab.setStyleSheet(
-            "font-size:11.5px;color:#8a6d12;border:none;"
-        )
-        self._status.setStyleSheet(
-            "font-size:11.5px;color:#8a6d12;border:none;"
-        )
-        self._status.setText(
-            "Note(이름)이 이미 쓰였어요. 이름을 바꾸거나 "
-            "「다른 이름으로 키 만들기 열기」를 누르세요."
-        )
-        self._sync_open_tokens_button()
-        self._btn_open_tokens.show()
-        self.adjustSize()
-        self._place_top_left()
-
-    def _clear_token_note_taken(self) -> None:
-        if not self._token_note_taken:
+    def _after_cdp_launch_wait(self) -> None:
+        """After launch: wait for CDP port on a worker, then retry Expiration."""
+        if self._done or self._scene != DialogueScene.PRESS_GENERATE:
             return
-        self._token_note_taken = False
-        self._sync_open_tokens_button()
+        if not self._start_assist_worker("wait_ready"):
+            self._sub.setText("다른 자동 맞춤이 끝나길 기다린 뒤 다시 시도해 주세요.")
 
-    def _show_google_rejected(self, url: str, meta: dict | None = None) -> None:
-        self._google_rejected = True
-        self._current = None  # avoid progress marker winning over "! 막힘"
-        self._refresh_checklist_labels()
-        title, lead, verify_fallback = _method_guide_copy("google_blocked")
-        self._title.setText(title)
-        self._lead.setText(lead)
-        analysis = (meta or {}).get("analysis")
-        reasons: list[str] = []
-        snippets: list[str] = []
-        if analysis is not None:
-            reasons = list(getattr(analysis, "reasons", []) or [])
-            snippets = list(getattr(analysis, "matched_snippets", []) or [])
-        verify = "검증: " + (" · ".join(reasons) if reasons else verify_fallback)
-        if snippets:
-            verify += " | 문구: " + snippets[0][:50]
-        self._verify_lab.setText(verify)
-        self._verify_lab.setStyleSheet(
-            "font-size:11.5px;color:#8a6d12;border:none;"
-        )
-        self._status.setStyleSheet(
-            "font-size:11.5px;color:#8a6d12;border:none;"
-        )
-        self._status.setText(
-            "Google이 막혀도 패스키·Apple·비밀번호로 로그인할 수 있어요. "
-            "「GitHub 로그인 다시 열기」를 누르세요."
-        )
-        self._btn_reopen.show()
-        self.adjustSize()
-        self._place_top_left()
-
-    def _apply_method_copy(self, method: str) -> None:
-        title, lead, verify = _method_guide_copy(method)
-        self._title.setText(title)
-        self._lead.setText(lead)
-        self._verify_lab.setText(verify)
-        self._verify_lab.setStyleSheet(
-            "font-size:11.5px;color:#6d675c;border:none;"
-        )
-
-    def _apply_progress_copy(self, idx: int) -> None:
-        title, lead, verify = progress_guide_for_reached(idx)
-        self._title.setText(title)
-        self._lead.setText(lead)
-        self._verify_lab.setText(verify)
-        self._verify_lab.setStyleSheet(
-            "font-size:11.5px;color:#1f6f5c;border:none;"
-        )
-
-    def _clear_google_rejected_banner(self) -> None:
-        if not self._google_rejected:
+    def _on_nudge_generate(self) -> None:
+        """버튼이 안 보여요 — background CDP/UIA expiry then Generate."""
+        self._guide_log("[Path B] Generate 도움 버튼")
+        if self._assist_busy():
+            self._sub.setText("잠시만요 — 브라우저 맞춤이 진행 중입니다…")
             return
-        self._google_rejected = False
-        self._btn_reopen.hide()
-        self._status.setText("")
-        self._verify_lab.setStyleSheet(
-            "font-size:11.5px;color:#6d675c;border:none;"
-        )
-
-    def _open_token_create_page(self, *, unique_note: bool = True) -> None:
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QDesktopServices
-
-        # Always use a fresh Note so retries don't hit "already been taken"
-        url = build_pat_create_url() if unique_note else build_pat_create_url(note="CloneUp")
-        QDesktopServices.openUrl(QUrl(url))
-        self._token_nav_opened = True
-        self._last_family_url = url
-
-    def _on_open_token_page_clicked(self) -> None:
-        self._clear_token_note_taken()
-        self._btn_return_flow.hide()
-        self._open_token_create_page(unique_note=True)
-        self._set_current(2)
-        self._apply_progress_copy(1)
-        self._status.setStyleSheet(
-            "font-size:11.5px;color:#1f6f5c;border:none;"
-        )
-        self._status.setText(
-            "새 Note 이름으로 열었어요. Generate token을 누르세요."
-        )
-        self._sync_open_tokens_button()
-
-    def _remember_family_url(self, url: str) -> None:
-        u = (url or "").strip()
-        if not u:
-            return
-        if not is_github_flow_family_url(u):
-            return
-        # Prefer https github / oauth URLs; skip javascript: etc.
-        low = u.lower()
-        if not (low.startswith("http://") or low.startswith("https://")):
-            return
-        self._last_family_url = u
-
-    def _show_away_from_flow(self) -> None:
-        """Soft invite back — never auto-navigate."""
-        title, lead, verify = away_from_flow_guide_copy()
-        self._title.setText(title)
-        self._lead.setText(lead)
-        self._verify_lab.setText(verify)
-        self._verify_lab.setStyleSheet(
-            "font-size:11.5px;color:#6d675c;border:none;"
-        )
-        self._status.setStyleSheet(
-            "font-size:11.5px;color:#6d675c;border:none;"
-        )
-        self._status.setText(
-            "다른 탭을 보셔도 됩니다. 준비가 되면 "
-            "「마지막으로 열었던 페이지로 돌아가기」를 눌러 주세요."
-        )
-        self._btn_return_flow.show()
-        # Don't hide token/reopen buttons aggressively — user may still want them
-        self.adjustSize()
-        self._place_top_left()
-
-    def _on_return_to_flow_clicked(self) -> None:
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QDesktopServices
-
-        target = (self._last_family_url or "").strip()
-        if not target:
-            target = fallback_return_url(reached=self._reached)
-        QDesktopServices.openUrl(QUrl(target))
-        self._btn_return_flow.hide()
-        self._status.setStyleSheet(
-            "font-size:11.5px;color:#1f6f5c;border:none;"
-        )
-        self._status.setText(
-            "마지막으로 열었던 페이지를 열었어요. 이어서 진행해 주세요."
-        )
+        want = self._wanted_expiry_days()
+        skip = bool(self._expiry_uia_ok)
+        self._sub.setText("Generate를 찾아 보는 중…")
+        if not self._start_assist_worker(
+            "nudge", days=want, skip_expiry=skip
+        ):
+            self._sub.setText("다른 작업이 끝나길 기다린 뒤 다시 눌러 주세요.")
 
     def _reopen_github_login(self) -> None:
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
 
         QDesktopServices.openUrl(QUrl(_GITHUB_LOGIN))
-        self._clear_google_rejected_banner()
-        self._clear_token_note_taken()
-        self._btn_open_tokens.hide()
-        self._btn_return_flow.hide()
         self._last_family_url = _GITHUB_LOGIN
-        self._set_current(0)
-        self._apply_method_copy("github_login")
-        self._status.setText(
-            "비밀번호·패스키·Apple·Google 중 편한 방법을 고르세요."
-        )
+        self._google_blocked = False
+        self._render()
 
+    # --- polling ---
     def _poll_address(self) -> None:
         if self._done:
             return
         sample = read_browser_page_sample()
-        if sample is None or not (
-            sample.url or sample.window_title or sample.ui_text
-        ):
-            self._verify_lab.setText(
-                "검증: 브라우저 주소/텍스트를 아직 읽지 못함"
-            )
+        if sample is None:
             return
         url = sample.url or ""
-        if url and url != self._last_url:
-            self._last_url = url
-            shown = url if len(url) <= 64 else url[:61] + "…"
-            self._url_lab.setText(f"주소: {shown}")
-        elif not url and sample.window_title:
-            self._url_lab.setText(f"창: {sample.window_title[:64]}")
+        title = sample.window_title or ""
+        ui = sample.ui_text or ""
+        if is_github_flow_family_url(url):
+            self._last_family_url = url
 
         kind, idx, meta = classify_browser_sample(
-            url,
-            window_title=sample.window_title,
-            ui_text=sample.ui_text,
+            url, window_title=title, ui_text=ui
         )
-        method = str((meta or {}).get("method") or "other")
+        method = str((meta or {}).get("method") or "")
 
-        # Remember last in-family URL for soft "return" (never auto-navigate away)
-        if kind != "away" and url:
-            self._remember_family_url(url)
-
-        if kind == "rejected":
-            self._btn_return_flow.hide()
-            self._show_google_rejected(url, meta)
+        if kind == "rejected" or method == "google_blocked":
+            if not self._google_blocked:
+                self._guide_log("[Path B] Google 로그인 차단 감지")
+            self._google_blocked = True
+            if self._scene == DialogueScene.LOGIN_WAIT:
+                self._render()
             return
+
+        # Visible PAT / issued banner while waiting for generate
+        if self._scene == DialogueScene.PRESS_GENERATE:
+            visible = (meta or {}).get("visible_pat")
+            if visible and _looks_like_token(str(visible)):
+                self._ingest_token(str(visible), source="화면에서 키를 읽었어요")
+                return
+            if kind == "reached" and idx == 3:
+                # issued page — clipboard poll will catch copy; keep waiting
+                pass
 
         if kind == "token_error":
-            self._btn_return_flow.hide()
-            self._show_token_note_taken(meta)
+            # Note collision — open fresh note URL
+            self._open_token_create_page()
+            self._sub.setText("Note 이름이 겹쳐 새 이름으로 다시 열었어요.")
             return
 
-        if kind == "away":
-            # Soft nudge only — keep checklist sticky; do not open URLs
-            self._show_away_from_flow()
+        nxt = advance_from_browser_kind(
+            self._scene, kind, idx, method=method
+        )
+        if nxt is None:
             return
-
-        if kind == "logged_out":
-            # User signed out (or logged-out github.com with Sign in/up) —
-            # wipe sticky progress so old ✓ marks disappear
-            self._clear_google_rejected_banner()
-            self._clear_token_note_taken()
-            self._btn_return_flow.hide()
-            self._reached = -1
-            self._current = 0
+        if nxt == DialogueScene.LOGIN_WAIT and self._scene != DialogueScene.LOGIN_WAIT:
+            self._logged_in = False
+            self._expiry_label = None
+            self._scope_label = None
+            self._expires_at = None
             self._token_nav_opened = False
-            self._btn_open_tokens.hide()
-            self._refresh_checklist_labels()
-            copy_method = (
-                method
-                if method in ("github_logout", "github_logged_out")
-                else "github_logout"
-            )
-            self._apply_method_copy(copy_method)
-            self._btn_reopen.show()
-            self._status.setStyleSheet(
-                "font-size:11.5px;color:#8a6d12;border:none;"
-            )
-            self._status.setText(
-                "다시 로그인한 뒤 키를 만들어 주세요. "
-                "「GitHub 로그인 다시 열기」를 눌러도 됩니다."
-            )
-            self.adjustSize()
-            self._place_top_left()
-            return
-
-        if kind == "current" and idx is not None:
-            self._clear_google_rejected_banner()
-            self._clear_token_note_taken()
-            self._btn_return_flow.hide()
-            self._btn_open_tokens.hide()
-            self._set_current(idx)
-            self._apply_method_copy(method)
-            return
-
-        if kind == "reached" and idx is not None:
-            self._clear_google_rejected_banner()
-            self._clear_token_note_taken()
-            self._btn_return_flow.hide()
-            self._btn_reopen.hide()
-            self._mark_reached(idx)
-            self._apply_progress_copy(idx)
-
-            if idx == 1:
-                # Logged in on github.com — guide toward classic token create
-                self._set_current(2)
-                self._sync_open_tokens_button()
-                self._btn_open_tokens.show()
-                if should_auto_open_token_page(
-                    kind=kind,
-                    idx=idx,
-                    already_opened=self._token_nav_opened,
-                ):
-                    self._open_token_create_page(unique_note=True)
-                    self._status.setStyleSheet(
-                        "font-size:11.5px;color:#1f6f5c;border:none;"
-                    )
-                    self._status.setText(
-                        "키 만들기 페이지를 열었어요. "
-                        "Generate token → 복사 → 아래에 붙여 넣으세요."
-                    )
-                else:
-                    self._status.setStyleSheet(
-                        "font-size:11.5px;color:#1f6f5c;border:none;"
-                    )
-                    self._status.setText(
-                        "「키 만들기 페이지 열기」로 다시 열 수 있어요."
-                    )
-            elif idx == 2:
-                self._set_current(2)
-                self._sync_open_tokens_button()
-                self._btn_open_tokens.show()
-                self._status.setStyleSheet(
-                    "font-size:11.5px;color:#1f6f5c;border:none;"
-                )
-                self._status.setText(
-                    "Generate token을 누른 뒤 나온 키를 복사하세요."
-                )
-            else:
-                # idx == 3 — issued / copy; prefer UIA-visible PAT when present
-                visible = str((meta or {}).get("visible_pat") or "").strip()
-                if not visible:
-                    visible = (
-                        extract_visible_pat(
-                            sample.window_title, sample.ui_text
-                        )
-                        or ""
-                    )
-                if visible and _looks_like_token(visible):
-                    self._ingest_token(
-                        visible, source="화면에서 키를 읽었어요"
-                    )
-                else:
-                    self._current = None
-                    self._refresh_checklist_labels()
-                    self._btn_open_tokens.hide()
-                    self._status.setStyleSheet(
-                        "font-size:11.5px;color:#1f6f5c;border:none;"
-                    )
-                    self._status.setText(
-                        "화면에 키가 보이면 자동으로 들어옵니다. "
-                        "안 되면 복사해 붙여 넣으세요."
-                    )
-            self.adjustSize()
-            self._place_top_left()
-            return
-
-        self._btn_return_flow.hide()
-        self._verify_lab.setText("검증: 주소를 분류하지 못함 — 체크리스트 유지")
-
-    def _ingest_token(self, text: str, *, source: str) -> None:
-        """Fill the key field from clipboard or UIA-visible PAT, then auto-Connect."""
-        tok = (text or "").strip()
-        if not _looks_like_token(tok) or tok == self._clip_seen:
-            return
-        if self._done:
-            return
-        self._clip_seen = tok
-        self._edit.setText(tok)
-        self._clear_google_rejected_banner()
-        self._clear_token_note_taken()
-        self._btn_open_tokens.hide()
-        self._btn_return_flow.hide()
-        self._mark_reached(3)
-        self._apply_progress_copy(3)
-        self.raise_()
-        self.activateWindow()
-        # setText already triggers _on_text → _schedule_auto_connect;
-        # call again in case text was identical and textChanged did not fire
-        self._schedule_auto_connect(source=source)
+            self._got_token = False
+            self._expiry_uia_ok = False
+            self._expiry_uia_tries = 0
+        if nxt == DialogueScene.ASK_EXPIRY:
+            self._logged_in = True
+            self._google_blocked = False
+            # Login detected → open classic create page so the browser is
+            # already on 「키 만들기」 while the user answers expiry/scope.
+            if not self._token_nav_opened:
+                self._open_token_create_page()
+            # Bring guide forward so expiry chips are not missed behind the browser
+            try:
+                self.raise_()
+                self.activateWindow()
+            except Exception:
+                pass
+        self._set_scene(nxt)
 
     def _poll_clipboard(self) -> None:
         if self._done:
+            return
+        if self._scene not in (
+            DialogueScene.PRESS_GENERATE,
+            DialogueScene.DONE,
+        ):
             return
         clip = QGuiApplication.clipboard()
         if clip is None:
@@ -988,17 +1315,40 @@ class ExternalBrowserPatGuide(QDialog):
         text = (clip.text() or "").strip()
         self._ingest_token(text, source="클립보드에서 키를 인식했어요")
 
-    def _on_connect(self) -> None:
-        """Path B Connect — accept with token; does not touch WebView wizard."""
-        raw = (self._edit.text() or "").strip()
-        if not _looks_like_token(raw):
-            self._status.setStyleSheet(
-                "font-size:11.5px;color:#8a6d12;border:none;"
-            )
-            self._status.setText(
-                "키 형식이 아니에요. 브라우저에서 키 전체를 복사했는지 확인하세요."
-            )
+    def _on_edit_text(self, text: str) -> None:
+        if _looks_like_token(text):
+            self._ingest_token(text, source="키를 인식했어요")
+
+    def _ingest_token(self, text: str, *, source: str) -> None:
+        tok = (text or "").strip()
+        if not _looks_like_token(tok) or tok == self._clip_seen:
             return
+        if self._done:
+            return
+        self._clip_seen = tok
+        self._edit.blockSignals(True)
+        self._edit.setText(tok)
+        self._edit.blockSignals(False)
+        self._token = tok
+        self._got_token = True
+        self._guide_log(f"[Path B] 키 인식: {source}")
+        try:
+            self.raise_()
+            self.activateWindow()
+        except Exception:
+            pass
+        self._set_scene(DialogueScene.DONE)
+        # Brief DONE flash then accept (auto-connect product path)
+        QTimer.singleShot(400, self._finish_accept)
+
+    def _finish_accept(self) -> None:
+        raw = self.token()
+        if not _looks_like_token(raw):
+            return
+        self._guide_log(
+            f"[Path B] 연결 진행 (만료={self._expires_at or '—'}, "
+            f"note={self._pat_note or '—'})"
+        )
         self._stop_timers()
         self._done = True
         self._token = raw
@@ -1006,25 +1356,29 @@ class ExternalBrowserPatGuide(QDialog):
         self.accept()
 
     def _on_cancel(self) -> None:
+        self._guide_log("[Path B] 사용자가 취소")
         self._stop_timers()
         self._done = True
         self.cancelled.emit()
         self.reject()
 
     def _stop_timers(self) -> None:
-        if self._clip_timer.isActive():
-            self._clip_timer.stop()
-        if self._addr_timer.isActive():
-            self._addr_timer.stop()
+        for t in (self._clip_timer, self._addr_timer, self._dot_timer):
+            if t.isActive():
+                t.stop()
+        w = self._assist_worker
+        if w is not None:
+            if w.isRunning():
+                # Best-effort: do not block the UI long on close.
+                w.wait(600)
+            self._assist_worker = None
+        set_path_b_log_sink(None)
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        if not self._done:
+            self._guide_log("[Path B] 안내 창 닫힘")
         self._stop_timers()
-        # Only treat as cancel when the user dismissed without Connect.
-        # Success path sets _done before accept()/close.
         if not self._done:
             self._done = True
             self.cancelled.emit()
         super().closeEvent(event)
-
-    def token(self) -> str:
-        return (self._token or self._edit.text() or "").strip()

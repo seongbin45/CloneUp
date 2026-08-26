@@ -18,11 +18,14 @@
 | Git 미설치 시 자동 설치 | **아니오** | **아니오** | `app/ui/git_setup.py`의 `_DownloadWorker` — redirect 없음, `download_and_run_git_installer`도 로그 시그널 없이 진행률만 전달 |
 | **커밋 내역 조회 (로컬/원격 목록·상세)** | **아니오** | **아니오** | `app/ui/commit_history_dialog.py`의 `_LoadWorker`/`_DetailWorker`/`_ExportWorker` — `_SignalStdout` 자체를 쓰지 않음. 애초에 `app/git/history.py`, `app/github/api_client.py`에 `print()`가 **하나도 없음** |
 | **되돌리기 미리보기 / 실행 (로컬·원격 모두)** | **아니오** | **아니오** | `_RevertPreviewWorker`/`_RevertWorker` — 위와 동일. `app/git/revert.py`에도 `print()`가 **하나도 없음** |
+| **GitHub 연결 Path B (브라우저 안내)** | **예** (`path_b_log` → `print`) | **예** | `ExternalBrowserPatGuide(log=self._log)` + `set_path_b_log_sink` → `app/util/browser_address.path_b_log`가 장면·만료 UIA·Generate를 마스크 후 터미널과 `textLog`에 tee. 가이드 종료 시 sink 해제 |
+| **Path B CDP (CLONEUP_CDP=1)** | **예** (`[Path B][CDP]` → `path_b_log`) | **예** | `app/util/browser_cdp.py` — 연결/Expiration/Generate/기동·폴백. 문서 `docs/CDP_BROWSER_CONTROL.md` |
+| **GitHub 연결 Path A (WebView 마법사)** | **예** (`[연결]` → print) | **예** | `ConnectGitHubWizard(log=self._log)` — 키 인식·자동 연결·accept/reject/창 닫힘. 토큰 본문은 마스크 |
 
-요약: "로그창에는 나온다"고 해도 그건 **터미널에는 나오지 않는다는 뜻**이다. 그리고 커밋
+요약: "로그창에는 나온다"고 해도 그건 **터미널에는 나오지 않는다는 뜻**이다(워커 `redirect_stdout` swap 경로). 커밋
 내역·되돌리기 전체 기능은 로그창에도 안 나온다 — 완전히 조용하다. `CommitHistoryDialog`는
 메인 창의 `textLog`와 아예 연결되어 있지 않다 (별도 `QDialog`이고, `_log()` 호출부는
-`app/ui/main_window.py`에만 있음).
+`app/ui/main_window.py`에만 있음). Path B 브라우저 안내는 위 표처럼 연결됨.
 
 ## 2. 왜 이렇게 됐는가 (근본 원인)
 

@@ -13,6 +13,8 @@
 | [dark/](dark/README.md) | 다크 창 시안 |
 | [icon/](icon/README.md) | 로고·아이콘 시안 |
 | [provision/](provision/README.md) | 이용약관 등 문서 시안 |
+| [PROMPT_브라우저_안내_연결_시안.md](./PROMPT_브라우저_안내_연결_시안.md) | **브라우저 Path B** 시안용 복붙 프롬프트 |
+| [CloneUp 브라우저 안내 대화형.dc.html](./CloneUp%20브라우저%20안내%20대화형.dc.html) | Path B **대화형** 안내 (체크리스트 대체) |
 | `support.js` | 시안 뷰어 런타임 |
 
 ## 초심자

@@ -1,8 +1,10 @@
 """Settings dialog — desin/CloneUp 설정.dc.html (+ Settings Dark.dc.html).
 
-Sidebar tabs: 계정 · 올리기 기본값 · 안전 · 최근 폴더 · 정보.
+Sidebar tabs: 계정 · 올리기 기본값 · 안전 · 최근 폴더 · 용어 안내 · 정보.
 Prefs save immediately (footer: 바꾸면 바로 저장됩니다).
 Colors follow active_palette() (OS light/dark).
+
+Safety tab includes master-password token protection (enable / change / disable).
 """
 
 from __future__ import annotations
@@ -12,10 +14,20 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QRectF, QUrl, Qt, Signal, Slot
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QMouseEvent, QPainter, QPaintEvent
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QDesktopServices,
+    QFont,
+    QGuiApplication,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -30,15 +42,31 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+# Soft minimum for master password UX (crypto already rejects empty/whitespace).
+_MASTER_PW_MIN_LEN = 8
+
+from app.auth.secret_vault import VaultError
 from app.auth.session import refresh_scopes_from_github
+from app.auth.token_expiry import (
+    format_connected_at_display,
+    format_expires_display,
+)
 from app.auth.token_store import (
     AUTH_KIND_DEVICE,
     AUTH_KIND_PAT,
     SCOPE_UNKNOWN,
+    change_master_password,
+    disable_master_protection,
+    enable_master_protection,
     format_scopes_display,
     is_logged_in,
+    is_token_encrypted,
     load_auth_kind,
+    load_connected_at_raw,
+    load_expires_at_raw,
+    load_pat_note,
     load_scope,
+    master_protection_enabled,
 )
 from app.git.runner import require_git
 from app.paths import app_root
@@ -339,6 +367,9 @@ class SettingsDialog(QDialog):
                     f"text-align: left; padding: 10px 18px; font-size: 13px;}}"
                     f"QPushButton#setNavItem:hover {{background: {p.hover_muted};}}"
                 )
+        # Safety tab index 2 — refresh master-protection status when opened.
+        if index == 2 and hasattr(self, "_master_status"):
+            self._refresh_master_protection()
 
     def _notify_prefs(self, what: str = "all") -> None:
         """Tell main window which settings group changed (selective tab sync)."""
@@ -561,8 +592,21 @@ class SettingsDialog(QDialog):
         return w
 
     def _build_safety(self, p: Palette) -> QWidget:
-        # Design: column gap 22; secret/PII shown as always-on switch card
-        w, lay = self._page_shell()
+        # Design: column gap 22; secret/PII shown as always-on switch card.
+        # Scroll: master-protection card made this page taller than the dialog.
+        outer, outer_lay = self._page_shell()
+        outer_lay.setContentsMargins(0, 0, 0, 0)
+        outer_lay.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setObjectName("setScroll")
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(26, 26, 30, 26)
+        lay.setSpacing(22)
         lay.addWidget(
             self._heading(
                 "안전",
@@ -624,8 +668,188 @@ class SettingsDialog(QDialog):
             )
         )
 
+        # --- master-password token protection ---
+        lay.addWidget(self._build_master_protection_card())
+
         lay.addStretch(1)
-        return w
+        scroll.setWidget(w)
+        outer_lay.addWidget(scroll, 1)
+        return outer
+
+    def _build_master_protection_card(self) -> QFrame:
+        """Settings → 안전: encrypt stored PAT with master password + DPAPI."""
+        card = QFrame()
+        card.setObjectName("setCard")
+        col = QVBoxLayout(card)
+        col.setContentsMargins(17, 15, 17, 15)
+        col.setSpacing(10)
+
+        tt = QLabel("마스터 비밀번호로 키 보호")
+        tt.setObjectName("setCardTitle")
+        col.addWidget(tt)
+
+        body = QLabel(
+            "이 PC에 저장된 GitHub 키를 추가로 암호화합니다. "
+            "일상적으로 올리기·받기를 할 때는 비밀번호를 묻지 않고, "
+            "지금 로그인한 Windows 계정으로만 잠금을 풉니다. "
+            "설정에서 켜고·바꾸고·끌 때만 마스터 비밀번호를 입력합니다. "
+            "마스터 비밀번호 자체는 디스크에 저장되지 않습니다."
+        )
+        body.setObjectName("setBody")
+        body.setWordWrap(True)
+        col.addWidget(body)
+
+        self._master_status = QLabel("")
+        self._master_status.setObjectName("setMeta")
+        self._master_status.setWordWrap(True)
+        col.addWidget(self._master_status)
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        self._btn_master_enable = QPushButton("보호 켜기")
+        self._btn_master_enable.setObjectName("setSecondary")
+        self._btn_master_enable.clicked.connect(self._do_master_enable)
+        self._btn_master_change = QPushButton("비밀번호 바꾸기")
+        self._btn_master_change.setObjectName("setSecondary")
+        self._btn_master_change.clicked.connect(self._do_master_change)
+        self._btn_master_disable = QPushButton("보호 끄기")
+        self._btn_master_disable.setObjectName("setDangerOutline")
+        self._btn_master_disable.clicked.connect(self._do_master_disable)
+        for b in (
+            self._btn_master_enable,
+            self._btn_master_change,
+            self._btn_master_disable,
+        ):
+            b.setSizePolicy(
+                QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+            )
+            row.addWidget(b)
+        row.addStretch(1)
+        col.addLayout(row)
+
+        self._refresh_master_protection()
+        return card
+
+    def _refresh_master_protection(self) -> None:
+        on = master_protection_enabled()
+        enc = is_token_encrypted()
+        if on:
+            extra = " · 저장된 키는 암호화됨" if enc else " · 저장된 키 없음(다음에 연결하면 암호화)"
+            self._master_status.setText(f"현재: 켜짐{extra}")
+        else:
+            self._master_status.setText(
+                "현재: 꺼짐 (OS 키링에 저장 — 추가 암호화 없음)"
+            )
+        self._btn_master_enable.setEnabled(not on)
+        self._btn_master_change.setEnabled(on)
+        self._btn_master_disable.setEnabled(on)
+
+    @Slot()
+    def _do_master_enable(self) -> None:
+        if master_protection_enabled():
+            self._refresh_master_protection()
+            return
+        pw = prompt_master_password_enable(self)
+        if pw is None:
+            return
+        QGuiApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
+        try:
+            enable_master_protection(pw)
+        except VaultError as e:
+            QMessageBox.warning(
+                self,
+                "보호 켜기 실패",
+                f"마스터 보호를 켤 수 없습니다.\n\n{e}",
+            )
+            return
+        except Exception as e:  # noqa: BLE001 — surface unexpected crypto/IO
+            QMessageBox.warning(
+                self,
+                "보호 켜기 실패",
+                f"예상치 못한 오류입니다.\n\n{e}",
+            )
+            return
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+        QMessageBox.information(
+            self,
+            "보호 켜짐",
+            "마스터 비밀번호 보호가 켜졌습니다.\n"
+            "일상 사용 시에는 비밀번호를 다시 묻지 않습니다.\n"
+            "비밀번호는 잊어버리지 마세요 — 복구 방법이 없습니다.",
+        )
+        self._refresh_master_protection()
+
+    @Slot()
+    def _do_master_change(self) -> None:
+        if not master_protection_enabled():
+            self._refresh_master_protection()
+            return
+        pair = prompt_master_password_change(self)
+        if pair is None:
+            return
+        old_pw, new_pw = pair
+        QGuiApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
+        try:
+            change_master_password(old_pw, new_pw)
+        except VaultError as e:
+            QMessageBox.warning(
+                self,
+                "비밀번호 바꾸기 실패",
+                f"비밀번호를 바꿀 수 없습니다.\n\n{e}",
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(
+                self,
+                "비밀번호 바꾸기 실패",
+                f"예상치 못한 오류입니다.\n\n{e}",
+            )
+            return
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+        QMessageBox.information(
+            self,
+            "비밀번호 변경됨",
+            "마스터 비밀번호가 바뀌었습니다.",
+        )
+        self._refresh_master_protection()
+
+    @Slot()
+    def _do_master_disable(self) -> None:
+        if not master_protection_enabled():
+            self._refresh_master_protection()
+            return
+        pw = prompt_master_password_disable(self)
+        if pw is None:
+            return
+        QGuiApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
+        try:
+            disable_master_protection(pw)
+        except VaultError as e:
+            QMessageBox.warning(
+                self,
+                "보호 끄기 실패",
+                f"마스터 보호를 끌 수 없습니다.\n\n{e}",
+            )
+            return
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.warning(
+                self,
+                "보호 끄기 실패",
+                f"예상치 못한 오류입니다.\n\n{e}",
+            )
+            return
+        finally:
+            QGuiApplication.restoreOverrideCursor()
+        QMessageBox.information(
+            self,
+            "보호 꺼짐",
+            "마스터 비밀번호 보호가 꺼졌습니다.\n"
+            "GitHub 키는 다시 OS 키링에만 보관됩니다.",
+        )
+        self._refresh_master_protection()
 
     def _make_hide_email_switch(self) -> _ToggleSwitch:
         self._sw_hide_email = _ToggleSwitch(checked=self._hide_email)
@@ -1086,16 +1310,30 @@ class SettingsDialog(QDialog):
 
             save_last_github_login(str(user["login"]))
             self._acct_title.setText(f"{user['login']} 으로 로그인됨")
-        if after_raw == SCOPE_UNKNOWN or after_raw == "unknown" or not format_scopes_display(after_raw):
-            note = (
-                "GitHub이 classic 권한 목록을 주지 않았습니다 "
-                "(세분 키일 수 있음). 화면은 「권한 확인 불가」입니다."
+
+        issued = format_connected_at_display(load_connected_at_raw())
+        expires = format_expires_display(load_expires_at_raw())
+        pat_note = (load_pat_note() or "").strip() or "기록 없음"
+
+        lines: list[str] = []
+        if (
+            after_raw == SCOPE_UNKNOWN
+            or after_raw == "unknown"
+            or not format_scopes_display(after_raw)
+        ):
+            lines.append(
+                "부여된 권한: 확인 불가 "
+                "(세분 키이거나 GitHub이 classic 목록을 주지 않음)"
             )
         elif before != after:
-            note = f"권한 목록을 맞췄습니다.\n이전: {before}\n지금: {after}"
+            lines.append(f"부여된 권한: {after}")
+            lines.append(f"(이전: {before} → 지금 맞춤)")
         else:
-            note = f"권한 목록이 같습니다.\n지금: {after}"
-        QMessageBox.information(self, "권한 다시 확인", note)
+            lines.append(f"부여된 권한: {after}")
+        lines.append(f"발급일시: {issued}")
+        lines.append(f"유효기간(추정): {expires}")
+        lines.append(f"Note 이름: {pat_note}")
+        QMessageBox.information(self, "권한 다시 확인", "\n".join(lines))
 
     # ----- defaults -----
     def _set_private(self, private: bool) -> None:
@@ -1484,6 +1722,230 @@ class SettingsDialog(QDialog):
             background: {danger_hover};
         }}
         """
+
+
+def _pw_field(placeholder: str = "") -> QLineEdit:
+    edit = QLineEdit()
+    edit.setObjectName("setInput")
+    edit.setEchoMode(QLineEdit.EchoMode.Password)
+    edit.setClearButtonEnabled(True)
+    if placeholder:
+        edit.setPlaceholderText(placeholder)
+    return edit
+
+
+def _master_pw_ok(password: str) -> bool:
+    return len((password or "").strip()) >= _MASTER_PW_MIN_LEN
+
+
+def prompt_master_password_enable(parent: QWidget | None = None) -> str | None:
+    """Ask for a new master password (+ confirm). Returns password or None."""
+    p = active_palette()
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("마스터 비밀번호 설정")
+    dlg.setModal(True)
+    dlg.setMinimumWidth(440)
+    root = QVBoxLayout(dlg)
+    root.setSpacing(12)
+
+    title = QLabel("보호에 쓸 마스터 비밀번호")
+    title.setStyleSheet(f"font-size: 15px; font-weight: 600; color: {p.text};")
+    root.addWidget(title)
+
+    info = QLabel(
+        "이 비밀번호는 디스크에 저장되지 않습니다. "
+        f"최소 {_MASTER_PW_MIN_LEN}자, 잊어버리면 보호를 끄거나 "
+        "키를 다시 연결해야 할 수 있습니다."
+    )
+    info.setWordWrap(True)
+    info.setStyleSheet(f"color: {p.text_secondary}; font-size: 12.5px;")
+    root.addWidget(info)
+
+    form = QFormLayout()
+    form.setSpacing(8)
+    pw1 = _pw_field("새 비밀번호")
+    pw2 = _pw_field("새 비밀번호 확인")
+    form.addRow("비밀번호", pw1)
+    form.addRow("확인", pw2)
+    root.addLayout(form)
+
+    err = QLabel("")
+    err.setStyleSheet(f"color: {_danger_label(p)}; font-size: 12px;")
+    err.setWordWrap(True)
+    root.addWidget(err)
+
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+    )
+    ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+    cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+    if ok_btn is not None:
+        ok_btn.setText("보호 켜기")
+        ok_btn.setEnabled(False)
+    if cancel_btn is not None:
+        cancel_btn.setText("취소")
+    root.addWidget(buttons)
+
+    def _sync() -> None:
+        a, b = pw1.text(), pw2.text()
+        msg = ""
+        ready = False
+        if a or b:
+            if not _master_pw_ok(a):
+                msg = f"비밀번호는 {_MASTER_PW_MIN_LEN}자 이상이어야 합니다."
+            elif a != b:
+                msg = "확인 비밀번호가 일치하지 않습니다."
+            else:
+                ready = True
+        err.setText(msg)
+        if ok_btn is not None:
+            ok_btn.setEnabled(ready)
+
+    pw1.textChanged.connect(lambda _t: _sync())
+    pw2.textChanged.connect(lambda _t: _sync())
+    buttons.accepted.connect(dlg.accept)
+    buttons.rejected.connect(dlg.reject)
+
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return None
+    if not _master_pw_ok(pw1.text()) or pw1.text() != pw2.text():
+        return None
+    return pw1.text()
+
+
+def prompt_master_password_change(
+    parent: QWidget | None = None,
+) -> tuple[str, str] | None:
+    """Ask for current + new master password. Returns (old, new) or None."""
+    p = active_palette()
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("마스터 비밀번호 바꾸기")
+    dlg.setModal(True)
+    dlg.setMinimumWidth(440)
+    root = QVBoxLayout(dlg)
+    root.setSpacing(12)
+
+    title = QLabel("마스터 비밀번호 바꾸기")
+    title.setStyleSheet(f"font-size: 15px; font-weight: 600; color: {p.text};")
+    root.addWidget(title)
+
+    form = QFormLayout()
+    form.setSpacing(8)
+    old = _pw_field("현재 비밀번호")
+    new1 = _pw_field("새 비밀번호")
+    new2 = _pw_field("새 비밀번호 확인")
+    form.addRow("현재", old)
+    form.addRow("새 비밀번호", new1)
+    form.addRow("확인", new2)
+    root.addLayout(form)
+
+    err = QLabel("")
+    err.setStyleSheet(f"color: {_danger_label(p)}; font-size: 12px;")
+    err.setWordWrap(True)
+    root.addWidget(err)
+
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+    )
+    ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+    cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+    if ok_btn is not None:
+        ok_btn.setText("바꾸기")
+        ok_btn.setEnabled(False)
+    if cancel_btn is not None:
+        cancel_btn.setText("취소")
+    root.addWidget(buttons)
+
+    def _sync() -> None:
+        o, a, b = old.text(), new1.text(), new2.text()
+        msg = ""
+        ready = False
+        if o or a or b:
+            if not (o or "").strip():
+                msg = "현재 비밀번호를 입력하세요."
+            elif not _master_pw_ok(a):
+                msg = f"새 비밀번호는 {_MASTER_PW_MIN_LEN}자 이상이어야 합니다."
+            elif a != b:
+                msg = "확인 비밀번호가 일치하지 않습니다."
+            else:
+                ready = True
+        err.setText(msg)
+        if ok_btn is not None:
+            ok_btn.setEnabled(ready)
+
+    for e in (old, new1, new2):
+        e.textChanged.connect(lambda _t: _sync())
+    buttons.accepted.connect(dlg.accept)
+    buttons.rejected.connect(dlg.reject)
+
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return None
+    if not (old.text() or "").strip() or not _master_pw_ok(new1.text()):
+        return None
+    if new1.text() != new2.text():
+        return None
+    return old.text(), new1.text()
+
+
+def prompt_master_password_disable(parent: QWidget | None = None) -> str | None:
+    """Confirm disable with current master password. Returns password or None."""
+    p = active_palette()
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("마스터 보호 끄기")
+    dlg.setModal(True)
+    dlg.setMinimumWidth(440)
+    root = QVBoxLayout(dlg)
+    root.setSpacing(12)
+
+    title = QLabel("정말 보호를 끌까요?")
+    title.setStyleSheet(f"font-size: 15px; font-weight: 600; color: {p.text};")
+    root.addWidget(title)
+
+    warn = QLabel(
+        "끄면 GitHub 키는 다시 OS 키링에만 보관됩니다 "
+        "(추가 AES 암호화는 해제됩니다).\n"
+        "나중에 설정 → 안전에서 다시 켤 수 있습니다."
+    )
+    warn.setWordWrap(True)
+    warn.setStyleSheet(
+        f"background: {_warn_soft_bg(p)}; border-left: 3px solid {p.warn_border}; "
+        f"border-radius: 0 6px 6px 0; padding: 12px 14px; "
+        f"color: {p.text_secondary}; font-size: 12.5px;"
+    )
+    root.addWidget(warn)
+
+    form = QFormLayout()
+    pw = _pw_field("현재 마스터 비밀번호")
+    form.addRow("비밀번호", pw)
+    root.addLayout(form)
+
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+    )
+    ok_btn = buttons.button(QDialogButtonBox.StandardButton.Ok)
+    cancel_btn = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+    if ok_btn is not None:
+        ok_btn.setText("보호 끄기")
+        ok_btn.setEnabled(False)
+    if cancel_btn is not None:
+        cancel_btn.setText("취소")
+    root.addWidget(buttons)
+
+    def _sync() -> None:
+        if ok_btn is not None:
+            ok_btn.setEnabled(bool((pw.text() or "").strip()))
+
+    pw.textChanged.connect(lambda _t: _sync())
+    buttons.accepted.connect(dlg.accept)
+    buttons.rejected.connect(dlg.reject)
+    pw.returnPressed.connect(
+        lambda: dlg.accept() if (pw.text() or "").strip() else None
+    )
+
+    if dlg.exec() != QDialog.DialogCode.Accepted:
+        return None
+    text = pw.text()
+    return text if (text or "").strip() else None
 
 
 def confirm_disable_secret_pii_scan(parent: QWidget | None = None) -> bool:

@@ -26,6 +26,41 @@ def test_hide_ends_application_modal_exec_as_rejected() -> None:
     assert int(dlg.exec()) == int(QDialog.DialogCode.Rejected)
 
 
+def test_set_window_flag_while_visible_hides_and_rejects_modal() -> None:
+    """Regression: toggling Maximize mid-exec hid the wizard → 「연결 안내 취소」."""
+    _app()
+    dlg = QDialog()
+    dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+    dlg.setWindowFlags(
+        Qt.WindowType.Dialog
+        | Qt.WindowType.WindowTitleHint
+        | Qt.WindowType.WindowCloseButtonHint
+    )
+    dlg.show()
+
+    def _toggle_max() -> None:
+        # Same foot-gun ConnectGitHubWizard used to hit.
+        dlg.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
+        # Bug pattern: check isVisible() AFTER flag change → often False → no show()
+
+    QTimer.singleShot(20, _toggle_max)
+    # Give the hide a moment; if still running, accept to avoid hang
+    QTimer.singleShot(200, dlg.reject)
+    code = int(dlg.exec())
+    assert code == int(QDialog.DialogCode.Rejected)
+
+
+def test_connect_wizard_keeps_maximize_hint_without_toggling() -> None:
+    """Wizard must ship with Maximize hint so Path A never setWindowFlag mid-exec."""
+    from app.ui.login_dialog import ConnectGitHubWizard
+
+    _app()
+    wiz = ConnectGitHubWizard(None, reauth=False)
+    assert bool(
+        wiz.windowFlags() & Qt.WindowType.WindowMaximizeButtonHint
+    ), "Maximize hint must be set at construction (no mid-exec toggle)"
+
+
 def test_show_minimized_keeps_exec_until_accept() -> None:
     _app()
 

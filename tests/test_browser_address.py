@@ -1,5 +1,7 @@
 """Browser address helpers + checklist mapping (no live browser required)."""
 
+# (expiry UIA name matchers are pure — tested below)
+
 from __future__ import annotations
 
 from app.ui.connect_webview import is_google_signin_rejected
@@ -17,8 +19,10 @@ from app.ui.external_pat_guide import (
 )
 from app.util.browser_address import (
     _normalize_url,
+    _parse_expiration_opener_days,
     analyze_google_signin_block,
     browser_address_available,
+    chromium_window_rank_tuple,
     detect_signin_method,
     extract_visible_pat,
     is_apple_signin_url,
@@ -27,7 +31,11 @@ from app.util.browser_address import (
     looks_like_passkey_os_prompt,
     looks_like_token_issued_banner,
     looks_like_token_note_taken,
+    parse_tasklist_csv_pids,
     token_create_error_snippets,
+    uia_name_is_expiration_opener,
+    uia_name_matches_expiration_option,
+    window_title_connect_score,
 )
 
 
@@ -356,17 +364,47 @@ def test_progress_guide_after_login_confirmed() -> None:
     assert "복사" in title3 or "키" in title3
     assert "연결" in lead3 or "복사" in lead3
 
+    home = "https://github.com/"
+    dash = "Dashboard\nPull requests"
     assert should_auto_open_token_page(
-        kind="reached", idx=1, already_opened=False
+        kind="reached",
+        idx=1,
+        already_opened=False,
+        url=home,
+        page_text=dash,
     )
     assert not should_auto_open_token_page(
-        kind="reached", idx=1, already_opened=True
+        kind="reached",
+        idx=1,
+        already_opened=True,
+        url=home,
+        page_text=dash,
     )
     assert not should_auto_open_token_page(
-        kind="reached", idx=2, already_opened=False
+        kind="reached", idx=2, already_opened=False, url=home, page_text=dash
     )
     assert not should_auto_open_token_page(
-        kind="logged_out", idx=0, already_opened=False
+        kind="logged_out", idx=0, already_opened=False, url=home, page_text=dash
+    )
+    # Not main home (e.g. a repo) — do not yank the user
+    assert not should_auto_open_token_page(
+        kind="reached",
+        idx=1,
+        already_opened=False,
+        url="https://github.com/octocat/Hello-World",
+        page_text=dash,
+    )
+    # Empty first paint — wait for Sign in/up check
+    assert not should_auto_open_token_page(
+        kind="reached", idx=1, already_opened=False, url=home, page_text=""
+    )
+    # Logged-out marketing still has Sign in + Sign up
+    assert not should_auto_open_token_page(
+        kind="reached",
+        idx=1,
+        already_opened=False,
+        url=home,
+        page_text="Sign up for GitHub\nSign in to GitHub",
     )
 
     # Checklist: login done → next row is "make key"
@@ -396,3 +434,107 @@ def test_checklist_row_reflects_google_rejected() -> None:
 
 def test_browser_address_available_is_bool() -> None:
     assert isinstance(browser_address_available(), bool)
+
+
+def test_expiration_uia_name_matchers() -> None:
+    assert uia_name_is_expiration_opener("30 days")
+    assert uia_name_is_expiration_opener("90 days")
+    assert uia_name_is_expiration_opener("No expiration")
+    assert not uia_name_is_expiration_opener("Generate token")
+    assert not uia_name_is_expiration_opener("")
+
+    assert uia_name_matches_expiration_option("90 days", "90")
+    assert uia_name_matches_expiration_option("90 days (recommended)", "90")
+    assert uia_name_matches_expiration_option("No expiration", "none")
+    assert not uia_name_matches_expiration_option("30 days", "90")
+    assert not uia_name_matches_expiration_option("Custom…", "90")
+
+    assert _parse_expiration_opener_days("30 days") == "30"
+    assert _parse_expiration_opener_days("90 days") == "90"
+    assert _parse_expiration_opener_days("No expiration") == "none"
+    assert _parse_expiration_opener_days("Expiration") is None
+
+
+def test_path_b_log_sink_tees_masked_lines() -> None:
+    from app.util.browser_address import path_b_log, set_path_b_log_sink
+
+    seen: list[str] = []
+    set_path_b_log_sink(seen.append)
+    try:
+        path_b_log("hello ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789token")
+        assert seen, "sink should receive a line"
+        assert "ghp_" not in seen[-1]
+        assert "hello" in seen[-1]
+    finally:
+        set_path_b_log_sink(None)
+
+
+def test_generate_logs_when_uia_missing(monkeypatch) -> None:
+    """Generate early-exit must leave a Path B log (parity with Expiration)."""
+    import app.util.browser_address as ba
+
+    seen: list[str] = []
+    ba.set_path_b_log_sink(seen.append)
+    try:
+        monkeypatch.setattr(ba, "browser_address_available", lambda: False)
+        ok, detail = ba.try_invoke_generate_token_button()
+        assert ok is False
+        assert detail == "uiautomation-missing"
+        assert any("Generate" in line and "uiautomation" in line for line in seen)
+    finally:
+        ba.set_path_b_log_sink(None)
+
+
+def test_parse_tasklist_csv_pids() -> None:
+    raw = (
+        '"chrome.exe","29680","Console","1","417,076 K"\n'
+        '"chrome.exe","30956","Console","1","6,112 K"\n'
+    )
+    assert parse_tasklist_csv_pids(raw) == {29680, 30956}
+    assert parse_tasklist_csv_pids("") == set()
+    assert parse_tasklist_csv_pids("INFO: No tasks are running which match the specified criteria.") == set()
+
+
+def test_window_title_connect_score_prefers_pat_page() -> None:
+    pat = window_title_connect_score(
+        "New Personal Access Token (Classic) - Chrome"
+    )
+    gemini = window_title_connect_score("Gemini - Git 명령어 - Google Gemini")
+    search = window_title_connect_score("cd 명령어 뜻 - Google 검색 - Chrome")
+    assert pat > gemini
+    assert pat > search
+    assert pat >= 50
+    assert window_title_connect_score("") == 0
+
+
+def test_chromium_window_rank_tuple_order() -> None:
+    """Strong PAT title beats unrelated FG; FG breaks ties; lower z wins."""
+    fg_other = chromium_window_rank_tuple(
+        title="Google 검색 - Chrome", is_foreground=True, z_index=5
+    )
+    bg_pat = chromium_window_rank_tuple(
+        title="New Personal Access Token (Classic) - Chrome",
+        is_foreground=False,
+        z_index=0,
+    )
+    fg_pat = chromium_window_rank_tuple(
+        title="New Personal Access Token (Classic) - Chrome",
+        is_foreground=True,
+        z_index=2,
+    )
+    bg_pat_back = chromium_window_rank_tuple(
+        title="New Personal Access Token (Classic) - Chrome",
+        is_foreground=False,
+        z_index=3,
+    )
+    bg_other = chromium_window_rank_tuple(
+        title="Orca", is_foreground=False, z_index=0
+    )
+    # PAT create page wins over an unrelated foreground search tab.
+    assert bg_pat > fg_other
+    # Among PAT windows, foreground wins.
+    assert fg_pat > bg_pat
+    # Among non-FG, PAT title wins over unrelated.
+    assert bg_pat > bg_other
+    # Same title + same FG: earlier Z-index ranks higher.
+    assert bg_pat > bg_pat_back

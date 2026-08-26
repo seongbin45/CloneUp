@@ -118,7 +118,16 @@ def largest_16x9(
 
 
 def clear_size_locks(widget: Any) -> None:
-    """Remove maximumWidth/Height locks that block maximize."""
+    """Remove fixed / min / max size locks that block maximize or resize.
+
+    ``setFixedSize`` sets both min and max. Clearing only max left a sticky
+    minimum (e.g. choice 500×527) that fought WebView maximize and flooded
+    the console with ``QWindowsWindow::setGeometry`` warnings.
+    """
+    try:
+        widget.setMinimumSize(0, 0)
+    except Exception:
+        pass
     try:
         widget.setMaximumSize(_QWIDGETSIZE_MAX, _QWIDGETSIZE_MAX)
     except Exception:
@@ -150,18 +159,17 @@ def apply_work_area_maximized(widget: Any, *, anchor: Any = None) -> None:
         widget.showNormal()
     except Exception:
         pass
-    # Optional: seed geometry to available rect (helps multi-monitor)
+    # Soft floor only — do not force 960×540 (that inflated frames on
+    # scaled displays and triggered setGeometry warnings before maximize).
     screen = screen_for_widget(widget, anchor=anchor)
     info = read_screen_info(screen)
     if info is not None:
         try:
-            # Soft minimum that always fits this screen
-            mw = min(960, max(320, info.available_w - 48))
-            mh = min(540, max(240, info.available_h - 48))
+            mw = min(640, max(320, info.available_w - 48))
+            mh = min(360, max(240, info.available_h - 48))
             widget.setMinimumSize(mw, mh)
         except Exception:
             pass
-    clear_size_locks(widget)
     try:
         widget.showMaximized()
     except Exception:
@@ -266,9 +274,10 @@ def place_normal_16x9(widget: Any, *, anchor: Any = None) -> None:
         widget.resize(1280, 720)
         return
     w, h = largest_16x9(info.available_w, info.available_h)
-    # Soft minimum for this screen
+    # Soft floor — keep ≤640×360 so □-restore does not fight maximize
+    # with a sticky 960×540 minimum (setGeometry spam on scaled displays).
     try:
-        widget.setMinimumSize(min(960, w), min(540, h))
+        widget.setMinimumSize(min(640, w), min(360, h))
     except Exception:
         pass
     fit_client_in_available(

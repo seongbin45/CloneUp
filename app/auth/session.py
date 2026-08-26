@@ -112,10 +112,12 @@ def login_device_flow(
     except DeviceFlowError as e:
         raise AuthError(str(e)) from e
 
+    # Device Flow has no PAT Note — clear any leftover classic Note.
     save_token(
         token_resp.access_token,
         token_resp.scope,
         auth_kind=AUTH_KIND_DEVICE,
+        pat_note="",
     )
     print(f"토큰 저장됨 (masked): {mask_token(token_resp.access_token)}")
     print(f"granted scope (stored): {token_resp.scope!r}")
@@ -209,7 +211,10 @@ def refresh_scopes_from_github(
 
 
 def login_with_pat(
-    token: str, *, expires_at: str | None = None
+    token: str,
+    *,
+    expires_at: str | None = None,
+    pat_note: str | None = None,
 ) -> tuple[str, dict]:
     """
     Validate a user-supplied Personal Access Token and store it.
@@ -219,6 +224,7 @@ def login_with_pat(
 
     ``expires_at``: ISO-8601 UTC or ``none`` from page scrape; if missing,
     best-effort API lookup may fill it for fine-grained tokens.
+    ``pat_note``: Note/name CloneUp put on the create form (stored for Settings).
     """
     cleaned = (token or "").strip()
     if not cleaned:
@@ -273,16 +279,23 @@ def login_with_pat(
     exp = (expires_at or "").strip() or None
     if not exp:
         exp = _lookup_expires_at_via_api(cleaned, user=user)
+    note = (pat_note or "").strip()
     save_token(
-        cleaned, store_scope, auth_kind=AUTH_KIND_PAT, expires_at=exp or ""
+        cleaned,
+        store_scope,
+        auth_kind=AUTH_KIND_PAT,
+        expires_at=exp or "",
+        pat_note=note,
     )
     print(f"키 저장됨 (masked): {mask_token(cleaned)}")
     print(f"granted scope (stored): {store_scope!r}")
     print(f"auth kind: {AUTH_KIND_PAT}")
     print(f"expires_at: {exp!r}")
+    print(f"pat_note: {note!r}")
     print(f"user: {user.get('login')!r}")
     user = dict(user)
     user["_expires_at"] = exp
+    user["_pat_note"] = note
     return cleaned, user
 
 

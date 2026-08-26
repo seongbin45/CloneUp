@@ -113,11 +113,17 @@ class PatLoginWorker(QThread):
     failed = Signal(str)
 
     def __init__(
-        self, token: str, parent=None, *, expires_at: str | None = None
+        self,
+        token: str,
+        parent=None,
+        *,
+        expires_at: str | None = None,
+        pat_note: str | None = None,
     ) -> None:
         super().__init__(parent)
         self._token = token
         self._expires_at = expires_at
+        self._pat_note = pat_note
 
     def _log(self, msg: str) -> None:
         self.log_line.emit(mask_secrets_in_text(msg))
@@ -135,7 +141,9 @@ class PatLoginWorker(QThread):
                     return
                 self._log("GitHub 키로 연결 중…")
                 token, user = login_with_pat(
-                    self._token, expires_at=self._expires_at
+                    self._token,
+                    expires_at=self._expires_at,
+                    pat_note=self._pat_note,
                 )
                 if self.isInterruptionRequested():
                     self.failed.emit("연결이 취소되었습니다.")
@@ -151,6 +159,7 @@ class PatLoginWorker(QThread):
                         "expires_display": format_expires_display(
                             str(exp) if exp else None
                         ),
+                        "pat_note": user.get("_pat_note") or self._pat_note or "",
                     }
                 )
         except AuthError as e:

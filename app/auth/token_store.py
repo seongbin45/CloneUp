@@ -1,11 +1,21 @@
-"""Persist GitHub access tokens + metadata in the OS keyring."""
+"""Persist GitHub access tokens + metadata in the OS keyring.
+
+When master protection is enabled (see ``secret_vault``), the PAT is stored as
+``enc.v1.<b64>`` ciphertext. Day-to-day ``load_token`` decrypts via DPAPI DEK
+without prompting for the master password.
+"""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import keyring
+
+from . import secret_vault
+
+logger = logging.getLogger(__name__)
 
 SERVICE_NAME = "CloneUp"
 TOKEN_USERNAME = "github_oauth_access_token"
@@ -17,6 +27,8 @@ AUTH_KIND_USERNAME = "github_auth_kind"
 CONNECTED_AT_USERNAME = "github_token_connected_at"
 # GitHub PAT expiration when known: ISO-8601 UTC ``…Z``, or ``none``.
 EXPIRES_AT_USERNAME = "github_token_expires_at"
+# Note / name CloneUp put on the GitHub token form when the key was created.
+PAT_NOTE_USERNAME = "github_pat_note"
 
 AUTH_KIND_DEVICE = "device"
 AUTH_KIND_PAT = "pat"
@@ -39,6 +51,11 @@ def _iso_now() -> str:
     return _utc_now().replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def load_token_raw() -> str | None:
+    """Raw keyring value — plaintext PAT or ``enc.v1.…`` ciphertext."""
+    return keyring.get_password(SERVICE_NAME, TOKEN_USERNAME)
+
+
 def save_token(
     token: str,
     scope: str = "",
@@ -46,10 +63,20 @@ def save_token(
     auth_kind: str | None = None,
     connected_at: str | None = None,
     expires_at: str | None = None,
+    pat_note: str | None = None,
 ) -> None:
     if not token or not token.strip():
         raise ValueError("refusing to store empty token")
-    keyring.set_password(SERVICE_NAME, TOKEN_USERNAME, token.strip())
+    plain = token.strip()
+    # If caller already passed an enc.v1 blob, store as-is; otherwise encrypt
+    # when master protection is on.
+    if secret_vault.is_encrypted_blob(plain):
+        to_store = plain
+    elif secret_vault.is_protection_enabled():
+        to_store = secret_vault.encrypt_token_for_store(plain)
+    else:
+        to_store = plain
+    keyring.set_password(SERVICE_NAME, TOKEN_USERNAME, to_store)
     # Empty string is valid (GitHub may omit scope for some grants).
     keyring.set_password(SERVICE_NAME, SCOPE_USERNAME, (scope or "").strip())
     if auth_kind is not None:
@@ -67,17 +94,36 @@ def save_token(
             keyring.set_password(SERVICE_NAME, EXPIRES_AT_USERNAME, exp)
         else:
             _delete_key(EXPIRES_AT_USERNAME)
+    if pat_note is not None:
+        note = (pat_note or "").strip()
+        if note:
+            keyring.set_password(SERVICE_NAME, PAT_NOTE_USERNAME, note)
+        else:
+            _delete_key(PAT_NOTE_USERNAME)
 
 
 def load_token() -> str | None:
-    return keyring.get_password(SERVICE_NAME, TOKEN_USERNAME)
+    """Plaintext PAT, or None. Decrypts ``enc.v1.…`` when protection is on."""
+    raw = load_token_raw()
+    if raw is None:
+        return None
+    if not secret_vault.is_encrypted_blob(raw):
+        return raw
+    try:
+        return secret_vault.decrypt_token_from_store(raw)
+    except secret_vault.VaultError as e:
+        logger.warning("encrypted token present but decrypt failed: %s", e)
+        return None
 
 
 def is_logged_in() -> bool:
     """True when a GitHub access token is stored on this PC."""
+    # Raw keyring presence covers enc.v1 blobs even if DPAPI unlock fails.
+    raw = load_token_raw()
+    if raw is not None and str(raw).strip():
+        return True
+    # Fallback: callers/tests that only stub ``load_token``.
     return bool(load_token())
-
-
 def load_scope() -> str | None:
     """Granted scope string from last successful login (may be None)."""
     return keyring.get_password(SERVICE_NAME, SCOPE_USERNAME)
@@ -137,6 +183,15 @@ def load_expires_at() -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def load_pat_note() -> str | None:
+    """Note / name used on the GitHub token form when CloneUp created the key."""
+    raw = keyring.get_password(SERVICE_NAME, PAT_NOTE_USERNAME)
+    if raw is None:
+        return None
+    s = raw.strip()
+    return s or None
 
 
 def days_since_connected() -> int | None:
@@ -234,12 +289,14 @@ def token_age_info() -> TokenAgeInfo:
 
 
 def delete_token() -> None:
+    """Remove token + metadata from keyring. Vault (master wrap) is left intact."""
     for username in (
         TOKEN_USERNAME,
         SCOPE_USERNAME,
         AUTH_KIND_USERNAME,
         CONNECTED_AT_USERNAME,
         EXPIRES_AT_USERNAME,
+        PAT_NOTE_USERNAME,
     ):
         _delete_key(username)
 
@@ -250,6 +307,66 @@ def _delete_key(username: str) -> None:
     except keyring.errors.PasswordDeleteError:
         pass
 
+
+# ---------------------------------------------------------------------------
+# Master-protection migration helpers (Settings API; no UI yet)
+# ---------------------------------------------------------------------------
+
+
+def is_token_encrypted() -> bool:
+    """True when the stored PAT is an ``enc.v1.…`` ciphertext."""
+    return secret_vault.is_encrypted_blob(load_token_raw())
+
+
+def enable_master_protection(password: str) -> None:
+    """
+    Enable master protection and migrate any existing plaintext PAT.
+
+    Master password is used only in memory here — never written to disk.
+    Daily loads use DPAPI afterwards (no password prompt).
+    """
+    if secret_vault.is_protection_enabled():
+        raise secret_vault.VaultError("master protection is already enabled")
+    raw = load_token_raw()
+    plain: str | None = None
+    if raw and not secret_vault.is_encrypted_blob(raw):
+        plain = raw.strip() or None
+    elif raw and secret_vault.is_encrypted_blob(raw):
+        # Orphan ciphertext without vault — cannot migrate safely.
+        raise secret_vault.VaultError(
+            "encrypted token found but vault is missing; clear token and reconnect"
+        )
+
+    enc = secret_vault.enable_protection(password, plaintext_token=plain)
+    if enc is not None:
+        keyring.set_password(SERVICE_NAME, TOKEN_USERNAME, enc)
+
+
+def change_master_password(old_password: str, new_password: str) -> None:
+    """Re-wrap DEK with a new master password (DPAPI blob unchanged)."""
+    secret_vault.change_password(old_password, new_password)
+
+
+def disable_master_protection(password: str) -> None:
+    """
+    Disable master protection after verifying ``password``.
+
+    Decrypts the PAT back to plaintext in keyring, then clears vault files.
+    """
+    if not secret_vault.is_protection_enabled():
+        raise secret_vault.VaultError("master protection is not enabled")
+    raw = load_token_raw()
+    plain = secret_vault.disable_protection(password, encrypted_blob=raw)
+    if plain is not None:
+        keyring.set_password(SERVICE_NAME, TOKEN_USERNAME, plain)
+    elif raw and secret_vault.is_encrypted_blob(raw):
+        # disable_protection should have returned plaintext; fail closed.
+        raise secret_vault.VaultError("failed to recover plaintext token on disable")
+
+
+def master_protection_enabled() -> bool:
+    """True when wrap.json + dek.dpapi exist."""
+    return secret_vault.is_protection_enabled()
 
 def parse_oauth_scopes(raw: str | None) -> list[str]:
     """

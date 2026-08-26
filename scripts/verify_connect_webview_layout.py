@@ -133,26 +133,31 @@ def main() -> int:
         if wiz.maximumWidth() < 100000 and wiz.maximumWidth() <= dw:
             errors.append(f"maximumWidth caps resize: {wiz.maximumWidth()}")
 
-        # Step 1 defaults: key hidden, CTA disabled "다음"
+        # Step 1 defaults: key hidden; 「다음」CTA gone — footer back on the right
         wiz._paint_web_guide(0)
         key_wrap = getattr(wiz, "_key_wrap", None)
         if key_wrap is not None and key_wrap.isVisible():
             errors.append("key row visible on step 1")
-        if wiz._web_cta is None or wiz._web_cta.isEnabled():
-            errors.append("CTA should be disabled on step 1")
-        if wiz._web_cta is not None and wiz._web_cta.text() != "다음":
-            errors.append(f"CTA text on step1={wiz._web_cta.text()!r}")
+        if wiz._web_cta is not None:
+            errors.append("footer 「다음」CTA must not be created")
+        back = getattr(wiz, "_web_back_footer", None)
+        if back is None or back.text() != "이전화면으로 가기":
+            errors.append(
+                f"footer back missing/wrong: {None if back is None else back.text()!r}"
+            )
+        if back is not None and back.objectName() != "btnPrimary":
+            errors.append(f"footer back style={back.objectName()!r} (want btnPrimary)")
         if wiz._web_counter is not None and wiz._web_counter.text() != "1 / 4":
             errors.append(f"counter={wiz._web_counter.text()!r}")
 
-        # Step 4: key visible, warn watch, CTA "연결"
+        # Step 4: key visible, warn watch; back button stays (auto-finish connects)
         wiz._paint_web_guide(3)
         if key_wrap is not None and not key_wrap.isVisible():
             errors.append("key row hidden on step 4")
         if wiz._web_watch is not None and wiz._web_watch.objectName() != "connWatchWarn":
             errors.append(f"watch on step4={wiz._web_watch.objectName()!r}")
-        if wiz._web_cta is not None and wiz._web_cta.text() != "연결":
-            errors.append(f"CTA text on step4={wiz._web_cta.text()!r}")
+        if back is None or not back.isVisible():
+            errors.append("footer 「이전화면으로 가기」 should stay visible on step 4")
         if wiz._web_counter is not None and wiz._web_counter.text() != "4 / 4":
             errors.append(f"counter step4={wiz._web_counter.text()!r}")
 

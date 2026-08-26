@@ -13,7 +13,8 @@
 | [GIT_FOR_BEGINNERS.md](GIT_FOR_BEGINNERS.md) | 초심자 Git 설명 원칙: **부하 시험·유효 범위·명사 비유** (금지 나열만이 아님) |
 | [DIFFERENTIATION.md](DIFFERENTIATION.md) | GitHub Desktop·Bitbucket 대비 **차별 가치**와 로드맵 |
 | [ORG_OAUTH_APP.md](ORG_OAUTH_APP.md) | **Org OAuth App 운영** 초보 체크리스트 (client_id 이전) |
-| [RELEASE_0.1.7.md](RELEASE_0.1.7.md) | **0.1.7** 사용자·배포 노트 (현재) |
+| [RELEASE_0.1.8.md](RELEASE_0.1.8.md) | **0.1.8** 사용자·배포 노트 (현재) |
+| [RELEASE_0.1.7.md](RELEASE_0.1.7.md) | **0.1.7** 사용자·배포 노트 |
 | [RELEASE_0.1.6.md](RELEASE_0.1.6.md) | **0.1.6** 사용자·배포 노트 |
 | [RELEASE_0.1.5.md](RELEASE_0.1.5.md) | **0.1.5** 사용자·배포 노트 |
 | [RELEASE_0.1.4.md](RELEASE_0.1.4.md) | **0.1.4** 사용자·배포 노트 |
@@ -26,6 +27,7 @@
 | [FAILURE_CASES.md](FAILURE_CASES.md) | 실패 시나리오 체크리스트 |
 | [PII_CROSS_VERIFY.md](PII_CROSS_VERIFY.md) | 비밀파일·개인정보 스캔 교차검증 |
 | [SECURITY_CROSS_VERIFY.md](SECURITY_CROSS_VERIFY.md) | **보안 전면 교차검증** + `scripts/verify_security_crosscheck.py` |
+| [MASTER_PASSWORD_VAULT.md](MASTER_PASSWORD_VAULT.md) | **마스터 비밀번호 키 보호** (vault · DPAPI · 설정 UI · 한계) |
 | [ICON_CROSS_VERIFY.md](ICON_CROSS_VERIFY.md) | 아이콘 시안 대조 |
 | [DESIGN_PHASES.md](DESIGN_PHASES.md) | UI 디자인 단계 |
 | [PLAYWRIGHT_DEVICE_FLOW.md](PLAYWRIGHT_DEVICE_FLOW.md) | 실험용 Playwright 로그인 |

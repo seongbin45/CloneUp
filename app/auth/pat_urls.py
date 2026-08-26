@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 
 def make_pat_note(*, prefix: str = "CloneUp") -> str:
     """``CloneUp-YYYYMMDD-HHMMSS`` — avoids 'Note has already been taken'."""
     return f"{prefix}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+
+def note_from_pat_create_url(url: str) -> str:
+    """Extract Note/name from a classic or fine-grained create URL."""
+    try:
+        q = parse_qs(urlparse(url or "").query)
+    except Exception:
+        return ""
+    for key in ("description", "name"):
+        vals = q.get(key) or []
+        if vals:
+            return unquote(str(vals[0])).strip()
+    return ""
 
 
 def classic_pat_create_url(

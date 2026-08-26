@@ -223,11 +223,216 @@ def classify_webview_sample(
     if method == "apple" or "appleid.apple.com" in u.lower():
         return ("current", 0, meta)
 
-    if u and host and "github.com" not in host and "google.com" not in host:
+    # Completely different parent host (not GitHub / Google accounts / Apple)
+    if u and host and is_off_github_flow_family(u):
         meta["method"] = "away"
         return ("away", None, meta)
 
     return ("unknown", None, meta)
+
+
+_AWAY_RETURN_SECONDS = 5
+
+
+def is_off_github_flow_family(url: str) -> bool:
+    """
+    True when the URL has a host that is not the GitHub connect "parent" family.
+
+    Family: github.com, Google account sign-in, Apple ID.
+    Empty / host-less URLs are not treated as away (avoid about:blank flashes).
+    """
+    from app.util.browser_address import is_github_flow_family_url
+
+    u = (url or "").strip()
+    if not u:
+        return False
+    if not _hostname(u):
+        return False
+    return not is_github_flow_family_url(u)
+
+
+def away_return_countdown_seconds() -> int:
+    return _AWAY_RETURN_SECONDS
+
+
+def away_return_target_url() -> str:
+    """Classic PAT create page (fresh unique Note each call)."""
+    from app.auth.pat_urls import classic_pat_create_url, make_pat_note
+
+    return classic_pat_create_url(note=make_pat_note())
+
+
+def format_away_return_banner(secs_left: int) -> str:
+    """Dialog overlay copy: countdown before returning to token create."""
+    n = max(0, int(secs_left))
+    return f"{n}초 후 Github 키 발급 페이지로 다시 이동합니다."
+
+
+# Single-segment paths that are product/chrome, not ``/{username}`` profiles.
+_GITHUB_RESERVED_ROOT_SEGMENTS = frozenset(
+    {
+        "about",
+        "account",
+        "apps",
+        "collections",
+        "contact",
+        "copilot",
+        "customer-stories",
+        "enterprise",
+        "events",
+        "explore",
+        "features",
+        "home",
+        "issues",
+        "join",
+        "login",
+        "logout",
+        "marketplace",
+        "new",
+        "notifications",
+        "organizations",
+        "orgs",
+        "password_reset",
+        "pricing",
+        "pulls",
+        "readme",
+        "search",
+        "security",
+        "sessions",
+        "settings",
+        "signup",
+        "site",
+        "sponsors",
+        "stars",
+        "topics",
+        "watching",
+    }
+)
+
+
+def looks_like_github_user_profile_url(url: str) -> bool:
+    """
+    True for ``github.com/{username}`` (and ``?tab=repositories`` etc.).
+
+    One path segment that is not a reserved product route. Repo paths
+    (``/{owner}/{repo}``) are excluded — two or more segments.
+    """
+    host = _hostname(url)
+    if not host or (host != "github.com" and not host.endswith(".github.com")):
+        return False
+    if host.startswith("gist."):
+        return False
+    path = (_path(url) or "").strip("/")
+    if not path:
+        return False
+    parts = [p for p in path.split("/") if p]
+    if len(parts) != 1:
+        return False
+    seg = parts[0].lower()
+    if seg in _GITHUB_RESERVED_ROOT_SEGMENTS:
+        return False
+    if seg.startswith("."):
+        return False
+    return True
+
+
+def is_github_main_home_url(url: str) -> bool:
+    """True for github.com `/`, `/dashboard`, `/home` (logged-in landing)."""
+    host = _hostname(url)
+    if not host:
+        return False
+    if host != "github.com" and not host.endswith(".github.com"):
+        return False
+    path = (_path(url) or "").rstrip("/")
+    return path in ("", "/", "/dashboard", "/home")
+
+
+def looks_like_github_token_flow_url(url: str) -> bool:
+    """Classic / fine-grained PAT list or create pages (stay — connect flow)."""
+    path = (_path(url) or "").lower()
+    if not path:
+        return False
+    if "settings/tokens" in path:
+        return True
+    if "personal-access-tokens" in path:
+        return True
+    return False
+
+
+def _is_github_host(url: str) -> bool:
+    host = _hostname(url)
+    return bool(host == "github.com" or (host and host.endswith(".github.com")))
+
+
+def _is_github_login_or_sessions_path(url: str) -> bool:
+    path = _path(url) or ""
+    return path.startswith("/login") or path.startswith("/sessions")
+
+
+def should_start_away_return_countdown(kind: str, url: str = "") -> bool:
+    """
+    When to show the 5s rollback-to-token-create banner.
+
+    - ``away``: off GitHub-flow family hosts
+    - 로그인 전 (``logged_out``): github.com 하위 **전부** 롤백
+      (``/login``·``/sessions`` 은 보통 ``current``라 여기 안 옴; 경로로도 제외)
+    - 로그인 후 (``reached``): **토큰 페이지가 아니면** 롤백
+      (``/settings/tokens*``, personal-access-tokens 제외)
+    - ``current`` (login / Google / Apple / 2FA sessions): 롤백 없음
+    """
+    if kind == "away":
+        return True
+    if kind in ("rejected", "current", "token_error", "unknown"):
+        return False
+
+    if not _is_github_host(url):
+        return False
+    if _is_github_login_or_sessions_path(url):
+        return False
+
+    if kind == "logged_out":
+        # Pre-login: any github sub-URL (except login/sessions above)
+        return True
+
+    if kind == "reached":
+        # Post-login: stay only on PAT create/list/issued pages
+        if looks_like_github_token_flow_url(url):
+            return False
+        st = detect_github_page_stage(PageSnapshot(url=url))
+        if st == GitHubPageStage.AUTH_2FA:
+            return False
+        return True
+
+    return False
+
+
+def should_auto_open_token_page(
+    *,
+    kind: str,
+    idx: int | None,
+    already_opened: bool,
+    url: str = "",
+    title: str = "",
+    page_text: str = "",
+) -> bool:
+    """
+    Open classic tokens/new once when logged-in on github.com main.
+
+    Login is inferred as: classify ``reached`` idx 1, home URL, page text
+    present, and no Sign in / Sign up (logged-out marketing).
+    Skips empty first-paint and 2FA / other github paths.
+    """
+    if already_opened:
+        return False
+    if kind != "reached" or idx != 1:
+        return False
+    if not is_github_main_home_url(url):
+        return False
+    if not (title or page_text).strip():
+        return False
+    if looks_like_github_logged_out_html(url, title, page_text):
+        return False
+    return True
 
 
 def guide_copy_for_webview_kind(

@@ -64,6 +64,9 @@ Git CLI를 버튼으로만 감싸는 것이 목표가 아니다. 초심자가 **
   - **기본 인증 = PAT(키)만.** Device Flow 자동 시작 없음.
   - `CLONEUP_ALLOW_DEVICE_FLOW=1` 일 때만 개발용 Device Flow.
   - 토큰은 **절대 `.git/config`에 안 씀**.
+  - **선택:** 설정 → 안전 **마스터 비밀번호 보호** — keyring 암호문 + DPAPI DEK.  
+    일상 사용은 비번 없이, 마스터 비번은 디스크에 두지 않음.  
+    상세: [MASTER_PASSWORD_VAULT.md](MASTER_PASSWORD_VAULT.md).
 
 ### V2. **안전 업로드 (Safety)** — 이미 있고, 더 키울 축
 - Desktop은 파일을 올릴지 말지 사용자가 diff로 고른다. 초보는 `.env`를 몰라서 같이 올린다.
@@ -98,6 +101,7 @@ Git CLI를 버튼으로만 감싸는 것이 목표가 아니다. 초심자가 **
 |------|----------|------|------|
 | 1 | PAT 로그인 | V1 | 완료 |
 | 1b | **Device Flow 기본 OFF + 자동 재로그인 제거** | V1 보안 | **완료** |
+| 1c | **마스터 비밀번호 키 보호** (선택 · DPAPI) | V1 보안 | **완료** |
 | 2 | 로그인 상태 툴팁 | V1 | 완료 |
 | 3 | Publish/Clone 성공 「다음 할 일」 | V5 | 완료 |
 | 4 | G3 카피·오탐 | V2 | 완료 |
