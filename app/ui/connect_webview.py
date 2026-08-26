@@ -903,32 +903,105 @@ class GitHubConnectWebPane(QWidget):
         self, days_value: str, *, on_done=None, retries: int = 4
     ) -> None:
         """
-        Click/set GitHub Expiration dropdown to ``days_value``
-        (``\"7\"``/``\"30\"``/``\"60\"``/``\"90\"`` or ``\"\"`` for no expiration)
-        **before** Generate token.
+        Set GitHub Expiration to ``days_value`` **before** Generate token.
+
+        1) JS value/click  2) physical click by text rect  3) cross-check read-back
         """
         from PySide6.QtCore import QTimer
 
         from app.auth.token_expiry import parse_expires_label
+        from app.ui.webview_physical_click import find_target_and_physical_click
 
         want = "" if days_value in (None, "none", "NONE") else str(days_value).strip()
         self._pending_expiry_days = want
-        # Optimistically record for keyring even if the DOM select is missing
         exp = parse_expires_label(
             want or "none", "No expiration" if not want else f"{want} days"
         )
         if exp:
             self._last_expires_at = exp
 
-        def _done(result: object) -> None:
+        def _finish(ok: bool, detail: str) -> None:
+            if on_done is not None:
+                on_done(ok, detail)
+
+        def _verify_then_finish(detail: str) -> None:
+            # Cross-check: re-read Expiration control / page text
+            def _after_read(result: object) -> None:
+                import json
+
+                from app.auth.token_expiry import (
+                    parse_expires_from_page_text,
+                    parse_expires_label,
+                )
+
+                value = label = body = ""
+                try:
+                    data = json.loads(str(result) if result is not None else "")
+                    if isinstance(data, dict):
+                        value = str(data.get("value") or "")
+                        label = str(data.get("label") or "")
+                        body = str(data.get("bodyHint") or "")
+                except Exception:
+                    body = str(result or "")
+                got = parse_expires_label(value, label) or parse_expires_from_page_text(
+                    body
+                )
+                if got:
+                    self._last_expires_at = got
+                want_exp = parse_expires_label(
+                    want or "none", "No expiration" if not want else f"{want} days"
+                )
+                # Accept match on day-count value, ISO date, or none
+                matched = False
+                if want == "" and (got == "none" or value == "" or "no expiration" in (label or "").lower()):
+                    matched = True
+                elif want and (value == want or (got and want_exp and got[:10] == want_exp[:10])):
+                    matched = True
+                elif want and want in (label or ""):
+                    matched = True
+                _finish(matched or bool(got), f"{detail}|verify={got!r}|value={value!r}")
+
+            try:
+                self._view.page().runJavaScript(_JS_READ_EXPIRATION, _after_read)
+            except Exception:
+                _finish(True, detail + "|verify-skip")
+
+        def _physical_fallback(prev_detail: str) -> None:
+            # Open dropdown if needed, then click the matching days option
+            def _after_open(ok_open: bool, det_open: str) -> None:
+                def _after_opt(ok_opt: bool, det_opt: str) -> None:
+                    QTimer.singleShot(
+                        250,
+                        lambda: _verify_then_finish(
+                            f"{prev_detail}|phys:{det_open}|{det_opt}"
+                        ),
+                    )
+
+                # Delay so listbox/menu can open after opener click
+                QTimer.singleShot(
+                    220,
+                    lambda: find_target_and_physical_click(
+                        self._view,
+                        kind="expiry",
+                        want=want,
+                        zoom=float(getattr(self, "_zoom", 1.0) or 1.0),
+                        on_done=_after_opt,
+                    ),
+                )
+
+            find_target_and_physical_click(
+                self._view,
+                kind="expiry",
+                want=want,
+                zoom=float(getattr(self, "_zoom", 1.0) or 1.0),
+                on_done=_after_open,
+            )
+
+        def _js_done(result: object) -> None:
             text = str(result) if result is not None else ""
-            ok = text.startswith("set-")
-            if ok:
-                self._try_read_expiration()
-                if on_done is not None:
-                    on_done(True, text)
+            if text.startswith("set-"):
+                QTimer.singleShot(150, lambda: _verify_then_finish("js:" + text))
                 return
-            # DOM not ready yet — retry a few times
             if retries > 0:
                 QTimer.singleShot(
                     350,
@@ -936,18 +1009,18 @@ class GitHubConnectWebPane(QWidget):
                         want, on_done=on_done, retries=retries - 1
                     ),
                 )
-            elif on_done is not None:
-                on_done(False, text)
+                return
+            # JS failed — physical text-based click
+            _physical_fallback("js-fail:" + text)
 
         try:
             js = f"{_JS_SET_EXPIRATION}({want!r});"
-            self._view.page().runJavaScript(js, _done)
+            self._view.page().runJavaScript(js, _js_done)
         except Exception:
-            if on_done is not None:
-                on_done(False, "js-error")
+            _physical_fallback("js-error")
 
     def _schedule_expiry_then_generate(self) -> None:
-        """Apply footer Expiration on the GitHub form, then click Generate token."""
+        """Physical/JS Expiration first, verify, then Generate token."""
         from PySide6.QtCore import QTimer
 
         url = ""
@@ -962,15 +1035,13 @@ class GitHubConnectWebPane(QWidget):
         self._generate_scheduled_url = url
         days = getattr(self, "_pending_expiry_days", "90")
 
-        def _after_expiry(ok: bool, _msg: str = "") -> None:
-            # Always proceed to Generate; expiry best-effort
+        def _after_expiry(ok: bool, msg: str = "") -> None:
             QTimer.singleShot(
-                250, lambda u=url: self._try_click_generate_token(u)
+                300, lambda u=url: self._try_click_generate_token(u)
             )
 
-        # Wait briefly for the form to paint, then click Expiration option
         QTimer.singleShot(
-            450,
+            500,
             lambda: self.apply_expiration_choice(days, on_done=_after_expiry),
         )
 
@@ -979,6 +1050,10 @@ class GitHubConnectWebPane(QWidget):
         self._schedule_expiry_then_generate()
 
     def _try_click_generate_token(self, expected_url: str) -> None:
+        from PySide6.QtCore import QTimer
+
+        from app.ui.webview_physical_click import find_target_and_physical_click
+
         try:
             cur = self._view.url().toString()
         except Exception:
@@ -987,7 +1062,6 @@ class GitHubConnectWebPane(QWidget):
             return
         if cur == self._generate_clicked_url:
             return
-        # Still on a create form?
         st = detect_github_page_stage(PageSnapshot(url=cur))
         if st not in (
             GitHubPageStage.TOKEN_CLASSIC_NEW,
@@ -995,17 +1069,32 @@ class GitHubConnectWebPane(QWidget):
         ):
             return
 
-        def _done(result: object) -> None:
-            text = str(result) if result is not None else ""
-            if text.startswith("clicked:"):
-                self._generate_clicked_url = expected_url
-            # Allow one retry on a later navigation to a new Note URL
+        def _mark_clicked() -> None:
+            self._generate_clicked_url = expected_url
             if self._generate_scheduled_url == expected_url:
                 self._generate_scheduled_url = ""
 
+        def _physical_generate(_ok: bool = False, _det: str = "") -> None:
+            find_target_and_physical_click(
+                self._view,
+                kind="generate",
+                want="",
+                zoom=float(getattr(self, "_zoom", 1.0) or 1.0),
+                on_done=lambda ok, det: _mark_clicked() if ok else None,
+            )
+
+        def _js_done(result: object) -> None:
+            text = str(result) if result is not None else ""
+            if text.startswith("clicked:"):
+                _mark_clicked()
+                return
+            # JS click ignored — physical click by "Generate token" text
+            QTimer.singleShot(100, _physical_generate)
+
         try:
-            self._view.page().runJavaScript(_JS_CLICK_GENERATE_TOKEN, _done)
+            self._view.page().runJavaScript(_JS_CLICK_GENERATE_TOKEN, _js_done)
         except Exception:
+            _physical_generate()
             if self._generate_scheduled_url == expected_url:
                 self._generate_scheduled_url = ""
 
