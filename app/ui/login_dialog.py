@@ -637,8 +637,9 @@ class ConnectGitHubWizard(QDialog):
             pass
         if self._use_web:
             self.setObjectName("connectWebDialog")
-            # Soft floor — real mins come from screen_fit on show (DPI / small panels).
-            self.setMinimumSize(640, 360)
+            # Soft floor for choice; WebView path raises mins in _fit_web_dialog.
+            # Do not use 640×360 here — that alone elongates the choice card.
+            self.setMinimumSize(440, 280)
             # Do not call adjustSize() in web mode — it collapses QWebEngineView.
         else:
             self.setMinimumWidth(440)
@@ -687,6 +688,7 @@ class ConnectGitHubWizard(QDialog):
         root.addWidget(self._progress)
         root.addWidget(self._stack, 1)
         if self._use_web:
+            self._set_stack_page_size_mode(choice=True)
             self._go(self._choice_index)
             # Final size applied in showEvent → _fit_choice_dialog (compact)
         else:
@@ -711,8 +713,37 @@ class ConnectGitHubWizard(QDialog):
 
         place_normal_16x9(self, anchor=self._anchor)
 
+    def _set_stack_page_size_mode(self, *, choice: bool) -> None:
+        """
+        QStackedWidget.sizeHint() is the *max* of all pages — the hidden
+        WebEngine page (~900px tall) otherwise forces a tall choice window.
+        Collapse the inactive page so only the visible page drives height.
+        """
+        choice_w = self._stack.widget(self._choice_index)
+        web_w = self._stack.widget(self._web_index)
+        if choice_w is None or web_w is None:
+            return
+        if choice:
+            web_w.setMaximumSize(0, 0)
+            web_w.setSizePolicy(
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored
+            )
+            choice_w.setMaximumSize(16777215, 16777215)
+            choice_w.setSizePolicy(
+                QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+            )
+        else:
+            choice_w.setMaximumSize(0, 0)
+            choice_w.setSizePolicy(
+                QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored
+            )
+            web_w.setMaximumSize(16777215, 16777215)
+            web_w.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+            )
+
     def _fit_choice_dialog(self) -> None:
-        """Compact, content-height window for the path-choice card (not maximized)."""
+        """Compact window sized to the choice card only (not the WebView page)."""
         from app.util.screen_fit import (
             clear_size_locks,
             fit_client_in_available,
@@ -722,7 +753,6 @@ class ConnectGitHubWizard(QDialog):
         from PySide6.QtCore import Qt
 
         try:
-            # Leave maximized / fullscreen if we came back from WebView
             st = self.windowState()
             if st & (
                 Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen
@@ -734,24 +764,27 @@ class ConnectGitHubWizard(QDialog):
                 )
             self.showNormal()
             clear_size_locks(self)
-            # Hug content — do not force a tall minimum (that stretched the bottom)
-            self.setMinimumSize(440, 280)
-            self.setMaximumHeight(16777215)
-            self.adjustSize()
-            hint = self.sizeHint()
-            w = max(480, min(560, hint.width() or 520))
-            # Prefer actual hint height; only a small pad for chrome
-            h = max(300, (hint.height() or 340) + 8)
+            self._set_stack_page_size_mode(choice=True)
+            self.setMinimumSize(440, 260)
+            self.setMaximumWidth(560)
+            # Size from the *choice page* only — dialog sizeHint includes WebView
+            page = self._stack.widget(self._choice_index)
+            ph = page.sizeHint() if page is not None else None
+            pw = int(ph.width()) if ph is not None and ph.width() > 0 else 520
+            phh = int(ph.height()) if ph is not None and ph.height() > 0 else 340
+            w = max(480, min(560, pw + 8))
+            # Title-bar / frame pad only — keep height tight to content
+            h = max(280, min(420, phh + 36))
             info = read_screen_info(screen_for_widget(self, anchor=self._anchor))
             if info is not None:
                 w = min(w, max(400, info.available_w - 48))
-                h = min(h, max(280, info.available_h - 48))
+                h = min(h, max(260, info.available_h - 48))
             fit_client_in_available(
                 self, w, h, anchor=self._anchor, keep_16x9=False, lock_height=True
             )
             self._place_center_on_anchor()
         except Exception:
-            self.resize(520, 360)
+            self.resize(520, 340)
             self._place_center_on_anchor()
 
     def _fit_web_dialog(self) -> None:
@@ -764,6 +797,8 @@ class ConnectGitHubWizard(QDialog):
         from app.util.screen_fit import apply_work_area_maximized, clear_size_locks
 
         try:
+            self._set_stack_page_size_mode(choice=False)
+            self.setMaximumWidth(16777215)
             self.showNormal()
             self._place_normal_web_size()
             clear_size_locks(self)
