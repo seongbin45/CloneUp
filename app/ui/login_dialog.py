@@ -1872,6 +1872,19 @@ class ConnectGitHubWizard(QDialog):
         # Auto-recover with CloneUp-YYYYMMDD-HHMMSS
         QTimer.singleShot(400, self._reload_pat_create_fresh_note)
 
+    def _live_stage_from_webview(self) -> object | None:
+        """Best-effort GitHubPageStage from the current WebView URL."""
+        if self._web_pane is None:
+            return None
+        try:
+            from app.auth.github_page_stage import PageSnapshot, detect_github_page_stage
+
+            url = self._web_pane._view.url().toString()
+            title = self._web_pane._view.title() or ""
+            return detect_github_page_stage(PageSnapshot(url=url, title=title))
+        except Exception:
+            return None
+
     def _on_webview_flow_classified(
         self, kind: str, idx: object, meta: dict
     ) -> None:
@@ -1879,24 +1892,27 @@ class ConnectGitHubWizard(QDialog):
         Independent WebView twin of browser-guide classify handlers.
 
         Does not import ExternalBrowserPatGuide — uses webview_flow_detect only.
+        Cross-check: every kind must update title/lead or trigger a side effect.
         """
         from app.ui.connect_webview import guide_lead
         from app.ui.webview_flow_detect import guide_copy_for_webview_kind
 
         method = str((meta or {}).get("method") or "")
         copy = guide_copy_for_webview_kind(kind, method=method)
+        live = self._live_stage_from_webview()
 
         if kind == "rejected":
-            # Google block → same as clicking switch (already auto via oauth signal)
+            # Google block → update copy, then switch (oauth may also fire)
             if copy and self._web_stage_title is not None:
                 self._web_stage_title.setText(copy[0])
             if copy and self._web_hint is not None:
                 self._web_hint.setText(guide_lead(copy[1]))
+            QTimer.singleShot(0, self._start_external_path)
             return
 
         if kind == "logged_out":
             self._ui_max = 0
-            self._paint_web_guide(0)
+            self._paint_web_guide(0, live_stage=live)
             if copy:
                 if self._web_stage_title is not None:
                     self._web_stage_title.setText(copy[0])
@@ -1905,9 +1921,12 @@ class ConnectGitHubWizard(QDialog):
             return
 
         if kind == "token_error":
-            # note_taken also arrives via token_form_error; title already set there
-            if copy and self._web_stage_title is not None:
-                self._web_stage_title.setText(copy[0])
+            # note_taken also arrives via token_form_error (reload); reinforce copy
+            if copy:
+                if self._web_stage_title is not None:
+                    self._web_stage_title.setText(copy[0])
+                if self._web_hint is not None:
+                    self._web_hint.setText(guide_lead(copy[1]))
             return
 
         if kind == "away":
@@ -1923,7 +1942,8 @@ class ConnectGitHubWizard(QDialog):
                 i = int(idx)
             except (TypeError, ValueError):
                 i = 0
-            self._paint_web_guide(i)
+            # live_stage so LOGIN overlay/step copy matches URL
+            self._paint_web_guide(i, live_stage=live)
             return
 
         if kind == "reached" and idx is not None:
@@ -1932,7 +1952,9 @@ class ConnectGitHubWizard(QDialog):
             except (TypeError, ValueError):
                 return
             self._ui_max = max(self._ui_max, i)
-            self._paint_web_guide(i)
+            # Critical: pass live_stage so /settings/tokens gets list overlay
+            # (Generate new token…), not generic "키를 만들어 주세요"
+            self._paint_web_guide(i, live_stage=live)
             visible = str((meta or {}).get("visible_pat") or "")
             if visible:
                 self._apply_detected_token(visible)
