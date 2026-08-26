@@ -161,6 +161,10 @@ _JS_CLICK_GENERATE_TOKEN = r"""
 })()
 """
 
+# Re-open tokens/new when list page has no visible PAT (after Generate).
+_TOKEN_REISSUE_MAX = 3
+_TOKEN_REISSUE_DELAY_MS = 1800
+
 # User-facing 4 steps (desin/CloneUp GitHub 연결.dc.html)
 UI_STEP_NAMES: tuple[str, ...] = ("로그인", "인증 코드", "키 만들기", "키 복사")
 
@@ -404,6 +408,8 @@ class GitHubConnectWebPane(QWidget):
     token_form_error = Signal(str)
     # Independent WebView twin of browser-guide classify: (kind, index, meta)
     flow_classified = Signal(str, object, dict)
+    # Reissue loop: (attempt, max_attempts) when list has no PAT
+    token_reissue = Signal(int, int)
     # (can_go_back, can_go_forward) after navigation / load
     history_changed = Signal(bool, bool)
 
@@ -420,6 +426,9 @@ class GitHubConnectWebPane(QWidget):
         self._last_form_error = ""
         self._generate_clicked_url = ""  # auto-click Generate token once per URL
         self._generate_scheduled_url = ""
+        self._reissue_count = 0
+        self._reissue_scheduled = False
+        self._reissue_exhausted = False
 
         self._view = QWebEngineView(self)
         # Default sizeHint is tiny (~100×30) and will collapse layouts.
@@ -635,6 +644,9 @@ class GitHubConnectWebPane(QWidget):
 
     def load_url(self, url: str) -> None:
         self._oauth_hand_off_done = False
+        # New create URL → allow Generate click again
+        self._generate_clicked_url = ""
+        self._generate_scheduled_url = ""
         page = getattr(self, "_connect_page", None)
         if page is not None and hasattr(page, "reset_handoff"):
             page.reset_handoff()
@@ -719,7 +731,15 @@ class GitHubConnectWebPane(QWidget):
         ):
             self._schedule_click_generate_token()
         if stage == GitHubPageStage.TOKEN_ISSUED:
+            self._reissue_count = 0
+            self._reissue_exhausted = False
             self._try_scrape_token()
+        if stage in (
+            GitHubPageStage.TOKEN_CLASSIC_LIST,
+            GitHubPageStage.TOKEN_FINE_LIST,
+        ):
+            # List without a fresh PAT → may need reissue loop (after HTML classify)
+            pass
 
     def _schedule_click_generate_token(self) -> None:
         """Auto-press Generate token once the create form is ready (once per URL)."""
@@ -830,8 +850,108 @@ class GitHubConnectWebPane(QWidget):
         visible = str((meta or {}).get("visible_pat") or "")
         if visible and visible != self._last_token:
             self._last_token = visible
+            self._reissue_count = 0
+            self._reissue_exhausted = False
             self.token_found.emit(visible)
         self.flow_classified.emit(kind, idx, meta or {})
+        self._maybe_schedule_token_reissue(url, title, html, kind, meta or {})
+
+    def _is_tokens_list_url(self, url: str) -> bool:
+        try:
+            from urllib.parse import urlparse
+
+            path = (urlparse(url).path or "").rstrip("/").lower()
+        except Exception:
+            path = ""
+        return path == "/settings/tokens" or path.endswith("/settings/tokens")
+
+    def _maybe_schedule_token_reissue(
+        self,
+        url: str,
+        title: str,
+        html: str,
+        kind: str,
+        meta: dict,
+    ) -> None:
+        """
+        Loop: on /settings/tokens with no visible PAT, reopen tokens/new
+        with a fresh Note (Generate auto-clicks again). Caps at N attempts.
+        """
+        from PySide6.QtCore import QTimer
+
+        from app.ui.webview_flow_detect import (
+            extract_pat_from_html,
+            looks_like_token_issued_html,
+            looks_like_token_note_taken_html,
+        )
+
+        if self._last_token or self._reissue_exhausted:
+            return
+        if not self._is_tokens_list_url(url):
+            return
+        # Note collision has its own reload path
+        if kind == "token_error" or looks_like_token_note_taken_html(
+            url, title, html
+        ):
+            return
+        if meta.get("visible_pat") or extract_pat_from_html(title, html):
+            return
+        if looks_like_token_issued_html(title, html):
+            # Banner present — scrape may still catch it; don't reissue yet
+            self._try_scrape_token()
+            return
+        if self._reissue_scheduled:
+            return
+        self._reissue_scheduled = True
+        QTimer.singleShot(
+            _TOKEN_REISSUE_DELAY_MS, lambda u=url: self._run_token_reissue_check(u)
+        )
+
+    def _run_token_reissue_check(self, expected_list_url: str) -> None:
+        self._reissue_scheduled = False
+        if self._last_token or self._reissue_exhausted:
+            return
+        try:
+            cur = self._view.url().toString()
+        except Exception:
+            return
+        if not self._is_tokens_list_url(cur):
+            return
+        # One more scrape before giving up / looping
+        def _after_scrape(result: object) -> None:
+            text = (str(result) if result is not None else "").strip()
+            if text and (
+                text.startswith("ghp_")
+                or text.startswith("github_pat_")
+                or text.startswith("gho_")
+            ):
+                if text != self._last_token:
+                    self._last_token = text
+                    self._reissue_count = 0
+                    self.token_found.emit(text)
+                return
+            self._do_token_reissue()
+
+        try:
+            self._view.page().runJavaScript(_JS_FIND_TOKEN, _after_scrape)
+        except Exception:
+            self._do_token_reissue()
+
+    def _do_token_reissue(self) -> None:
+        if self._last_token or self._reissue_exhausted:
+            return
+        if self._reissue_count >= _TOKEN_REISSUE_MAX:
+            self._reissue_exhausted = True
+            self.token_reissue.emit(self._reissue_count, _TOKEN_REISSUE_MAX)
+            return
+        self._reissue_count += 1
+        self.token_reissue.emit(self._reissue_count, _TOKEN_REISSUE_MAX)
+        try:
+            from app.auth.pat_urls import classic_pat_create_url
+
+            self.load_url(classic_pat_create_url())
+        except Exception:
+            self._reissue_exhausted = True
 
     def _try_scrape_token(self) -> None:
         def _done(result: object) -> None:

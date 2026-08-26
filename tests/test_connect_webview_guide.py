@@ -85,6 +85,28 @@ def test_settings_tokens_url_maps_to_list_stage() -> None:
     assert ov["title"].startswith("Generate new token")
 
 
+def test_tokens_list_url_helper_and_reissue_cap() -> None:
+    """Reissue loop only targets classic list URL; capped attempts."""
+    from app.ui import connect_webview as cw
+
+    assert cw._TOKEN_REISSUE_MAX >= 1
+    # Lightweight stand-in: method exists on class
+    assert hasattr(cw.GitHubConnectWebPane, "_maybe_schedule_token_reissue")
+    assert hasattr(cw.GitHubConnectWebPane, "_do_token_reissue")
+    assert hasattr(cw.GitHubConnectWebPane, "_is_tokens_list_url")
+
+    class _T:
+        def _is_tokens_list_url(self, url: str) -> bool:
+            return cw.GitHubConnectWebPane._is_tokens_list_url(self, url)
+
+    t = _T()
+    assert t._is_tokens_list_url("https://github.com/settings/tokens")
+    assert t._is_tokens_list_url("https://github.com/settings/tokens/")
+    assert not t._is_tokens_list_url(
+        "https://github.com/settings/tokens/new?scopes=repo"
+    )
+
+
 def test_guide_lead_max_chars_rule() -> None:
     """Rule: connect wizard lead (title 아래 설명) ≤ 60 Unicode chars."""
     assert GUIDE_LEAD_MAX_CHARS == 60

@@ -1405,6 +1405,7 @@ class ConnectGitHubWizard(QDialog):
         self._web_pane.external_oauth_needed.connect(self._on_google_oauth_external)
         self._web_pane.token_form_error.connect(self._on_web_token_form_error)
         self._web_pane.flow_classified.connect(self._on_webview_flow_classified)
+        self._web_pane.token_reissue.connect(self._on_web_token_reissue)
         br_lay.addWidget(addr)
         br_lay.addWidget(self._web_pane, 1)
         bw.addWidget(browser, 1)
@@ -1871,6 +1872,31 @@ class ConnectGitHubWizard(QDialog):
             self._btn_switch_external.show()
         # Auto-recover with CloneUp-YYYYMMDD-HHMMSS
         QTimer.singleShot(400, self._reload_pat_create_fresh_note)
+
+    def _on_web_token_reissue(self, attempt: int, maximum: int) -> None:
+        """List page had no PAT — loop reopened tokens/new (or exhausted)."""
+        from app.ui.connect_webview import guide_lead
+
+        exhausted = bool(
+            self._web_pane is not None
+            and getattr(self._web_pane, "_reissue_exhausted", False)
+        )
+        if exhausted:
+            if self._web_stage_title is not None:
+                self._web_stage_title.setText("키를 자동으로 못 찾았어요")
+            if self._web_hint is not None:
+                self._web_hint.setText(
+                    guide_lead(
+                        "Generate token 후 키를 복사해 칸에 넣어 주세요."
+                    )
+                )
+            return
+        if self._web_stage_title is not None:
+            self._web_stage_title.setText("키를 다시 발급합니다")
+        if self._web_hint is not None:
+            self._web_hint.setText(
+                guide_lead(f"키가 없어 다시 발급합니다 ({attempt}/{maximum}).")
+            )
 
     def _live_stage_from_webview(self) -> object | None:
         """Best-effort GitHubPageStage from the current WebView URL."""
