@@ -1404,6 +1404,7 @@ class ConnectGitHubWizard(QDialog):
         self._web_pane.load_failed.connect(self._on_web_load_failed)
         self._web_pane.external_oauth_needed.connect(self._on_google_oauth_external)
         self._web_pane.token_form_error.connect(self._on_web_token_form_error)
+        self._web_pane.flow_classified.connect(self._on_webview_flow_classified)
         br_lay.addWidget(addr)
         br_lay.addWidget(self._web_pane, 1)
         bw.addWidget(browser, 1)
@@ -1870,6 +1871,72 @@ class ConnectGitHubWizard(QDialog):
             self._btn_switch_external.show()
         # Auto-recover with CloneUp-YYYYMMDD-HHMMSS
         QTimer.singleShot(400, self._reload_pat_create_fresh_note)
+
+    def _on_webview_flow_classified(
+        self, kind: str, idx: object, meta: dict
+    ) -> None:
+        """
+        Independent WebView twin of browser-guide classify handlers.
+
+        Does not import ExternalBrowserPatGuide — uses webview_flow_detect only.
+        """
+        from app.ui.connect_webview import guide_lead
+        from app.ui.webview_flow_detect import guide_copy_for_webview_kind
+
+        method = str((meta or {}).get("method") or "")
+        copy = guide_copy_for_webview_kind(kind, method=method)
+
+        if kind == "rejected":
+            # Google block → same as clicking switch (already auto via oauth signal)
+            if copy and self._web_stage_title is not None:
+                self._web_stage_title.setText(copy[0])
+            if copy and self._web_hint is not None:
+                self._web_hint.setText(guide_lead(copy[1]))
+            return
+
+        if kind == "logged_out":
+            self._ui_max = 0
+            self._paint_web_guide(0)
+            if copy:
+                if self._web_stage_title is not None:
+                    self._web_stage_title.setText(copy[0])
+                if self._web_hint is not None:
+                    self._web_hint.setText(guide_lead(copy[1]))
+            return
+
+        if kind == "token_error":
+            # note_taken also arrives via token_form_error; title already set there
+            if copy and self._web_stage_title is not None:
+                self._web_stage_title.setText(copy[0])
+            return
+
+        if kind == "away":
+            if copy:
+                if self._web_stage_title is not None:
+                    self._web_stage_title.setText(copy[0])
+                if self._web_hint is not None:
+                    self._web_hint.setText(guide_lead(copy[1]))
+            return
+
+        if kind == "current" and idx is not None:
+            try:
+                i = int(idx)
+            except (TypeError, ValueError):
+                i = 0
+            self._paint_web_guide(i)
+            return
+
+        if kind == "reached" and idx is not None:
+            try:
+                i = int(idx)
+            except (TypeError, ValueError):
+                return
+            self._ui_max = max(self._ui_max, i)
+            self._paint_web_guide(i)
+            visible = str((meta or {}).get("visible_pat") or "")
+            if visible:
+                self._apply_detected_token(visible)
+            return
 
     def _on_google_oauth_external(self, url: str) -> None:
         """

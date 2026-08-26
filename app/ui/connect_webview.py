@@ -362,6 +362,8 @@ class GitHubConnectWebPane(QWidget):
     external_oauth_needed = Signal(str)
     # PAT form flash errors (e.g. note_taken)
     token_form_error = Signal(str)
+    # Independent WebView twin of browser-guide classify: (kind, index, meta)
+    flow_classified = Signal(str, object, dict)
     # (can_go_back, can_go_forward) after navigation / load
     history_changed = Signal(bool, bool)
 
@@ -712,24 +714,28 @@ class GitHubConnectWebPane(QWidget):
         html = html or ""
         title = self._view.title() or ""
         url = self._view.url().toString()
+        # Independent classify (mirrors browser-guide; no ExternalBrowserPatGuide import)
+        self._classify_and_emit(url, title, html)
         if looks_like_insecure_browser_block(title, html) or is_google_oauth_url(url):
             self._emit_external_oauth(url)
             return
-        self._detect_token_form_errors(title, html, url)
         self._refresh_stage(html=html)
 
-    def _detect_token_form_errors(self, title: str, html: str, url: str) -> None:
-        """Surface GitHub PAT form flashes (Note collision, etc.)."""
-        from app.util.browser_address import looks_like_token_note_taken
+    def _classify_and_emit(self, url: str, title: str, html: str) -> None:
+        from app.ui.webview_flow_detect import classify_webview_sample
 
-        if looks_like_token_note_taken(title, html, url=url):
-            if self._last_form_error != "note_taken":
-                self._last_form_error = "note_taken"
-                self.token_form_error.emit("note_taken")
-            return
-        # Cleared when the flash is gone
-        if self._last_form_error:
+        kind, idx, meta = classify_webview_sample(url, title=title, html=html)
+        err = str((meta or {}).get("token_error") or "")
+        if err == "note_taken" and self._last_form_error != "note_taken":
+            self._last_form_error = "note_taken"
+            self.token_form_error.emit("note_taken")
+        elif err != "note_taken" and self._last_form_error:
             self._last_form_error = ""
+        visible = str((meta or {}).get("visible_pat") or "")
+        if visible and visible != self._last_token:
+            self._last_token = visible
+            self.token_found.emit(visible)
+        self.flow_classified.emit(kind, idx, meta or {})
 
     def _try_scrape_token(self) -> None:
         def _done(result: object) -> None:
