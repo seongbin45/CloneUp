@@ -51,4 +51,5 @@
 
 ## 버전 위치
 
-- `VERSION` · `app/__init__.py` · `installer/CloneUp.iss`
+- `VERSION` · `app/__init__.py` · `installer/CloneUp.iss` · `legal/CloneUp_OpenSourceNotices_ko.txt`
+- 문서 색인: `docs/README.md` · 루트 `README.md` (현재 버전 표기)
