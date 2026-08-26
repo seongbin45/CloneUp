@@ -140,38 +140,101 @@ _JS_READ_EXPIRATION = r"""
 })()
 """
 
-# Set classic Expiration <select> to a day count ("" = no expiration).
+# Set Expiration on the create form BEFORE Generate token.
+# Handles native <select> and Primer-style dropdowns (click open → click option).
 _JS_SET_EXPIRATION = r"""
 (function(want) {
-  const sel = document.querySelector(
-    "#oauth_access_expires_at, select[name='oauth_access[expires_at]'], select[name*='expires']"
-  );
-  if (!sel) return "no-select";
   const w = (want == null ? "" : String(want)).trim();
-  let matched = false;
-  for (const opt of Array.from(sel.options || [])) {
-    const v = (opt.value || "").trim();
-    if (v === w) {
-      sel.value = v;
-      matched = true;
-      break;
-    }
-  }
-  if (!matched && w === "") {
-    // Prefer explicit empty / none option
+  const txt = (el) => ((el && (el.innerText || el.textContent || el.value || el.getAttribute("aria-label") || "")) + "").replace(/\s+/g, " ").trim();
+  const isNoneLabel = (t) => /no expiration|만료 없음|never|없음/i.test(t || "");
+  const isDaysLabel = (t, days) => {
+    if (!days) return false;
+    const re = new RegExp("(^|\\b)" + days + "\\s*days?(\\b|$)", "i");
+    return re.test(t || "");
+  };
+  const fire = (el) => {
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const pickSelect = (sel) => {
+    let matched = false;
     for (const opt of Array.from(sel.options || [])) {
-      const t = ((opt.textContent || "") + "").toLowerCase();
-      if (!opt.value || t.indexOf("no expiration") >= 0 || t.indexOf("만료 없음") >= 0) {
+      const v = (opt.value || "").trim();
+      const t = txt(opt);
+      if (w === "" && (v === "" || isNoneLabel(t))) {
+        sel.value = opt.value;
+        matched = true;
+        break;
+      }
+      if (w && (v === w || isDaysLabel(t, w))) {
         sel.value = opt.value;
         matched = true;
         break;
       }
     }
+    if (!matched) return "";
+    fire(sel);
+    return "set-select:" + (sel.value || "");
+  };
+
+  // 1) Native selects (classic PAT form)
+  const sels = Array.from(document.querySelectorAll("select"));
+  for (const sel of sels) {
+    const idn = ((sel.id || "") + " " + (sel.name || "")).toLowerCase();
+    const near = (sel.getAttribute("aria-label") || "") + " " + (sel.title || "");
+    if (
+      idn.indexOf("expire") >= 0 ||
+      idn.indexOf("oauth_access") >= 0 ||
+      /expire/i.test(near)
+    ) {
+      const r = pickSelect(sel);
+      if (r) return r;
+    }
   }
-  if (!matched) return "no-option:" + w;
-  sel.dispatchEvent(new Event("input", { bubbles: true }));
-  sel.dispatchEvent(new Event("change", { bubbles: true }));
-  return "set:" + (sel.value || "");
+  // Any select that has 7/30/60/90 day options
+  for (const sel of sels) {
+    const labels = Array.from(sel.options || []).map(txt).join(" | ");
+    if (/7\s*days?/i.test(labels) && /90\s*days?/i.test(labels)) {
+      const r = pickSelect(sel);
+      if (r) return r;
+    }
+  }
+
+  // 2) Open a visible Expiration control, then click the matching option
+  const openers = Array.from(
+    document.querySelectorAll(
+      "summary, button, [role='button'], [aria-haspopup='listbox'], [aria-haspopup='true']"
+    )
+  );
+  let opener = null;
+  for (const el of openers) {
+    const t = txt(el);
+    if (/^Expiration$/i.test(t) || /^만료/i.test(t) || (/Expiration/i.test(t) && t.length < 48)) {
+      opener = el;
+      break;
+    }
+  }
+  if (opener) {
+    try { opener.click(); } catch (e) {}
+  }
+  const options = Array.from(
+    document.querySelectorAll(
+      "[role='option'], [role='menuitem'], [role='menuitemradio'], label, button, a, li"
+    )
+  );
+  for (const el of options) {
+    const t = txt(el);
+    if (!t || t.length > 60) continue;
+    const ok =
+      (w === "" && isNoneLabel(t)) ||
+      (w && isDaysLabel(t, w));
+    if (!ok) continue;
+    try {
+      el.click();
+      return "set-click:" + t;
+    } catch (e) {}
+  }
+  return "no-select:" + w;
 })"""
 
 # Click the classic/fine "Generate token" submit (not list "Generate new token").
@@ -480,6 +543,7 @@ class GitHubConnectWebPane(QWidget):
         self._last_form_error = ""
         self._generate_clicked_url = ""  # auto-click Generate token once per URL
         self._generate_scheduled_url = ""
+        self._pending_expiry_days = "90"  # footer combo → GitHub Expiration
         self._reissue_count = 0
         self._reissue_scheduled = False
         self._reissue_exhausted = False
@@ -783,8 +847,8 @@ class GitHubConnectWebPane(QWidget):
             GitHubPageStage.TOKEN_CLASSIC_NEW,
             GitHubPageStage.TOKEN_FINE_NEW,
         ):
-            self._schedule_read_expiration()
-            self._schedule_click_generate_token()
+            # Expiration dropdown FIRST, then Generate token (chained)
+            self._schedule_expiry_then_generate()
         if stage == GitHubPageStage.TOKEN_ISSUED:
             self._reissue_count = 0
             self._reissue_exhausted = False
@@ -835,34 +899,55 @@ class GitHubConnectWebPane(QWidget):
     def last_token_expires_at(self) -> str | None:
         return self._last_expires_at
 
-    def apply_expiration_choice(self, days_value: str) -> None:
+    def apply_expiration_choice(
+        self, days_value: str, *, on_done=None, retries: int = 4
+    ) -> None:
         """
-        Set GitHub classic Expiration dropdown to ``days_value``
-        (``\"7\"``/``\"30\"``/``\"60\"``/``\"90\"`` or ``\"\"`` for no expiration).
+        Click/set GitHub Expiration dropdown to ``days_value``
+        (``\"7\"``/``\"30\"``/``\"60\"``/``\"90\"`` or ``\"\"`` for no expiration)
+        **before** Generate token.
         """
+        from PySide6.QtCore import QTimer
+
         from app.auth.token_expiry import parse_expires_label
 
         want = "" if days_value in (None, "none", "NONE") else str(days_value).strip()
+        self._pending_expiry_days = want
         # Optimistically record for keyring even if the DOM select is missing
-        exp = parse_expires_label(want or "none", "No expiration" if not want else f"{want} days")
+        exp = parse_expires_label(
+            want or "none", "No expiration" if not want else f"{want} days"
+        )
         if exp:
             self._last_expires_at = exp
 
         def _done(result: object) -> None:
             text = str(result) if result is not None else ""
-            if text.startswith("set:"):
-                # Re-read so custom labels stay accurate
+            ok = text.startswith("set-")
+            if ok:
                 self._try_read_expiration()
+                if on_done is not None:
+                    on_done(True, text)
+                return
+            # DOM not ready yet — retry a few times
+            if retries > 0:
+                QTimer.singleShot(
+                    350,
+                    lambda: self.apply_expiration_choice(
+                        want, on_done=on_done, retries=retries - 1
+                    ),
+                )
+            elif on_done is not None:
+                on_done(False, text)
 
         try:
-            # runJavaScript(script, worldId?) — pass arg by wrapping call
             js = f"{_JS_SET_EXPIRATION}({want!r});"
             self._view.page().runJavaScript(js, _done)
         except Exception:
-            pass
+            if on_done is not None:
+                on_done(False, "js-error")
 
-    def _schedule_click_generate_token(self) -> None:
-        """Auto-press Generate token once the create form is ready (once per URL)."""
+    def _schedule_expiry_then_generate(self) -> None:
+        """Apply footer Expiration on the GitHub form, then click Generate token."""
         from PySide6.QtCore import QTimer
 
         url = ""
@@ -872,13 +957,26 @@ class GitHubConnectWebPane(QWidget):
             url = ""
         if not url or url == self._generate_clicked_url:
             return
-        # Avoid stacking timers on every HTML refresh of the same form
         if url == self._generate_scheduled_url:
             return
         self._generate_scheduled_url = url
-        # Read expiration before submit, then click
-        self._schedule_read_expiration()
-        QTimer.singleShot(700, lambda u=url: self._try_click_generate_token(u))
+        days = getattr(self, "_pending_expiry_days", "90")
+
+        def _after_expiry(ok: bool, _msg: str = "") -> None:
+            # Always proceed to Generate; expiry best-effort
+            QTimer.singleShot(
+                250, lambda u=url: self._try_click_generate_token(u)
+            )
+
+        # Wait briefly for the form to paint, then click Expiration option
+        QTimer.singleShot(
+            450,
+            lambda: self.apply_expiration_choice(days, on_done=_after_expiry),
+        )
+
+    def _schedule_click_generate_token(self) -> None:
+        """Backward-compatible alias — prefer ``_schedule_expiry_then_generate``."""
+        self._schedule_expiry_then_generate()
 
     def _try_click_generate_token(self, expected_url: str) -> None:
         try:

@@ -1805,12 +1805,16 @@ class ConnectGitHubWizard(QDialog):
         if exp:
             self._token_expires_at = exp
         if self._web_pane is not None:
+            # Remember for the chained Generate flow (must set DOM before click)
+            self._web_pane._pending_expiry_days = val
             self._web_pane.apply_expiration_choice(val)
 
     def _sync_expiry_to_webview(self) -> None:
         """Push current combo selection into the page (after tokens/new loads)."""
         if self._expiry_combo is None or self._web_pane is None:
             return
+        # Set pending days first so auto Generate waits on the same value
+        self._web_pane._pending_expiry_days = self._expiry_combo_value()
         self._on_expiry_choice_changed(self._expiry_combo.currentIndex())
 
     def _mark_web_url_editing(self, editing: bool) -> None:
