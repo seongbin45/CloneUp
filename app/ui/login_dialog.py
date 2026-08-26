@@ -694,6 +694,7 @@ class ConnectGitHubWizard(QDialog):
         root.addWidget(self._stack, 1)
         self._suppress_state_fit = False
         self._fitting_choice = False
+        self._auto_finish_pending = False
         if self._use_web:
             self._go(self._choice_index)
             # Final size applied in showEvent → _fit_choice_dialog (compact)
@@ -930,10 +931,37 @@ class ConnectGitHubWizard(QDialog):
             self._ui_max = 3
             self._paint_web_guide(3)
             self._sync_web_cta()
+            if self._web_cta_note is not None:
+                self._web_cta_note.setText("키를 인식했어요. 자동으로 연결합니다…")
         else:
             if self._stack.currentIndex() != _STEP_PASTE:
                 self._go(_STEP_PASTE)
         self._restore_from_yield()
+        # Screen / clipboard PAT → finish without requiring 「연결」 click
+        self._schedule_auto_finish()
+
+    def _schedule_auto_finish(self) -> None:
+        """When a PAT is in the field, accept without a second click."""
+        if self._auto_finish_pending:
+            return
+        raw = ""
+        if hasattr(self, "_edit") and self._edit is not None:
+            raw = (self._edit.text() or "").strip()
+        if not _looks_like_github_token(raw):
+            return
+        self._auto_finish_pending = True
+        QTimer.singleShot(0, self._run_auto_finish)
+
+    def _run_auto_finish(self) -> None:
+        self._auto_finish_pending = False
+        if not self.isVisible():
+            return
+        raw = ""
+        if hasattr(self, "_edit") and self._edit is not None:
+            raw = (self._edit.text() or "").strip()
+        if not _looks_like_github_token(raw):
+            return
+        self._finish()
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._stop_clipboard_watch()
@@ -1685,11 +1713,18 @@ class ConnectGitHubWizard(QDialog):
             self._web_cta_note.setText(str(copy["ctaNote"]))
         else:
             has = bool((self._edit.text() or "").strip()) if hasattr(self, "_edit") else False
+            tok_ok = _looks_like_github_token(
+                (self._edit.text() or "").strip() if hasattr(self, "_edit") else ""
+            )
             self._web_cta.setText("연결")
             self._web_cta.setEnabled(has)
-            self._web_cta_note.setText(
-                "" if has else "키를 칸에 넣으면 연결할 수 있습니다"
-            )
+            if tok_ok:
+                self._web_cta_note.setText("키를 인식했어요. 자동으로 연결합니다…")
+                self._schedule_auto_finish()
+            else:
+                self._web_cta_note.setText(
+                    "" if has else "키가 보이거나 복사되면 자동으로 연결됩니다"
+                )
         self._web_cta.style().unpolish(self._web_cta)
         self._web_cta.style().polish(self._web_cta)
 

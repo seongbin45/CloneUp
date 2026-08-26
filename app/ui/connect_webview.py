@@ -286,7 +286,7 @@ def step_copy(i: int) -> dict[str, str | bool]:
                 "클론업은 이 컴퓨터의 자격 증명 저장소에만 넣어 둡니다."
             ),
             "watchWarn": True,
-            "ctaNote": "",
+            "ctaNote": "키가 보이거나 복사되면 자동으로 연결됩니다",
             "showKey": True,
         },
     )
