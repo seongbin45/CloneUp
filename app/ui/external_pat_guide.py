@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -60,16 +60,24 @@ def _ss(color: str, *, size: str = "12.5px", weight: str | None = None, mono: bo
 
 def _guide_dialog_qss() -> str:
     p = active_palette()
+    # Outer dialog is transparent so Windows HWND corners don't look square;
+    # the rounded card (#dlgCard) is the visible chrome.
     return f"""
-    QDialog {{
+    QDialog#pathBGuide {{
+        background: transparent;
+        color: {p.text};
+    }}
+    QFrame#dlgCard {{
         background: {p.bg_window};
         color: {p.text};
+        border: 1px solid {p.border};
+        border-radius: 16px;
     }}
     QLineEdit {{
         background: {p.bg_input};
         color: {p.text};
         border: 1px solid {p.border_input};
-        border-radius: 6px;
+        border-radius: 8px;
         padding: 6px 10px;
         selection-background-color: {p.primary};
     }}
@@ -77,7 +85,7 @@ def _guide_dialog_qss() -> str:
         background: {p.bg_window};
         color: {p.text};
         border: 1px solid {p.border_outline};
-        border-radius: 5px;
+        border-radius: 8px;
         padding: 6px 12px;
         font-size: 12.5px;
         min-height: 28px;
@@ -553,20 +561,20 @@ def _dialogue_qss() -> str:
         background: {p.bg_hint};
     }}
     QFrame#dlgWait {{
-        background: {p.bg_muted}; border: none; border-radius: 10px;
+        background: {p.bg_muted}; border: none; border-radius: 12px;
     }}
     QFrame#dlgNudge {{
         background: {_warn_soft()}; border: 1px solid {p.warn_border};
-        border-radius: 10px;
+        border-radius: 12px;
     }}
     QPushButton#dlgNudgeBtn {{
         background: {p.bg_window}; border: 1px solid {p.warn_border};
-        border-radius: 7px; padding: 4px 13px; font-size: 12px;
+        border-radius: 9px; padding: 4px 13px; font-size: 12px;
         color: {p.text}; min-height: 32px;
     }}
     QPushButton#dlgPrimary {{
         background: {p.primary}; color: {p.text_on_primary};
-        border: 1px solid {p.primary}; border-radius: 11px;
+        border: 1px solid {p.primary}; border-radius: 12px;
         font-size: 14.5px; font-weight: 600; min-height: 46px;
     }}
     QPushButton#dlgPrimary:hover {{ background: {p.primary_hover}; }}
@@ -578,9 +586,16 @@ def _dialogue_qss() -> str:
     QFrame#dlgHeader {{
         background: {p.bg_bar}; border: none;
         border-bottom: 1px solid {p.border_soft};
+        border-top-left-radius: 16px;
+        border-top-right-radius: 16px;
     }}
+    QPushButton#dlgCloseX {{
+        background: transparent; color: {p.text_muted}; border: none;
+        font-size: 14px; padding: 0 4px; min-width: 22px; min-height: 22px;
+    }}
+    QPushButton#dlgCloseX:hover {{ color: {p.text}; }}
     QFrame#dlgReceipt {{
-        background: {p.bg_muted}; border: none; border-radius: 9px;
+        background: {p.bg_muted}; border: none; border-radius: 12px;
     }}
     """
 
@@ -629,33 +644,49 @@ class ExternalBrowserPatGuide(QDialog):
         set_path_b_log_sink(self._emit_log)
         self._guide_log("[Path B] 브라우저 안내 시작")
 
+        self.setObjectName("pathBGuide")
         self.setWindowTitle("CloneUp — GitHub 연결")
-        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+        # Non-modal vs CloneUp main: browser must keep keyboard focus for
+        # email codes / passkeys. Stay-on-top keeps the card visible without
+        # ApplicationModal focus fights. Frameless + translucent → rounded card.
+        self.setWindowModality(Qt.WindowModality.NonModal)
         self.setWindowFlags(
-            Qt.WindowType.Dialog
-            | Qt.WindowType.WindowTitleHint
-            | Qt.WindowType.WindowSystemMenuHint
-            | Qt.WindowType.WindowCloseButtonHint
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
         )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setWindowOpacity(_GUIDE_OPACITY)
         self.setMinimumWidth(360)
         self.setMaximumWidth(440)
         self.setStyleSheet(_dialogue_qss())
+        self._drag_offset: QPoint | None = None
 
-        # Header
+        # Rounded card (visible chrome) inside transparent dialog shell.
+        card = QFrame()
+        card.setObjectName("dlgCard")
+        card_lay = QVBoxLayout(card)
+        card_lay.setContentsMargins(0, 0, 0, 0)
+        card_lay.setSpacing(0)
+
+        # Header (custom — replaces OS title bar)
         head = QFrame()
         head.setObjectName("dlgHeader")
         hl = QHBoxLayout(head)
-        hl.setContentsMargins(14, 11, 14, 11)
+        hl.setContentsMargins(14, 11, 10, 11)
         hl.setSpacing(10)
         brand = QLabel("GitHub 연결")
         brand.setObjectName("dlgHeadTitle")
         self._right_tag = QLabel("1 / 3")
         self._right_tag.setObjectName("dlgRightTag")
+        btn_x = QPushButton("✕")
+        btn_x.setObjectName("dlgCloseX")
+        btn_x.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_x.clicked.connect(self._on_cancel)
         hl.addWidget(brand)
         hl.addStretch(1)
         hl.addWidget(self._right_tag)
+        hl.addWidget(btn_x, 0)
 
         self._hist_host = QVBoxLayout()
         self._hist_host.setContentsMargins(0, 0, 0, 0)
@@ -745,7 +776,8 @@ class ExternalBrowserPatGuide(QDialog):
         foot.addStretch(1)
         foot.addWidget(self._foot_note)
 
-        body = QVBoxLayout()
+        body_w = QWidget()
+        body = QVBoxLayout(body_w)
         body.setContentsMargins(16, 15, 16, 16)
         body.setSpacing(12)
         body.addLayout(self._hist_host)
@@ -759,11 +791,13 @@ class ExternalBrowserPatGuide(QDialog):
         body.addWidget(self._edit)
         body.addLayout(foot)
 
+        card_lay.addWidget(head)
+        card_lay.addWidget(body_w)
+
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-        root.addWidget(head)
-        root.addLayout(body)
+        root.addWidget(card)
 
         self._clip_timer = QTimer(self)
         self._clip_timer.setInterval(_CLIP_POLL_MS)
@@ -837,6 +871,24 @@ class ExternalBrowserPatGuide(QDialog):
             self.move(x, max(avail.top() + margin, y))
         except Exception:
             pass
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        self._drag_offset = None
+        super().mouseReleaseEvent(event)
 
     # --- scene render ---
     def _set_scene(self, scene: DialogueScene) -> None:
@@ -1303,10 +1355,9 @@ class ExternalBrowserPatGuide(QDialog):
             # already on 「키 만들기」 while the user answers expiry/scope.
             if not self._token_nav_opened:
                 self._open_token_create_page()
-            # Bring guide forward so expiry chips are not missed behind the browser
+            # Show above browser without stealing keyboard (user may still type).
             try:
                 self.raise_()
-                self.activateWindow()
             except Exception:
                 pass
         self._set_scene(nxt)
@@ -1344,6 +1395,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._guide_log(f"[Path B] 키 인식: {source}")
         try:
             self.raise_()
+            # activateWindow only when connecting — safe to take focus briefly.
             self.activateWindow()
         except Exception:
             pass

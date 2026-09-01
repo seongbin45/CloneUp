@@ -38,12 +38,14 @@ def _toast_qss() -> str:
         background: {p.bg_window};
         color: {p.text};
         border: 1px solid {p.border};
-        border-radius: 10px;
+        border-radius: 16px;
     }}
     QFrame#bootToastHead {{
         background: {p.bg_bar};
         border: none;
         border-bottom: 1px solid {p.border_soft};
+        border-top-left-radius: 16px;
+        border-top-right-radius: 16px;
     }}
     QLabel#bootToastBrand {{
         font-size: 11.5px; font-weight: 600; color: {p.text};
@@ -66,7 +68,7 @@ def _toast_qss() -> str:
         font-size: 12.5px; color: {p.text_secondary}; background: transparent; border: none;
     }}
     QFrame#bootToastPanel {{
-        background: {p.bg_bar}; border: none; border-radius: 9px;
+        background: {p.bg_bar}; border: none; border-radius: 12px;
     }}
     QLabel#bootToastMono {{
         font-size: 12.5px; font-weight: 500; color: {p.text};
@@ -162,7 +164,8 @@ class BootNotifyToast(QWidget):
             | Qt.WindowType.Tool
             | Qt.WindowType.WindowStaysOnTopHint
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        # Translucent so border-radius actually clips on Windows (else sharp HWND).
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._apply_theme_qss()
         self.setFixedWidth(382)
         # Follow OS / app theme switches while the toast is open.
