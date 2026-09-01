@@ -98,6 +98,16 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
     ):
         return GitHubPageStage.AUTH_2FA
 
+    # --- Auth body BEFORE token URL ---
+    # Screenshot: Confirm access + Use passkey can sit on tokens/new URL.
+    # Treating URL alone as TOKEN_CLASSIC_NEW skipped AUTH_WAIT.
+    if _looks_like_sudo_passkey_confirm(title_l, html_l):
+        return GitHubPageStage.AUTH_PASSKEY_OS
+
+    # Device / email verification (Verify your device · Device verification).
+    if _looks_like_device_or_email_verify(title_l, html_l):
+        return GitHubPageStage.AUTH_2FA
+
     if path.endswith("/settings/tokens/new") or path == "/settings/tokens/new":
         return GitHubPageStage.TOKEN_CLASSIC_NEW
 
@@ -123,11 +133,6 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
     # --- Title / body (Path B often has title+UIA text but a vague omnibox) ---
     if "sign in to github" in title_l:
         return GitHubPageStage.LOGIN
-
-    # Device / email verification (screenshot: "Verify your device" + code boxes
-    # + optional Passkey). Must win over generic github.com "reached".
-    if _looks_like_device_or_email_verify(title_l, html_l):
-        return GitHubPageStage.AUTH_2FA
 
     if "two-factor authentication" in title_l or "two-factor authentication" in html_l:
         if "authentication code" in html_l or "authenticator" in html_l or "otp" in html_l:
@@ -158,21 +163,43 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
         if "oauth_access[scopes]" in html or 'data-scope-for="repo"' in html:
             return GitHubPageStage.TOKEN_CLASSIC_NEW
 
-    if "sudo_modal" in html_l and "settings/tokens" not in path:
-        # Weak signal — only if nothing else matched.
-        if "confirm access" in html_l or "sudo" in title_l:
+    if "confirm access" in html_l or "sudo_modal" in html_l:
+        if "passkey" in html_l or "use passkey" in html_l:
+            return GitHubPageStage.AUTH_PASSKEY_OS
+        if "sudo" in title_l or "sudo_modal" in html_l:
             return GitHubPageStage.SUDO_OR_OTHER
 
     return GitHubPageStage.UNKNOWN
 
 
+def _looks_like_sudo_passkey_confirm(title_l: str, body_l: str) -> bool:
+    """GitHub Confirm access / sudo card with Passkey (OCR or UIA)."""
+    try:
+        from app.util.auth_ocr import looks_like_github_sudo_passkey
+
+        return looks_like_github_sudo_passkey(title_l, body_l)
+    except Exception:
+        blob = f"{title_l}\n{body_l}"
+        return "confirm access" in blob and (
+            "use passkey" in blob or "passkey" in blob
+        )
+
+
 def _looks_like_device_or_email_verify(title_l: str, body_l: str) -> bool:
     """
-    GitHub 「Verify your device」 / email one-time code (not TOTP app alone).
+    GitHub 「Verify your device」 / 「Device verification」 email OTP.
 
     Seen in browser title ``Verify your device · GitHub`` with six digit
-    inputs and optional 「Verify with a passkey」.
+    inputs and optional 「Verify with a passkey」, or Device verification
+    email code page (``/sessions/verified-device``).
     """
+    try:
+        from app.util.auth_ocr import looks_like_device_email_verify
+
+        if looks_like_device_email_verify(title_l, body_l):
+            return True
+    except Exception:
+        pass
     blob = f"{title_l}\n{body_l}"
     if "verify your device" in blob:
         return True
@@ -213,7 +240,7 @@ def stage_label_ko(stage: GitHubPageStage) -> str:
         GitHubPageStage.UNKNOWN: "알 수 없음",
         GitHubPageStage.LOGIN: "GitHub 로그인",
         GitHubPageStage.AUTH_2FA: "2단계 인증(코드)",
-        GitHubPageStage.AUTH_PASSKEY_OS: "패스키(OS 창 · HTML로 감지 불가)",
+        GitHubPageStage.AUTH_PASSKEY_OS: "패스키(Windows 보안·Confirm access)",
         GitHubPageStage.TOKEN_CLASSIC_NEW: "classic 키 만들기",
         GitHubPageStage.TOKEN_FINE_NEW: "세분 키 만들기",
         GitHubPageStage.TOKEN_ISSUED: "키 발급됨(지금 복사)",

@@ -331,6 +331,7 @@ def looks_like_passkey_os_prompt(window_title: str, ui_text: str = "") -> bool:
 
     Screenshot (ko): title 「Windows 보안」, heading 「패스키로 로그인」,
     options 「iPhone, iPad 또는 Android…」(QR) / 「이 디바이스」.
+    Also PIN confirm: 「이 디바이스에서 로그인하시겠습니까?」.
     """
     blob = f"{window_title or ''}\n{ui_text or ''}".lower()
     if not blob.strip():
@@ -350,6 +351,8 @@ def looks_like_passkey_os_prompt(window_title: str, ui_text: str = "") -> bool:
         or "qr code" in blob
         or "이 디바이스" in blob
         or "this device" in blob
+        or "로그인하시겠습니까" in blob
+        or "sign in on this device" in blob
     )
     return win_sec and passkey
 
@@ -510,7 +513,19 @@ def detect_signin_method(
         return "google_blocked"
     if looks_like_passkey_os_prompt(window_title, ui_text):
         return "passkey"
-    # Omnibox may be empty while StayOnTop guide is up — title/UIA still work.
+    # Omnibox may be empty while StayOnTop guide is up — title/UIA/OCR still work.
+    try:
+        from app.util.auth_ocr import (
+            looks_like_device_email_verify,
+            looks_like_github_sudo_passkey,
+        )
+
+        if looks_like_github_sudo_passkey(window_title, ui_text):
+            return "passkey"
+        if looks_like_device_email_verify(window_title, ui_text):
+            return "github_2fa"
+    except Exception:
+        pass
     early_blob = f"{window_title or ''}\n{ui_text or ''}".lower()
     if "verify your device" in early_blob or (
         "verification code" in early_blob
@@ -534,8 +549,13 @@ def detect_signin_method(
         blob = f"{window_title or ''}\n{ui_text or ''}".lower()
         if (
             "verify your device" in blob
+            or "device verification" in blob
             or (
                 "verification code" in blob
+                and ("email" in blob or "we just sent" in blob)
+            )
+            or (
+                "authentication code" in blob
                 and ("email" in blob or "we just sent" in blob)
             )
             or ("verify with a passkey" in blob and "verification" in blob)
@@ -544,6 +564,11 @@ def detect_signin_method(
             or "/sessions/email-verification" in path
         ):
             return "github_2fa"
+        # Confirm access + Use passkey can share tokens/new URL — still auth.
+        if "confirm access" in blob and (
+            "passkey" in blob or "use passkey" in blob
+        ):
+            return "passkey"
         if path.startswith("/login") or path.startswith("/sessions/"):
             return "github_login"
         # Same URL ``github.com`` when logged out vs in — use Sign in/up UI
@@ -552,7 +577,8 @@ def detect_signin_method(
         ):
             return "github_logged_out"
         # Title-only: Verify your device · GitHub (omnibox may lag)
-        if "verify your device" in (window_title or "").lower():
+        title_l = (window_title or "").lower()
+        if "verify your device" in title_l or "device verification" in title_l:
             return "github_2fa"
         return "github"
     return "other"

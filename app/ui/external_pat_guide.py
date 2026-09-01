@@ -274,6 +274,16 @@ def classify_browser_sample(
         # Not "reached" for dialogue — user must finish email code / passkey first.
         meta["method"] = "github_2fa"
         return ("current", 0, meta)
+    if st == GitHubPageStage.AUTH_PASSKEY_OS:
+        # Windows Security sheet *or* GitHub Confirm access + Use passkey
+        # (sudo on tokens/new). Still signing in — never "reached".
+        meta["method"] = "passkey"
+        return ("current", 0, meta)
+    if st == GitHubPageStage.SUDO_OR_OTHER:
+        meta["method"] = "passkey" if "passkey" in (
+            (window_title or "") + "\n" + (ui_text or "")
+        ).lower() else "github_login"
+        return ("current", 0, meta)
     if st == GitHubPageStage.LOGIN:
         return ("current", 0, meta)
 
@@ -402,8 +412,9 @@ def _method_guide_copy(method: str) -> tuple[str, str, str]:
     if method == "passkey":
         return (
             "패스키 확인 중",
-            "Windows 패스키 창입니다. 휴대폰 QR 또는 이 기기에서 확인하세요.",
-            "검증: 패스키(OS) 창 — 진행 중",
+            "Windows 「패스키로 로그인」또는 GitHub 「Confirm access → Use passkey」"
+            "에서 확인하세요.",
+            "검증: 패스키(OS·Confirm access) — 진행 중",
         )
     if method == "github_2fa":
         return (

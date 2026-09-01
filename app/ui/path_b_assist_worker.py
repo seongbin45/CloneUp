@@ -43,6 +43,22 @@ class PathBAddressWorker(QThread):
                 sample = read_browser_page_sample()
             except Exception as e:
                 expiry_detail = f"sample-error:{e}"
+            # UIA miss on passkey / email auth → screenshot OCR supplement.
+            # Skipped when UIA already classified auth (cheap path).
+            try:
+                from app.util.auth_ocr import enrich_sample_with_auth_ocr
+
+                sample, ocr_det = enrich_sample_with_auth_ocr(sample)
+                if ocr_det and ocr_det.startswith("ocr-"):
+                    if expiry_detail:
+                        expiry_detail = f"{expiry_detail}|{ocr_det}"
+                    else:
+                        expiry_detail = ocr_det
+            except Exception as e:
+                extra = f"auth-ocr-error:{e}"
+                expiry_detail = (
+                    f"{expiry_detail}|{extra}" if expiry_detail else extra
+                )
         if self._read_expiry:
             parts: list[str] = []
             try:

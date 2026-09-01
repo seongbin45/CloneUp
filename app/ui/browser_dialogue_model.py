@@ -114,8 +114,9 @@ def _auth_wait_copy(auth_method: str = "") -> SceneCopy:
             right_tag="2 / 4",
             say="패스키로 확인해 주세요",
             sub=(
-                "「Windows 보안」창이 떴습니다. "
-                "휴대폰으로 QR을 스캔하거나, 「이 디바이스」에서 확인하세요. "
+                "패스키 확인이 필요합니다. "
+                "「Windows 보안」창이면 QR·이 디바이스로, "
+                "GitHub 「Confirm access」면 「Use passkey」로 확인하세요. "
                 "이 단계는 제가 대신 누를 수 없어요."
             ),
             foot_note="확인이 끝나면 키 만들기로 이어져요",
