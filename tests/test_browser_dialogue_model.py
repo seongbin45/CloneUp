@@ -7,7 +7,9 @@ from app.ui.browser_dialogue_model import (
     advance_from_browser_kind,
     build_history,
     expires_at_for_chip,
+    expires_at_for_days,
     expiry_days_value,
+    expiry_label_for_days,
     scene_copy,
     scope_query_value,
 )
@@ -18,6 +20,9 @@ def test_chip_maps() -> None:
     assert expiry_days_value("만료 없음") == "none"
     assert scope_query_value("저장소만") == "repo"
     assert scope_query_value("저장소 + 워크플로") == "repo,workflow"
+    assert expiry_label_for_days("90") == "90일"
+    assert expiry_label_for_days("none") == "만료 없음"
+    assert expiry_label_for_days("7") == "7일"
 
 
 def test_expires_at_for_chip() -> None:
@@ -25,6 +30,9 @@ def test_expires_at_for_chip() -> None:
     z = expires_at_for_chip("90일")
     assert z.endswith("Z")
     assert "T" in z
+    assert expires_at_for_days("none") == "none"
+    z2 = expires_at_for_days("30")
+    assert z2.endswith("Z")
 
 
 def test_scene_copy_tags() -> None:
@@ -33,6 +41,27 @@ def test_scene_copy_tags() -> None:
     assert scene_copy(DialogueScene.PRESS_GENERATE).right_tag == "3 / 3"
     assert scene_copy(DialogueScene.DONE).right_tag == "끝"
     assert "Generate" in scene_copy(DialogueScene.PRESS_GENERATE).nudge_text
+
+
+def test_scene_copy_browser_first() -> None:
+    """Path B copy: user sets Expiration/scopes in browser; no auto-set claim."""
+    login = scene_copy(DialogueScene.LOGIN_WAIT)
+    assert "나머지는 제가" not in login.sub
+
+    exp = scene_copy(DialogueScene.ASK_EXPIRY)
+    assert "Expiration" in exp.sub or "만료" in exp.say
+    assert "골랐어요" in exp.foot_note
+    assert "키는 언제까지" not in exp.say
+
+    scope = scene_copy(DialogueScene.ASK_SCOPE)
+    assert "Select scopes" in scope.sub or "repo" in scope.sub
+    assert "확인했어요" in scope.foot_note
+
+    gen = scene_copy(DialogueScene.PRESS_GENERATE, expiry_label="90일")
+    assert "맞춰 볼게요" not in gen.sub
+    assert "커서가 잠깐" not in gen.sub
+    assert "Generate token" in gen.say or "Generate token" in gen.sub
+    assert gen.nudge_btn == "도와주세요"
 
 
 def test_history_change_targets() -> None:

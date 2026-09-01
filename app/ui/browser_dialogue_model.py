@@ -61,6 +61,20 @@ def expiry_days_value(label: str) -> str:
     return "90"
 
 
+def expiry_label_for_days(days: str) -> str | None:
+    """Map UIA/read-back days token (``90``, ``none``, …) → chip label."""
+    want = (days or "").strip().lower()
+    if want in ("", "no-expiration", "never"):
+        want = "none"
+    for lab, d, _rec in EXPIRY_OPTIONS:
+        if d == want:
+            return lab
+    # GitHub also offers 7 / 60 — keep a readable label for receipt.
+    if want.isdigit():
+        return f"{want}일"
+    return None
+
+
 def scope_query_value(label: str) -> str:
     for lab, scopes, _rec in SCOPE_OPTIONS:
         if lab == label:
@@ -69,9 +83,15 @@ def scope_query_value(label: str) -> str:
 
 
 def expires_at_for_chip(label: str) -> str:
-    """ISO Z or ``none`` for keyring (chosen at chip time, not scraped)."""
+    """ISO Z or ``none`` from a hint chip (fallback when UIA read fails)."""
     days = expiry_days_value(label)
     got = parse_expires_label(days, label)
+    return got or "none"
+
+
+def expires_at_for_days(days: str) -> str:
+    """ISO Z or ``none`` from a UIA days token (browser is source of truth)."""
+    got = parse_expires_label((days or "").strip(), "")
     return got or "none"
 
 
@@ -80,7 +100,7 @@ def scene_copy(scene: DialogueScene, *, expiry_label: str = "90일") -> SceneCop
         return SceneCopy(
             right_tag="1 / 3",
             say="로그인만 해주시면 돼요",
-            sub="브라우저를 열어 두었습니다. 편한 방법으로 로그인해 주세요. 나머지는 제가 합니다.",
+            sub="브라우저를 열어 두었습니다. 편한 방법으로 로그인해 주세요.",
             foot_note="비밀번호는 저를 거치지 않아요",
             wait_text="로그인이 끝나는 것을 지켜보고 있어요.",
         )
@@ -95,34 +115,39 @@ def scene_copy(scene: DialogueScene, *, expiry_label: str = "90일") -> SceneCop
     if scene == DialogueScene.ASK_EXPIRY:
         return SceneCopy(
             right_tag="2 / 3",
-            say="키는 언제까지 쓸까요?",
-            sub="짧게 두면 안전하고, 길게 두면 다시 만들 일이 줄어요.",
-            foot_note="나중에 설정에서 바꿀 수 있어요",
+            say="브라우저에서 만료일을 골라 주세요",
+            sub=(
+                "GitHub 화면의 Expiration을 눌러 기간을 선택하세요. "
+                "아래는 추천이에요 — 눌러도 브라우저를 대신 바꾸지는 않아요."
+            ),
+            foot_note="고르신 뒤 「골랐어요」를 눌러 주세요",
         )
     if scene == DialogueScene.ASK_SCOPE:
         return SceneCopy(
             right_tag="2 / 3",
-            say="권한은 어디까지 줄까요?",
-            sub="올리고 받는 데는 저장소만으로 충분합니다.",
-            foot_note="워크플로 파일이 있는 저장소만 두 번째가 필요해요",
+            say="권한 체크를 확인해 주세요",
+            sub=(
+                "Select scopes에서 저장소(repo)가 켜져 있는지 보세요. "
+                "워크플로 파일이 있으면 workflow도 함께 체크하세요."
+            ),
+            foot_note="확인 후 「확인했어요」를 눌러 주세요",
         )
     if scene == DialogueScene.PRESS_GENERATE:
-        exp = expiry_label or "90일"
+        exp = expiry_label or "직접 선택"
         return SceneCopy(
             right_tag="3 / 3",
-            say="초록 버튼만 눌러 주세요",
+            say="초록 Generate token만 눌러 주세요",
             sub=(
-                "이름·권한은 채워 두었습니다. "
-                f"브라우저(Chrome/Edge) 창만 골라 Expiration을 {exp}으로 "
-                "맞춰 볼게요. 커서가 잠깐 움직일 수 있어요. "
-                "안 바뀌면 직접 고른 뒤 Generate token을 눌러 주세요."
+                "이름(Note)은 채워 두었습니다. "
+                f"만료일은 브라우저에서 고른 값({exp}) 그대로 둡니다. "
+                "초록 버튼만 누르면 키를 받아올게요."
             ),
             foot_note="누르면 키를 알아서 받아옵니다",
             nudge_text=(
-                f"Expiration이 {exp}이 아니면 직접 바꾼 뒤, "
-                "아래쪽 Generate token을 눌러 주세요."
+                "Generate token이 안 보이면 페이지를 아래로 내린 뒤 눌러 주세요. "
+                "도움이 필요하면 「도와주세요」를 눌러 주세요."
             ),
-            nudge_btn="버튼이 안 보여요",
+            nudge_btn="도와주세요",
         )
     return SceneCopy(
         right_tag="끝",

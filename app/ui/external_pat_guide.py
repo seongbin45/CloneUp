@@ -2,9 +2,11 @@
 
 Design: ``desin/CloneUp 브라우저 안내 대화형.dc.html``
 
-User signs in (and confirms passkey/email) in the OS browser. The guide asks
-two chip questions (expiry, scopes), opens classic tokens/new with Note+scopes,
-then collects the issued PAT (clipboard / UIA).
+User signs in (and confirms passkey/email) in the OS browser, then sets
+Expiration and scopes **on the GitHub page**. Hint chips + 「골랐어요」/
+「확인했어요」 guide the steps; the app reads Expiration via UIA and collects
+the issued PAT (clipboard / UIA). Auto CDP/UIA mutation is opt-in only
+(「도와주세요」 / CDP).
 """
 
 from __future__ import annotations
@@ -490,7 +492,9 @@ from app.ui.browser_dialogue_model import (
     advance_from_browser_kind,
     build_history,
     expires_at_for_chip,
+    expires_at_for_days,
     expiry_days_value,
+    expiry_label_for_days,
     scene_copy,
     scope_query_value,
 )
@@ -1002,17 +1006,31 @@ class ExternalBrowserPatGuide(QDialog):
                 w.deleteLater()
         if self._scene == DialogueScene.ASK_EXPIRY:
             opts = EXPIRY_OPTIONS
-            handler = self._on_expiry_chip
+            selected = self._expiry_label
+            handler = self._on_expiry_hint
+            confirm_text = "골랐어요"
+            confirm_handler = self._on_expiry_confirm
         elif self._scene == DialogueScene.ASK_SCOPE:
             opts = SCOPE_OPTIONS
-            handler = self._on_scope_chip
+            selected = self._scope_label
+            handler = self._on_scope_hint
+            confirm_text = "확인했어요"
+            confirm_handler = self._on_scope_confirm
         else:
             self._chips_host.hide()
             return
         for label, _val, rec in opts:
             text = f"{label}    · 권장" if rec else label
+            is_sel = selected == label
+            # Highlight the chosen hint; otherwise keep the recommended outline.
+            if is_sel:
+                chip_name = "dlgChipRec"
+            elif rec and selected is None:
+                chip_name = "dlgChipRec"
+            else:
+                chip_name = "dlgChip"
             btn = QPushButton(text)
-            btn.setObjectName("dlgChipRec" if rec else "dlgChip")
+            btn.setObjectName(chip_name)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setMinimumHeight(44)
             btn.setSizePolicy(
@@ -1020,6 +1038,15 @@ class ExternalBrowserPatGuide(QDialog):
             )
             btn.clicked.connect(lambda _=False, lab=label: handler(lab))
             self._chips_lay.addWidget(btn)
+        confirm = QPushButton(confirm_text)
+        confirm.setObjectName("dlgPrimary")
+        confirm.setCursor(Qt.CursorShape.PointingHandCursor)
+        confirm.setMinimumHeight(46)
+        confirm.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        confirm.clicked.connect(confirm_handler)
+        self._chips_lay.addWidget(confirm)
         self._chips_host.show()
         self._chips_host.raise_()
 
@@ -1062,40 +1089,102 @@ class ExternalBrowserPatGuide(QDialog):
     def _on_history_change(self, target: DialogueScene) -> None:
         if target == DialogueScene.ASK_EXPIRY:
             self._scope_label = None
-            self._token_nav_opened = False
+            self._expires_at = None
+            self._expiry_uia_ok = False
+            self._expiry_uia_tries = 0
+            # Keep token page open; user re-picks Expiration in the browser.
+        if target == DialogueScene.ASK_SCOPE:
             self._expiry_uia_ok = False
             self._expiry_uia_tries = 0
         self._set_scene(target)
 
-    def _on_expiry_chip(self, label: str) -> None:
+    def _on_expiry_hint(self, label: str) -> None:
+        """Hint chip only — does not advance or auto-set browser Expiration."""
+        self._expiry_label = label
+        self._guide_log(f"[Path B] 만료 힌트: {label}")
+        self._sub.setText(
+            f"브라우저 Expiration에서 「{label}」에 맞춰 고른 뒤 "
+            "「골랐어요」를 눌러 주세요."
+        )
+        self._rebuild_chips()
+
+    def _on_expiry_confirm(self) -> None:
+        """User finished picking Expiration in the browser — read & advance."""
+        if self._apply_expiry_from_browser(force_advance=True):
+            return
+        # No UIA read — fall back to hint chip (or default 90일).
+        label = self._expiry_label or "90일"
         self._expiry_label = label
         self._expires_at = expires_at_for_chip(label)
-        self._expiry_uia_ok = False
-        self._expiry_uia_tries = 0
-        self._guide_log(f"[Path B] 만료 선택: {label} → {self._expires_at}")
+        self._guide_log(
+            f"[Path B] 만료 확인(힌트 폴백): {label} → {self._expires_at}"
+        )
         self._set_scene(DialogueScene.ASK_SCOPE)
 
-    def _on_scope_chip(self, label: str) -> None:
+    def _apply_expiry_from_browser(self, *, force_advance: bool) -> bool:
+        """
+        Read Expiration from the browser. On success, store and optionally
+        advance to ASK_SCOPE. Returns True when advanced (or applied on confirm).
+
+        Auto-advance only when a hint chip is selected **and** the browser
+        value matches — avoids skipping on GitHub's default (often 30 days).
+        """
+        got, detail = read_token_expiration_uia()
+        if got is None:
+            if force_advance:
+                self._guide_log(f"[Path B] 만료 읽기 실패: {detail}")
+            return False
+        label = expiry_label_for_days(got) or self._expiry_label or f"{got}일"
+        hint_days = (
+            expiry_days_value(self._expiry_label)
+            if self._expiry_label
+            else None
+        )
+        if not force_advance:
+            if hint_days is None:
+                # Show read-back; wait for 「골랐어요」 so defaults don't skip.
+                self._sub.setText(
+                    f"브라우저에서 읽은 만료: {label}. "
+                    "맞으면 「골랐어요」를 눌러 주세요."
+                )
+                return False
+            if got != hint_days:
+                self._sub.setText(
+                    f"브라우저에서 읽은 만료: {label}. "
+                    f"힌트는 {self._expiry_label}이에요 — "
+                    "맞추셨으면 「골랐어요」."
+                )
+                return False
+        self._expiry_label = label
+        self._expires_at = expires_at_for_days(got)
+        self._expiry_uia_ok = True
+        self._guide_log(
+            f"[Path B] 만료 읽음: {got} → {self._expires_at} ({detail})"
+        )
+        self._set_scene(DialogueScene.ASK_SCOPE)
+        return True
+
+    def _on_scope_hint(self, label: str) -> None:
+        """Hint chip — soft URL prefill only; no auto checkbox clicking."""
         self._scope_label = label
-        self._guide_log(f"[Path B] 권한 선택: {label}")
-        # Re-open with chosen scopes + fresh Note (login may have opened defaults).
+        self._guide_log(f"[Path B] 권한 힌트: {label}")
+        # Soft help: reopen create URL so GitHub pre-checks scopes in the query.
         self._open_token_create_page()
+        self._sub.setText(
+            f"페이지를 다시 열었어요 ({label}). "
+            "Select scopes 체크를 확인한 뒤 「확인했어요」를 눌러 주세요."
+        )
+        self._rebuild_chips()
+
+    def _on_scope_confirm(self) -> None:
+        """User confirmed scopes in the browser — go to Generate (no auto-click)."""
+        if not self._scope_label:
+            self._scope_label = "저장소만"
+        self._guide_log(f"[Path B] 권한 확인: {self._scope_label}")
+        if not self._token_nav_opened:
+            self._open_token_create_page()
         self._set_scene(DialogueScene.PRESS_GENERATE)
-        # Expiration is not in the create URL — after the page loads, try
-        # Invoke then PID-scoped coordinate click (cursor restored).
-        self._schedule_expiry_invoke_tries()
-
-    def _open_token_create_page(self) -> None:
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QDesktopServices
-
-        scopes = scope_query_value(self._scope_label or "저장소만")
-        url, note = build_pat_create_url_with_note(scopes=scopes)
-        self._pat_note = note
-        self._create_url = url
-        self._last_family_url = url
-        self._token_nav_opened = True
-        QDesktopServices.openUrl(QUrl(url))
+        # Do NOT auto-set Expiration or click Generate — user does both.
 
     def _wanted_expiry_days(self) -> str:
         return expiry_days_value(self._expiry_label or "90일")
@@ -1270,12 +1359,13 @@ class ExternalBrowserPatGuide(QDialog):
             self._sub.setText("다른 자동 맞춤이 끝나길 기다린 뒤 다시 시도해 주세요.")
 
     def _on_nudge_generate(self) -> None:
-        """버튼이 안 보여요 — background CDP/UIA expiry then Generate."""
-        self._guide_log("[Path B] Generate 도움 버튼")
+        """도와주세요 — opt-in CDP/UIA help (Expiry + Generate). Off by default."""
+        self._guide_log("[Path B] Generate 도움 버튼(도와주세요)")
         if self._assist_busy():
             self._sub.setText("잠시만요 — 브라우저 맞춤이 진행 중입니다…")
             return
         want = self._wanted_expiry_days()
+        # Prefer skipping expiry mutate when we already read the user's choice.
         skip = bool(self._expiry_uia_ok)
         self._sub.setText("Generate를 찾아 보는 중…")
         if not self._start_assist_worker(
@@ -1327,6 +1417,11 @@ class ExternalBrowserPatGuide(QDialog):
             if kind == "reached" and idx == 3:
                 # issued page — clipboard poll will catch copy; keep waiting
                 pass
+
+        # Read-back Expiration while guiding the user (no auto-set).
+        if self._scene == DialogueScene.ASK_EXPIRY and self._token_nav_opened:
+            if self._apply_expiry_from_browser(force_advance=False):
+                return
 
         if kind == "token_error":
             # Note collision — open fresh note URL

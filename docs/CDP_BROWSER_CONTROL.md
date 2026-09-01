@@ -30,11 +30,12 @@ Remove-Item Env:CLONEUP_CDP -ErrorAction SilentlyContinue
 ## 사용 흐름
 
 1. Path B로 「브라우저로 연결」.
-2. 만료·권한 칩 선택 → 키 만들기 장면.
-3. `CLONEUP_CDP=1` 이면 「**제어용 브라우저 열기**」 버튼이 보입니다.
+2. **기본:** 브라우저에서 Expiration·scopes를 직접 고르고 Generate token을 누릅니다.  
+   안내 칩은 추천 힌트이며, 앱은 만료를 읽어 저장합니다 (자동 클릭 없음).
+3. `CLONEUP_CDP=1` 이면 Generate 장면에 「**제어용 브라우저 열기**」·「도와주세요」가 보입니다.
 4. 버튼 → CloneUp **전용 프로필** (`%LOCALAPPDATA%\CloneUp\cdp-profile`) +  
    `--remote-debugging-port=9222` 로 Chrome/Edge 기동 (기본 프로필을 건드리지 않음).
-5. 그 창에서 GitHub 로그인 후 tokens/new 가 열리면, CloneUp이 CDP로 Expiration을 맞춥니다.
+5. 「도와주세요」를 누르면 CDP/UIA로 Expiration·Generate를 도울 수 있습니다 (옵트인).
 6. CDP 실패 시 기존 UIA/수동으로 폴백.
 
 이미 디버깅 포트로 켠 브라우저가 있으면 기동 없이 연결만 합니다.
