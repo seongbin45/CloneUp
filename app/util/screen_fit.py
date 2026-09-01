@@ -117,6 +117,78 @@ def largest_16x9(
     return w, h
 
 
+def compute_choice_dialog_size(
+    avail_w: int,
+    avail_h: int,
+    *,
+    hint_w: int = 500,
+    hint_h: int = 480,
+) -> tuple[int, int]:
+    """
+    Compact intro/choice dialog client size (logical px).
+
+    Keeps the 시안 ~500× card on both ultrawide (2880×1080) and standard
+    1080p (1920×1080), including common DPI scales (125%/150%).
+    """
+    pw = max(1, int(hint_w))
+    phh = max(1, int(hint_h))
+    w = max(500, min(540, max(pw + 8, 500)))
+    h = max(400, min(600, phh + 8))
+    aw = max(1, int(avail_w))
+    ah = max(1, int(avail_h))
+    w = min(w, max(400, aw - 48))
+    h = min(h, max(380, ah - 48))
+    # Never taller/wider than the work area itself.
+    w = max(320, min(w, aw - 16))
+    h = max(280, min(h, ah - 16))
+    return int(w), int(h)
+
+
+def center_client_in_available(
+    avail_x: int,
+    avail_y: int,
+    avail_w: int,
+    avail_h: int,
+    client_w: int,
+    client_h: int,
+    *,
+    chrome_w: int = 26,
+    chrome_h: int = 71,
+) -> tuple[int, int, int, int]:
+    """
+    Return ``(client_x, client_y, client_w, client_h)`` centered in the work area.
+
+    ``chrome_*`` approximates Win10/11 frame (title + borders) so the *frame*
+    stays inside availableGeometry. Used to avoid: resize() while still
+    Maximized / restore of a remembered tall-thin "normal" geometry, which
+    left the intro card as a vertical strip on 1920×1080.
+    """
+    cw = max(320, int(client_w))
+    ch = max(280, int(client_h))
+    aw = max(1, int(avail_w))
+    ah = max(1, int(avail_h))
+    # Shrink client if frame would not fit.
+    max_cw = max(320, aw - max(0, int(chrome_w)) - 8)
+    max_ch = max(280, ah - max(0, int(chrome_h)) - 8)
+    cw = min(cw, max_cw)
+    ch = min(ch, max_ch)
+    frame_w = cw + max(0, int(chrome_w))
+    frame_h = ch + max(0, int(chrome_h))
+    frame_x = int(avail_x) + max(0, (aw - frame_w) // 2)
+    frame_y = int(avail_y) + max(0, (ah - frame_h) // 2)
+    # Clamp frame inside work area.
+    if frame_x + frame_w > int(avail_x) + aw:
+        frame_x = int(avail_x) + aw - frame_w
+    if frame_y + frame_h > int(avail_y) + ah:
+        frame_y = int(avail_y) + ah - frame_h
+    frame_x = max(int(avail_x), frame_x)
+    frame_y = max(int(avail_y), frame_y)
+    # Client origin ≈ frame + left/top chrome; use half chrome as approx.
+    left = max(0, int(chrome_w) // 2)
+    top = max(0, int(chrome_h) - max(0, int(chrome_w) // 2))
+    return frame_x + left, frame_y + top, cw, ch
+
+
 def clear_size_locks(widget: Any) -> None:
     """Remove fixed / min / max size locks that block maximize or resize.
 

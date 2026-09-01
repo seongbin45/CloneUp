@@ -1202,9 +1202,9 @@ class ConnectGitHubWizard(QDialog):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
-        # Choice-first: compact dialog. Maximize only when entering WebView.
-        if self._use_web and not getattr(self, "_web_sized", False):
-            self._web_sized = True
+        # Intro/choice must always re-fit: a remembered Maximized / tall-thin
+        # "normal" geometry on 1920×1080 broke the first-guidance card.
+        if self._use_web and self._on_flow_narrow_page():
             QTimer.singleShot(0, self._fit_choice_dialog)
         self._place_away_banner()
 
@@ -1287,8 +1287,20 @@ class ConnectGitHubWizard(QDialog):
         return
 
     def _fit_choice_dialog(self) -> None:
-        """Compact window sized to intro/choice card (stable — no resize loop)."""
-        from app.util.screen_fit import clear_size_locks, read_screen_info, screen_for_widget
+        """Compact window sized to intro/choice card (stable — no resize loop).
+
+        Cross-check (1920×1080 vs 2880×1080): a Maximized / remembered tall
+        "normal" geometry + ``resize()`` left a vertical strip on the right.
+        Fix: leave Maximized, then ``setGeometry`` to an explicit centered
+        client rect in ``availableGeometry`` (not move-after-resize).
+        """
+        from app.util.screen_fit import (
+            center_client_in_available,
+            clear_size_locks,
+            compute_choice_dialog_size,
+            read_screen_info,
+            screen_for_widget,
+        )
         from PySide6.QtCore import Qt
 
         if getattr(self, "_fitting_choice", False):
@@ -1318,24 +1330,61 @@ class ConnectGitHubWizard(QDialog):
             ph = src.sizeHint() if src is not None else None
             pw = int(ph.width()) if ph is not None and ph.width() > 0 else 500
             phh = int(ph.height()) if ph is not None and ph.height() > 0 else 480
-            # 시안 content ~460 wide; height hugs the card
-            w = max(500, min(540, max(pw + 8, 500)))
-            h = max(400, min(600, phh + 8))
             info = read_screen_info(screen_for_widget(self, anchor=self._anchor))
-            if info is not None:
-                w = min(w, max(400, info.available_w - 48))
-                h = min(h, max(380, info.available_h - 48))
-            # Do NOT setFixedSize — on ~200% DPI Windows, Fixed 500×527 fights
-            # maximize/frame math (want ≈1000×1054) and spams setGeometry.
-            # Min + resize + resizeEvent clamp keeps the card compact instead.
+            if info is None:
+                w, h = compute_choice_dialog_size(1920, 1040, hint_w=pw, hint_h=phh)
+                ax = ay = 0
+                aw, ah = 1920, 1040
+            else:
+                w, h = compute_choice_dialog_size(
+                    info.available_w,
+                    info.available_h,
+                    hint_w=pw,
+                    hint_h=phh,
+                )
+                ax, ay = info.available_x, info.available_y
+                aw, ah = info.available_w, info.available_h
+            # Measure real chrome if possible (after showNormal).
+            try:
+                fg = self.frameGeometry()
+                geo = self.geometry()
+                chrome_w = max(0, fg.width() - geo.width())
+                chrome_h = max(0, fg.height() - geo.height())
+                if chrome_w < 8:
+                    chrome_w = 26
+                if chrome_h < 20:
+                    chrome_h = 71
+            except Exception:
+                chrome_w, chrome_h = 26, 71
+            cx, cy, w, h = center_client_in_available(
+                ax,
+                ay,
+                aw,
+                ah,
+                w,
+                h,
+                chrome_w=chrome_w,
+                chrome_h=chrome_h,
+            )
             self._choice_size = (w, h)
+            # Lock both min and max so Maximize cannot stretch the shell into
+            # a tall strip; changeEvent still rejects Maximize on narrow pages.
             self.setMinimumSize(w, h)
-            self.resize(w, h)
-            self._place_center_on_anchor()
+            self.setMaximumSize(w, h)
+            self.setGeometry(cx, cy, w, h)
+            try:
+                self._wiz_log(
+                    f"[연결] choice 기하 {w}x{h} @({cx},{cy}) "
+                    f"avail={aw}x{ah} dpr="
+                    f"{getattr(info, 'dpr', '?')}"
+                )
+            except Exception:
+                pass
         except Exception:
             self._choice_size = (520, 500)
             clear_size_locks(self)
             self.setMinimumSize(520, 500)
+            self.setMaximumSize(520, 500)
             self.resize(520, 500)
             self._place_center_on_anchor()
         finally:
@@ -2367,8 +2416,14 @@ class ConnectGitHubWizard(QDialog):
             self._build_flow_header(back_enabled=back_enabled, on_back=on_back)
         )
         lay.addWidget(body, 0)
-        # No stretch — dialog height hugs the card (시안: 빈 아래 여백 없음)
-        outer_lay.addWidget(card, 0, Qt.AlignmentFlag.AlignTop)
+        # Center horizontally: AlignTop alone does not stretch H, and on an
+        # oversized shell the card looked like a tall strip stuck to one edge
+        # (seen on 1920×1080). HCenter + Top keeps the 시안 card readable.
+        outer_lay.addWidget(
+            card,
+            0,
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+        )
         return outer
 
     def _page_intro(self) -> QWidget:

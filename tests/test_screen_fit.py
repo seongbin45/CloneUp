@@ -2,7 +2,35 @@
 
 from __future__ import annotations
 
-from app.util.screen_fit import clear_size_locks, largest_16x9
+from app.util.screen_fit import (
+    center_client_in_available,
+    clear_size_locks,
+    compute_choice_dialog_size,
+    largest_16x9,
+)
+
+
+def test_compute_choice_dialog_size_stable_across_1080p_and_ultrawide() -> None:
+    """1920×1080 and 2880×1080 must both get a compact ~500× card, not a strip."""
+    for aw, ah in ((1920, 1040), (1536, 864), (1280, 720), (2880, 1040)):
+        w, h = compute_choice_dialog_size(aw, ah, hint_w=500, hint_h=520)
+        assert 400 <= w <= 540, (aw, ah, w, h)
+        assert 380 <= h <= 600, (aw, ah, w, h)
+        assert w < aw * 0.5, "choice width must stay narrow vs screen"
+        assert h < ah * 0.85, "choice height must not fill the screen"
+
+
+def test_center_client_in_available_keeps_frame_inside() -> None:
+    x, y, w, h = center_client_in_available(
+        0, 0, 1920, 1040, 508, 528, chrome_w=26, chrome_h=71
+    )
+    assert w == 508 and h == 528
+    # Frame roughly inside work area
+    assert x >= 0 and y >= 0
+    assert x + w + 13 <= 1920
+    assert y + h + 20 <= 1040
+    # Near horizontal center
+    assert abs((x + w / 2) - 960) < 80
 
 
 def test_clear_size_locks_resets_fixed_min_and_max() -> None:
