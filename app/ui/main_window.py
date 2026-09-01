@@ -1243,6 +1243,13 @@ class MainController(QObject):
                 return
 
         # Beginner wizard (PAT). Path A = WebView wizard; Path B = Guide alone.
+        # Dismiss boot toast so it cannot fight the connect UI.
+        try:
+            from app.ui.tray_app import suppress_boot_toast_for_connect
+
+            suppress_boot_toast_for_connect()
+        except Exception:
+            pass
         wiz = ConnectGitHubWizard(
             self.window, reauth=had_session, log=self._log
         )
@@ -1299,6 +1306,12 @@ class MainController(QObject):
         from app.util.browser_address import set_path_b_log_sink
 
         self._log("--- GitHub 연결 (브라우저 안내) ---")
+        try:
+            from app.ui.tray_app import suppress_boot_toast_for_connect
+
+            suppress_boot_toast_for_connect()
+        except Exception:
+            pass
         guide = ExternalBrowserPatGuide(
             anchor=self.window,
             open_login_on_start=True,
@@ -1337,6 +1350,12 @@ class MainController(QObject):
         exp = expires_at
         note = pat_note
         if not raw:
+            try:
+                from app.ui.tray_app import suppress_boot_toast_for_connect
+
+                suppress_boot_toast_for_connect()
+            except Exception:
+                pass
             wiz = ConnectGitHubWizard(
                 self.window, reauth=False, log=self._log
             )

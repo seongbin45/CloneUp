@@ -43,6 +43,54 @@ def _main_window_visible() -> bool:
     return False
 
 
+_CONNECT_UI_TITLES = frozenset(
+    {
+        "CloneUp — GitHub 연결",
+        "CloneUp - GitHub 연결",
+    }
+)
+
+
+def github_connect_ui_busy() -> bool:
+    """
+    True while login / re-login UI is on screen.
+
+    Suppresses boot toast so it does not fight ConnectGitHubWizard /
+    ExternalBrowserPatGuide (Path A/B).
+    """
+    try:
+        for w in QApplication.topLevelWidgets():
+            if not isinstance(w, QWidget):
+                continue
+            if not w.isVisible():
+                continue
+            name = type(w).__name__
+            if name in (
+                "ConnectGitHubWizard",
+                "PatTokenDialog",
+                "ExternalBrowserPatGuide",
+            ):
+                return True
+            if (w.objectName() or "") == "pathBGuide":
+                return True
+            if (w.windowTitle() or "").strip() in _CONNECT_UI_TITLES:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def suppress_boot_toast_for_connect() -> None:
+    """Close any boot toast and skip pending scan results (call before login UI)."""
+    app = QApplication.instance()
+    tray = getattr(app, "_cloneup_tray", None) if app is not None else None
+    if tray is not None and hasattr(tray, "dismiss_boot_toast"):
+        try:
+            tray.dismiss_boot_toast()
+        except Exception:
+            pass
+
+
 class _BootScanWorker(QThread):
     """Run git status scan off the GUI thread (avoids Windows '응답 없음')."""
 
@@ -127,6 +175,7 @@ class TrayController(QObject):
         self._toast: BootNotifyToast | None = None
         self._worker: _BootUploadWorker | None = None
         self._scan_worker: _BootScanWorker | None = None
+        self._suppress_toast_until_idle = False
 
         icon = load_app_icon()
         if icon.isNull():
@@ -147,6 +196,11 @@ class TrayController(QObject):
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(self._on_activated)
         self._tray.show()
+        # So main_window can dismiss toast before opening login / reauth UI.
+        try:
+            self._app._cloneup_tray = self  # noqa: SLF001
+        except Exception:
+            pass
 
         try:
             migrate_boot_notify_later_policy()
@@ -160,13 +214,28 @@ class TrayController(QObject):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.request_open_main.emit("")
 
+    def dismiss_boot_toast(self) -> None:
+        """Hide toast immediately (login / reauth about to open)."""
+        if self._toast is not None:
+            try:
+                self._toast.blockSignals(True)
+                self._toast.close()
+            except Exception:
+                pass
+            self._toast = None
+        # Drop in-flight scan result by clearing worker handle after finish.
+        self._suppress_toast_until_idle = True
+
     def run_boot_scan(self) -> None:
         if not load_boot_notify_enabled():
+            return
+        if github_connect_ui_busy():
             return
         if self._toast is not None and self._toast.isVisible():
             return
         if self._scan_worker is not None and self._scan_worker.isRunning():
             return
+        self._suppress_toast_until_idle = False
         # Git status on many recent folders — must not run on the GUI thread
         # (Windows marks the main window as '응답 없음' while scanning).
         w = _BootScanWorker(parent=self)
@@ -180,6 +249,11 @@ class TrayController(QObject):
 
     def _on_scan_done(self, pending: object) -> None:
         self._scan_worker = None
+        if getattr(self, "_suppress_toast_until_idle", False):
+            self._suppress_toast_until_idle = False
+            return
+        if github_connect_ui_busy():
+            return
         items: list[PendingFolder] = list(pending or [])  # type: ignore[arg-type]
         if not items:
             return
