@@ -25,12 +25,19 @@ if (-not (Test-Path $ico)) {
     Write-Error "Missing $ico — run scripts\generate_icons.py first"
 }
 
-Write-Host "== P1: PyInstaller =="
+Write-Host "== P1: PyInstaller (CloneUp app) =="
 & (Join-Path $Root "scripts\build_exe.ps1")
 
 $exe = Join-Path $Root "dist\CloneUp\CloneUp.exe"
 if (-not (Test-Path $exe)) {
     Write-Error "Missing $exe"
+}
+
+Write-Host "== Update manager + release zip =="
+& (Join-Path $Root "scripts\build_update_manager.ps1") -ZipApp
+$um = Join-Path $Root "dist\CloneUp_update_manager.exe"
+if (-not (Test-Path $um)) {
+    Write-Error "Missing $um"
 }
 
 $isccCandidates = @(

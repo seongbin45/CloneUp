@@ -55,12 +55,17 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "autoupdatemanager"; Description: "백그라운드 자동 업데이트 관리자 (시작 시 실행)"; GroupDescription: "업데이트:"; Flags: checkedonce
 
 [Files]
 ; PyInstaller onedir output
 Source: "..\dist\CloneUp\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Plain VERSION next to exe (update_manager); also copied by build_exe.ps1 into dist
+Source: "..\VERSION"; DestDir: "{app}"; Flags: ignoreversion
 ; App icon next to exe — Control Panel + Start Menu use this path (all sizes in .ico)
 Source: "..\assets\icons\{#MyAppIcoName}"; DestDir: "{app}"; Flags: ignoreversion
+; Independent update manager (separate folder — not inside {app} onedir)
+Source: "..\dist\CloneUp_update_manager.exe"; DestDir: "{localappdata}\CloneUp\UpdateManager"; Flags: ignoreversion; Tasks: autoupdatemanager
 ; Individual PNG sizes (optional consumers / shell thumbnails if needed)
 Source: "..\assets\icons\icon-16.png"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\icon-24.png"; DestDir: "{app}\icons"; Flags: ignoreversion
@@ -80,8 +85,15 @@ Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppIcoName}"; IconIndex: 0
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppIcoName}"; IconIndex: 0; Tasks: desktopicon
 
+[Registry]
+; Silent background updater — separate from CloneUpTray (--tray)
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "CloneUpUpdateManager"; ValueData: """{localappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"""; Flags: uninsdeletevalue; Tasks: autoupdatemanager
+
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; Start update manager once after install (also registered for logon)
+Filename: "{localappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"; Description: "자동 업데이트 관리자 시작"; Flags: nowait postinstall skipifsilent unchecked; Tasks: autoupdatemanager
 
 ; Note: Git is NOT bundled. First launch uses DG1/DG2 bootstrap
 ; (download official installer / winget) if git is missing.
+; Auto-update uses GitHub zip (CloneUp-win64.zip) + file copy — never runs Setup GUI.

@@ -19,6 +19,8 @@ a = Analysis(
         (str(ROOT / "legal"), "legal"),
         # Apache License 2.0 (app about · 설정 라이선스 버튼)
         (str(ROOT / "LICENSE"), "."),
+        # Plain version for update_manager (next to CloneUp.exe after COLLECT)
+        (str(ROOT / "VERSION"), "."),
     ],
     hiddenimports=[
         "keyring.backends",

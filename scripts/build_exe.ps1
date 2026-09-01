@@ -21,5 +21,14 @@ $out = Join-Path $Root "dist\CloneUp\CloneUp.exe"
 if (-not (Test-Path $out)) {
     Write-Error "Build failed: $out not found"
 }
+
+# VERSION next to exe (update_manager reads {app}\VERSION; datas land in _internal)
+$verSrc = Join-Path $Root "VERSION"
+$verDst = Join-Path $Root "dist\CloneUp\VERSION"
+if (Test-Path $verSrc) {
+    Copy-Item -Force $verSrc $verDst
+    Write-Host "OK: $verDst"
+}
+
 Write-Host "OK: $out"
 Get-Item $out | Format-List FullName, Length, LastWriteTime

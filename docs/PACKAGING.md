@@ -27,7 +27,11 @@ powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 - Inno Setup 6 필요: `winget install --id JRSoftware.InnoSetup -e`
 - 결과:
   - `dist\CloneUp\CloneUp.exe`
+  - `dist\CloneUp_update_manager.exe` (독립 자동 업데이트)
+  - `dist\CloneUp-win64.zip` (릴리즈 자산 — 업데이트 관리자가 Setup GUI 없이 파일 복사)
   - `installer\Output\CloneUp-Setup.exe`
+
+자동 업데이트 동작·끄는 법: [UPDATE_MANAGER.md](UPDATE_MANAGER.md)
 
 ## P1 만 (exe)
 
