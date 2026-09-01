@@ -1221,13 +1221,46 @@ def uia_name_matches_expiration_option(name: str, days_value: str) -> bool:
     return False
 
 
+def _control_looks_selected(ctrl) -> bool:
+    """Best-effort selected/checked state for menu options."""
+    try:
+        sp = ctrl.GetSelectionItemPattern()
+        if sp is not None and bool(getattr(sp, "IsSelected", False)):
+            return True
+    except Exception:
+        pass
+    try:
+        tp = ctrl.GetTogglePattern()
+        if tp is not None:
+            # 1 == On (ToggleState_On)
+            if int(getattr(tp, "ToggleState", 0) or 0) == 1:
+                return True
+    except Exception:
+        pass
+    try:
+        leg = ctrl.GetLegacyIAccessiblePattern()
+        if leg is not None:
+            state = int(getattr(leg, "State", 0) or 0)
+            # STATE_SYSTEM_SELECTED (0x2) | STATE_SYSTEM_CHECKED (0x10)
+            if state & 0x12:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def read_token_expiration_uia() -> tuple[str | None, str]:
     """
-    Read-only: best-effort Expiration opener label from Chromium a11y tree.
+    Read-only: best-effort Expiration value from Chromium a11y tree.
 
     Returns ``(days_value_or_none_token, detail)``. ``days_value`` is
-    ``\"7\"|\"30\"|\"60\"|\"90\"|\"none\"`` when parsed, else ``None``.
-    Does not Invoke, Click, or SetFocus. Scans PID-scoped Chromium windows.
+    ``\"7\"|\"30\"|\"60\"|\"90\"|\"none\"`` or ``YYYY-MM-DD`` when parsed,
+    else ``None``.
+
+    GitHub classic often exposes the closed dropdown Name as bare
+    ``\"Expiration\"`` (no days). In that case we also check ValuePattern,
+    selected menu options (open list), and other day-like Names.
+    Does not Invoke, Click, or SetFocus.
     """
     if not browser_address_available():
         return None, "uiautomation-missing"
@@ -1238,7 +1271,7 @@ def read_token_expiration_uia() -> tuple[str | None, str]:
 
     try:
         pids = list_chromium_browser_pids()
-        # Walk highest-ranked window first; return first solid opener there.
+        last_detail = f"expiry-opener-not-found|pids={len(pids)}"
         for w in _iter_chromium_windows(auto, pids=pids or None):
             all_ctrls: list = []
             try:
@@ -1246,29 +1279,116 @@ def read_token_expiration_uia() -> tuple[str | None, str]:
                     _collect_named_controls(ctrl, all_ctrls, depth=0)
             except Exception:
                 continue
-            openers = [
-                (n, c) for n, _t, c in all_ctrls if uia_name_is_expiration_opener(n)
-            ]
-            if not openers:
-                continue
-            openers.sort(
-                key=lambda pair: (
-                    0 if re.search(r"\b\d{1,3}\s*days?\b", pair[0], re.I) else 1,
-                    0
-                    if "no expiration" in pair[0].lower() or "만료" in pair[0]
-                    else 1,
-                    len(pair[0]),
-                )
-            )
-            name = openers[0][0]
-            parsed = _parse_expiration_opener_days(name)
             title = ""
             try:
                 title = (w.Name or "")[:40]
             except Exception:
                 pass
-            return parsed, f"opener:{name[:64]}|win={title}|pids={len(pids)}"
-        return None, f"expiry-opener-not-found|pids={len(pids)}"
+
+            openers = [
+                (n, c) for n, _t, c in all_ctrls if uia_name_is_expiration_opener(n)
+            ]
+            # Day-like option names (open menu: "30 days", "No expiration", …)
+            day_opts: list[tuple[str, str, object]] = []
+            for n, _t, c in all_ctrls:
+                parsed_n = _parse_expiration_opener_days(n)
+                if parsed_n is None:
+                    continue
+                # Skip bare label-only if somehow parsed; keep real options.
+                if (n or "").strip().lower() in ("expiration",):
+                    continue
+                day_opts.append((parsed_n, n, c))
+
+            # 1) Opener Name already includes the selection ("30 days", …)
+            scored: list[tuple[int, str, str]] = []
+            for n, c in openers:
+                p = _parse_expiration_opener_days(n)
+                if p is None:
+                    continue
+                score = 0
+                if re.search(r"\b\d{1,3}\s*days?\b", n, re.I):
+                    score += 2
+                if "no expiration" in n.lower() or "만료" in n:
+                    score += 1
+                scored.append((score, p, n))
+            if scored:
+                scored.sort(key=lambda t: (-t[0], len(t[2])))
+                _sc, parsed, name = scored[0]
+                return (
+                    parsed,
+                    f"opener:{name[:64]}|win={title}|pids={len(pids)}",
+                )
+
+            # 2) ValuePattern / Legacy value on bare "Expiration" button
+            for n, c in openers:
+                if "expiration" not in (n or "").lower():
+                    continue
+                val = _ctrl_value(c)
+                p = _parse_expiration_opener_days(val) if val else None
+                if p is None and val:
+                    p = _parse_expiration_opener_days(f"{val} days")
+                if p is not None:
+                    return (
+                        p,
+                        f"opener-value:{val[:40]}|name:{n[:24]}|win={title}|pids={len(pids)}",
+                    )
+                # Nested text under the action-menu button (closed state).
+                try:
+                    for ch in c.GetChildren():
+                        cn = (getattr(ch, "Name", None) or "").strip()
+                        if not cn:
+                            continue
+                        p2 = _parse_expiration_opener_days(cn)
+                        if p2 is not None:
+                            return (
+                                p2,
+                                f"opener-child:{cn[:40]}|win={title}|pids={len(pids)}",
+                            )
+                except Exception:
+                    pass
+
+            # 3) Open menu: prefer selected / checked day option
+            selected = [
+                (p, n) for p, n, c in day_opts if _control_looks_selected(c)
+            ]
+            if selected:
+                parsed, name = selected[0]
+                return (
+                    parsed,
+                    f"menu-selected:{name[:64]}|win={title}|pids={len(pids)}",
+                )
+
+            # 3b) Focused menu row (keyboard / hover highlight often tracks focus)
+            if openers and day_opts:
+                try:
+                    fg = auto.GetFocusedControl()
+                    fn = (getattr(fg, "Name", None) or "").strip()
+                    p_fg = _parse_expiration_opener_days(fn)
+                    if p_fg is not None and any(p_fg == p for p, _n, _c in day_opts):
+                        return (
+                            p_fg,
+                            f"menu-focused:{fn[:64]}|win={title}|pids={len(pids)}",
+                        )
+                except Exception:
+                    pass
+
+            # 4) Open menu with a single concrete day option visible near Expiration
+            if openers and len(day_opts) == 1:
+                parsed, name, _c = day_opts[0]
+                return (
+                    parsed,
+                    f"menu-only:{name[:64]}|win={title}|pids={len(pids)}",
+                )
+
+            if openers:
+                names = ",".join((n[:24] for n, _c in openers[:4]))
+                last_detail = (
+                    f"opener-unparsed:{names}|day_opts={len(day_opts)}"
+                    f"|win={title}|pids={len(pids)}"
+                )
+                # Keep searching other windows; bare Expiration alone is not enough.
+                continue
+        return None, last_detail
     except Exception as e:
         return None, f"scan:{e}"
 

@@ -651,6 +651,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._away_streak = 0
         self._login_rescue_done = False
         self._last_expiry_days_read: str | None = None  # last UIA days token
+        self._expiry_miss_log_at = 0.0  # throttle "미감지" logs
 
         # Tee Path B UIA helpers into main textLog while this guide is alive.
         set_path_b_log_sink(self._emit_log)
@@ -1501,25 +1502,40 @@ class ExternalBrowserPatGuide(QDialog):
                 expiry_detail = str(payload.get("expiry_detail") or "")
             # Apply Expiration detection before scene classify so ASK_EXPIRY
             # can store/reflect even when the tab sample is briefly away.
-            if (
-                self._scene == DialogueScene.ASK_EXPIRY
-                and self._token_nav_opened
-                and expiry_days
-            ):
-                hint_days = (
-                    expiry_days_value(self._expiry_hint)
-                    if self._expiry_hint
-                    else None
-                )
-                advance = hint_days is not None and str(expiry_days) == hint_days
-                self._store_expiry_detection(
-                    str(expiry_days),
-                    expiry_detail,
-                    source="poll",
-                    advance=advance,
-                )
-                if advance:
-                    return
+            if self._scene == DialogueScene.ASK_EXPIRY and self._token_nav_opened:
+                if expiry_days:
+                    hint_days = (
+                        expiry_days_value(self._expiry_hint)
+                        if self._expiry_hint
+                        else None
+                    )
+                    advance = (
+                        hint_days is not None and str(expiry_days) == hint_days
+                    )
+                    self._store_expiry_detection(
+                        str(expiry_days),
+                        expiry_detail,
+                        source="poll",
+                        advance=advance,
+                    )
+                    if advance:
+                        return
+                elif expiry_detail:
+                    # Cross-check visibility: leave a trail when read fails.
+                    # Closed GitHub menu often exposes Name=\"Expiration\" only.
+                    import time as _time
+
+                    now = _time.monotonic()
+                    if now - self._expiry_miss_log_at >= 8.0:
+                        self._expiry_miss_log_at = now
+                        self._guide_log(
+                            f"[Path B] 만료 미감지(poll): {expiry_detail}"
+                        )
+                        self._sub.setText(
+                            "만료일을 아직 못 읽었어요. "
+                            "Expiration 목록을 열어 두거나, "
+                            "아래 추천을 고른 뒤 「골랐어요」를 눌러 주세요."
+                        )
             self._poll_address_inner(sample)
         except Exception as e:
             self._guide_log(f"[Path B] 주소 폴링 오류: {e}")
