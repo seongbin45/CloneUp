@@ -78,6 +78,39 @@ def test_url_paths() -> None:
         )
         == GitHubPageStage.AUTH_2FA
     )
+    assert (
+        detect_github_page_stage(
+            PageSnapshot(url="https://github.com/sessions/verified-device")
+        )
+        == GitHubPageStage.AUTH_2FA
+    )
+
+
+def test_verify_your_device_title_and_uia() -> None:
+    """Browser Path B: title/UIA without a strong path must still be AUTH_2FA."""
+    assert (
+        detect_github_page_stage(
+            PageSnapshot(
+                url="https://github.com/",
+                title="Verify your device · GitHub",
+                html="",
+            )
+        )
+        == GitHubPageStage.AUTH_2FA
+    )
+    uia = (
+        "Verify your device\n"
+        "We just sent a verification code to se***@gmail.com\n"
+        "Verification code\nVerify\n"
+        "Verify with something else\nPasskey\n"
+        "Verify with a passkey"
+    )
+    assert (
+        detect_github_page_stage(
+            PageSnapshot(url="https://github.com/sessions/verified-device", html=uia)
+        )
+        == GitHubPageStage.AUTH_2FA
+    )
 
 
 def test_empty_unknown() -> None:

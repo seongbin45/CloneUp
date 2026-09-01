@@ -213,8 +213,8 @@ def classify_browser_sample(
         else:
             return ("logged_out", 0, meta)
 
-    # Passkey OS sheet or Apple / Google / GitHub login form → still signing in
-    if method in ("passkey", "apple", "google", "github_login"):
+    # Passkey OS sheet, device/email verify, or login form → still signing in
+    if method in ("passkey", "apple", "google", "github_login", "github_2fa"):
         return ("current", 0, meta)
 
     if not u and not window_title:
@@ -245,7 +245,10 @@ def classify_browser_sample(
         meta["method"] = "token_issued_banner"
         return ("reached", 3, meta)
 
-    st = detect_github_page_stage(PageSnapshot(url=u))
+    # Pass title + accessible text — omnibox alone misses 「Verify your device」.
+    st = detect_github_page_stage(
+        PageSnapshot(url=u, title=window_title or "", html=ui_text or "")
+    )
     if st == GitHubPageStage.TOKEN_ISSUED:
         return ("reached", 3, meta)
     if st in (
@@ -256,7 +259,7 @@ def classify_browser_sample(
     ):
         return ("reached", 2, meta)
     if st == GitHubPageStage.AUTH_2FA:
-        # Not "reached" for dialogue — user must finish OTP/passkey first.
+        # Not "reached" for dialogue — user must finish email code / passkey first.
         meta["method"] = "github_2fa"
         return ("current", 0, meta)
     if st == GitHubPageStage.LOGIN:
@@ -389,6 +392,13 @@ def _method_guide_copy(method: str) -> tuple[str, str, str]:
             "패스키 확인 중",
             "Windows 패스키 창입니다. 휴대폰 QR 또는 이 기기에서 확인하세요.",
             "검증: 패스키(OS) 창 — 진행 중",
+        )
+    if method == "github_2fa":
+        return (
+            "기기 확인이 필요해요",
+            "이메일로 온 인증 코드를 입력하거나, 「Verify with a passkey」로 패스키를 쓰세요. "
+            "확인이 끝나면 키 만들기 화면으로 이어집니다.",
+            "검증: Verify your device / 이메일·패스키 — 진행 중",
         )
     if method == "google":
         return (

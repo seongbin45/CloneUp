@@ -6,8 +6,39 @@ from app.util.screen_fit import (
     center_client_in_available,
     clear_size_locks,
     compute_choice_dialog_size,
+    guard_choice_client_size,
     largest_16x9,
+    sanitize_choice_chrome,
 )
+
+
+def test_sanitize_choice_chrome_rejects_absurd_restore_deltas() -> None:
+    assert sanitize_choice_chrome(26, 71) == (26, 71)
+    assert sanitize_choice_chrome(8, 20) == (8, 20)
+    assert sanitize_choice_chrome(48, 120) == (48, 120)
+    # Post-maximize junk → defaults
+    assert sanitize_choice_chrome(1700, 900) == (26, 71)
+    assert sanitize_choice_chrome(0, 10) == (26, 71)
+    assert sanitize_choice_chrome(100, 50) == (26, 71)
+
+
+def test_guard_choice_client_size_rejects_strip() -> None:
+    assert guard_choice_client_size(508, 528) == (508, 528)
+    w, h = guard_choice_client_size(320, 600)
+    assert w >= 450
+    assert w / h >= 0.75
+
+
+def test_absurd_chrome_plus_center_does_not_lock_strip() -> None:
+    """Simulate uncapped chrome shrinking width, then guard restores card."""
+    cw, ch = sanitize_choice_chrome(1800, 40)
+    x, y, w, h = center_client_in_available(
+        0, 0, 1920, 1040, 508, 528, chrome_w=cw, chrome_h=ch
+    )
+    # With sanitized chrome, width stays compact-card sized
+    assert w >= 450
+    w2, h2 = guard_choice_client_size(320, 900)
+    assert w2 >= 450 and w2 / h2 >= 0.75
 
 
 def test_compute_choice_dialog_size_stable_across_1080p_and_ultrawide() -> None:

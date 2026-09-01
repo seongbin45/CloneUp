@@ -93,6 +93,8 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
         "/sessions/two-factor" in path
         or path.endswith("/two-factor")
         or "/sessions/verified-device" in path
+        or "/sessions/email-verification" in path
+        or "/login/device" in path
     ):
         return GitHubPageStage.AUTH_2FA
 
@@ -118,9 +120,14 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
     ):
         return GitHubPageStage.TOKEN_FINE_LIST
 
-    # --- Title ---
+    # --- Title / body (Path B often has title+UIA text but a vague omnibox) ---
     if "sign in to github" in title_l:
         return GitHubPageStage.LOGIN
+
+    # Device / email verification (screenshot: "Verify your device" + code boxes
+    # + optional Passkey). Must win over generic github.com "reached".
+    if _looks_like_device_or_email_verify(title_l, html_l):
+        return GitHubPageStage.AUTH_2FA
 
     if "two-factor authentication" in title_l or "two-factor authentication" in html_l:
         if "authentication code" in html_l or "authenticator" in html_l or "otp" in html_l:
@@ -157,6 +164,29 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
             return GitHubPageStage.SUDO_OR_OTHER
 
     return GitHubPageStage.UNKNOWN
+
+
+def _looks_like_device_or_email_verify(title_l: str, body_l: str) -> bool:
+    """
+    GitHub 「Verify your device」 / email one-time code (not TOTP app alone).
+
+    Seen in browser title ``Verify your device · GitHub`` with six digit
+    inputs and optional 「Verify with a passkey」.
+    """
+    blob = f"{title_l}\n{body_l}"
+    if "verify your device" in blob:
+        return True
+    if "verification code" in blob and (
+        "email" in blob or "sent a verification" in blob or "we just sent" in blob
+    ):
+        return True
+    if "verify with a passkey" in blob and (
+        "verification code" in blob or "verify your device" in blob
+    ):
+        return True
+    if "verify with something else" in blob and "passkey" in blob:
+        return True
+    return False
 
 
 def _is_token_issued(title_l: str, html_l: str, html: str) -> bool:

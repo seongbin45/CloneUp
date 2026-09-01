@@ -492,8 +492,8 @@ def detect_signin_method(
     Which sign-in path the user appears to be on.
 
     Returns one of: ``google_blocked``, ``google``, ``apple``, ``passkey``,
-    ``github_login``, ``github_logout``, ``github_logged_out``, ``github``,
-    ``other``.
+    ``github_2fa``, ``github_login``, ``github_logout``, ``github_logged_out``,
+    ``github``, ``other``.
     """
     analysis = analyze_google_signin_block(
         url, window_title=window_title, ui_text=ui_text
@@ -502,6 +502,13 @@ def detect_signin_method(
         return "google_blocked"
     if looks_like_passkey_os_prompt(window_title, ui_text):
         return "passkey"
+    # Omnibox may be empty while StayOnTop guide is up — title/UIA still work.
+    early_blob = f"{window_title or ''}\n{ui_text or ''}".lower()
+    if "verify your device" in early_blob or (
+        "verification code" in early_blob
+        and ("email" in early_blob or "we just sent" in early_blob)
+    ):
+        return "github_2fa"
     if is_apple_signin_url(url):
         return "apple"
     if _host_is_google_accounts(url):
@@ -515,6 +522,20 @@ def detect_signin_method(
             pass
         if path == "/logout" or path.startswith("/logout"):
             return "github_logout"
+        # Device / email verification (before treating /sessions as plain login).
+        blob = f"{window_title or ''}\n{ui_text or ''}".lower()
+        if (
+            "verify your device" in blob
+            or (
+                "verification code" in blob
+                and ("email" in blob or "we just sent" in blob)
+            )
+            or ("verify with a passkey" in blob and "verification" in blob)
+            or "/sessions/verified-device" in path
+            or "/sessions/two-factor" in path
+            or "/sessions/email-verification" in path
+        ):
+            return "github_2fa"
         if path.startswith("/login") or path.startswith("/sessions/"):
             return "github_login"
         # Same URL ``github.com`` when logged out vs in — use Sign in/up UI
@@ -522,6 +543,9 @@ def detect_signin_method(
             window_title, ui_text, url=url
         ):
             return "github_logged_out"
+        # Title-only: Verify your device · GitHub (omnibox may lag)
+        if "verify your device" in (window_title or "").lower():
+            return "github_2fa"
         return "github"
     return "other"
 

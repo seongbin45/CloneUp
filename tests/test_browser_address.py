@@ -108,6 +108,30 @@ def test_apple_and_passkey_detection() -> None:
     )
     assert kind_p == "current" and idx_p == 0
 
+    # GitHub 「Verify your device」 (email code + optional passkey)
+    verify_title = "Verify your device · GitHub"
+    verify_ui = (
+        "Verify your device\n"
+        "We just sent a verification code to se***@gmail.com\n"
+        "Verification code\nVerify\n"
+        "Verify with something else\nPasskey\nVerify with a passkey"
+    )
+    assert (
+        detect_signin_method(
+            "https://github.com/",
+            window_title=verify_title,
+            ui_text=verify_ui,
+        )
+        == "github_2fa"
+    )
+    kind_v, idx_v, meta_v = classify_browser_sample(
+        "https://github.com/",
+        window_title=verify_title,
+        ui_text=verify_ui,
+    )
+    assert kind_v == "current" and idx_v == 0
+    assert meta_v.get("method") == "github_2fa"
+
 
 def test_checklist_index_for_url() -> None:
     assert checklist_index_for_url("https://accounts.google.com/signin") == 0

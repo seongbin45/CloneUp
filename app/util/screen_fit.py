@@ -117,6 +117,51 @@ def largest_16x9(
     return w, h
 
 
+def sanitize_choice_chrome(
+    chrome_w: int,
+    chrome_h: int,
+    *,
+    default: tuple[int, int] = (26, 71),
+) -> tuple[int, int]:
+    """
+    Drop absurd frame deltas measured right after Maximized→Normal.
+
+    Unsettled Windows restore can report chrome of hundreds/thousands of px;
+    feeding that into ``center_client_in_available`` collapses width to ~320
+    and locks a tall strip when min=max is applied.
+    """
+    dw, dh = default
+    try:
+        cw = int(chrome_w)
+        ch = int(chrome_h)
+    except (TypeError, ValueError):
+        return dw, dh
+    if cw < 8 or cw > 48 or ch < 20 or ch > 120:
+        return dw, dh
+    return cw, ch
+
+
+def guard_choice_client_size(
+    w: int,
+    h: int,
+    *,
+    min_w: int = 450,
+    min_ratio: float = 0.75,
+    fallback: tuple[int, int] = (520, 528),
+) -> tuple[int, int]:
+    """Reject collapsed / strip-like client sizes after chrome centering."""
+    try:
+        cw = int(w)
+        ch = int(h)
+    except (TypeError, ValueError):
+        return fallback
+    ch = max(1, ch)
+    if cw < min_w or (cw / ch) < min_ratio:
+        fw, fh = fallback
+        return int(fw), int(min(560, max(480, ch if ch >= 400 else fh)))
+    return cw, ch
+
+
 def compute_choice_dialog_size(
     avail_w: int,
     avail_h: int,

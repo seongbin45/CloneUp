@@ -1205,7 +1205,9 @@ class ConnectGitHubWizard(QDialog):
         # Intro/choice must always re-fit: a remembered Maximized / tall-thin
         # "normal" geometry on 1920×1080 broke the first-guidance card.
         if self._use_web and self._on_flow_narrow_page():
+            # 0ms + delayed: first paint, then after restore chrome settles.
             QTimer.singleShot(0, self._fit_choice_dialog)
+            QTimer.singleShot(50, self._fit_choice_dialog)
         self._place_away_banner()
 
     def resizeEvent(self, event) -> None:  # noqa: N802
@@ -1298,7 +1300,9 @@ class ConnectGitHubWizard(QDialog):
             center_client_in_available,
             clear_size_locks,
             compute_choice_dialog_size,
+            guard_choice_client_size,
             read_screen_info,
+            sanitize_choice_chrome,
             screen_for_widget,
         )
         from PySide6.QtCore import Qt
@@ -1344,18 +1348,16 @@ class ConnectGitHubWizard(QDialog):
                 )
                 ax, ay = info.available_x, info.available_y
                 aw, ah = info.available_w, info.available_h
-            # Measure real chrome if possible (after showNormal).
+            # Measure chrome after showNormal — sanitize absurd restore deltas
+            # that would collapse width to ~320 and lock a tall strip.
             try:
                 fg = self.frameGeometry()
                 geo = self.geometry()
                 chrome_w = max(0, fg.width() - geo.width())
                 chrome_h = max(0, fg.height() - geo.height())
-                if chrome_w < 8:
-                    chrome_w = 26
-                if chrome_h < 20:
-                    chrome_h = 71
             except Exception:
                 chrome_w, chrome_h = 26, 71
+            chrome_w, chrome_h = sanitize_choice_chrome(chrome_w, chrome_h)
             cx, cy, w, h = center_client_in_available(
                 ax,
                 ay,
@@ -1366,11 +1368,12 @@ class ConnectGitHubWizard(QDialog):
                 chrome_w=chrome_w,
                 chrome_h=chrome_h,
             )
+            w, h = guard_choice_client_size(w, h)
             self._choice_size = (w, h)
-            # Lock both min and max so Maximize cannot stretch the shell into
-            # a tall strip; changeEvent still rejects Maximize on narrow pages.
-            self.setMinimumSize(w, h)
-            self.setMaximumSize(w, h)
+            # Soft minimum only — do NOT setMaximumSize(w,h) (DPI Fixed fight).
+            # resizeEvent + _choice_size keep the compact shell; changeEvent
+            # still rejects Maximize on narrow pages.
+            self.setMinimumSize(min(w, 440), min(h, 280))
             self.setGeometry(cx, cy, w, h)
             try:
                 self._wiz_log(
@@ -1383,13 +1386,29 @@ class ConnectGitHubWizard(QDialog):
         except Exception:
             self._choice_size = (520, 500)
             clear_size_locks(self)
-            self.setMinimumSize(520, 500)
-            self.setMaximumSize(520, 500)
+            self.setMinimumSize(440, 280)
             self.resize(520, 500)
             self._place_center_on_anchor()
         finally:
             self._fitting_choice = False
             QTimer.singleShot(300, self._clear_suppress_state_fit)
+            # Second pass after Maximized→Normal chrome settles (high DPI).
+            QTimer.singleShot(100, self._refit_choice_if_collapsed)
+
+    def _refit_choice_if_collapsed(self) -> None:
+        """If chrome race locked a strip, run fit again once settled."""
+        if not self._use_web or not self._on_flow_narrow_page():
+            return
+        if getattr(self, "_fitting_choice", False):
+            return
+        try:
+            w = int(self.width())
+            h = max(1, int(self.height()))
+        except Exception:
+            return
+        if w >= 450 and (w / h) >= 0.75:
+            return
+        QTimer.singleShot(0, self._fit_choice_dialog)
 
     def _clear_suppress_state_fit(self) -> None:
         self._suppress_state_fit = False
@@ -1456,6 +1475,7 @@ class ConnectGitHubWizard(QDialog):
                 self._suppress_state_fit = True
                 self.setWindowState(Qt.WindowState.WindowNoState)
                 QTimer.singleShot(0, self._fit_choice_dialog)
+                QTimer.singleShot(50, self._fit_choice_dialog)
             return
 
         # Leaving maximized (or legacy FullScreen) on WebView → 16:9 restore
@@ -1758,6 +1778,7 @@ class ConnectGitHubWizard(QDialog):
             self.setWindowOpacity(1.0)
             if index in (intro_i, choice_i):
                 QTimer.singleShot(0, self._fit_choice_dialog)
+                QTimer.singleShot(50, self._fit_choice_dialog)
             else:
                 self._paint_web_guide(self._ui_now)
                 QTimer.singleShot(0, self._fit_web_dialog)
@@ -2405,6 +2426,7 @@ class ConnectGitHubWizard(QDialog):
 
         card = QFrame()
         card.setObjectName("connGuideCard")
+        card.setMinimumWidth(480)
         card.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
         )
