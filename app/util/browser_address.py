@@ -1266,6 +1266,11 @@ def read_token_expiration_uia() -> tuple[str | None, str]:
 
 
 def _parse_expiration_opener_days(name: str) -> str | None:
+    """
+    Map Expiration opener / option Name → days token or absolute date.
+
+    Returns ``\"7\"|\"30\"|\"60\"|\"90\"|\"none\"`` or ``YYYY-MM-DD`` for Custom.
+    """
     low = (name or "").strip().lower()
     if not low:
         return None
@@ -1274,6 +1279,10 @@ def _parse_expiration_opener_days(name: str) -> str | None:
     m = re.search(r"\b(\d{1,3})\s*days?\b", low)
     if m:
         return m.group(1)
+    # Custom date shown on the opener after picking a calendar day.
+    m_iso = re.search(r"(\d{4})-(\d{2})-(\d{2})", low)
+    if m_iso:
+        return f"{m_iso.group(1)}-{m_iso.group(2)}-{m_iso.group(3)}"
     return None
 
 

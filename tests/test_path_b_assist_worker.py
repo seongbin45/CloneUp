@@ -83,11 +83,41 @@ def test_address_worker_emits_sample(monkeypatch) -> None:
         lambda: _Fake(),
     )
     got: list[object] = []
-    worker = PathBAddressWorker()
+    worker = PathBAddressWorker(read_expiry=False)
     worker.sample_ready.connect(
         lambda s: got.append(s),
         Qt.ConnectionType.DirectConnection,
     )
     worker.start()
     assert worker.wait(3000)
-    assert got and getattr(got[-1], "url", "") == "https://github.com/"
+    assert got and isinstance(got[-1], dict)
+    assert getattr(got[-1]["sample"], "url", "") == "https://github.com/"
+    assert got[-1]["expiry_days"] is None
+
+
+def test_address_worker_reads_expiry(monkeypatch) -> None:
+    _app()
+
+    class _Fake:
+        url = "https://github.com/settings/tokens/new"
+        window_title = "New personal access token"
+        ui_text = "Expiration"
+
+    monkeypatch.setattr(
+        "app.util.browser_address.read_browser_page_sample",
+        lambda: _Fake(),
+    )
+    monkeypatch.setattr(
+        "app.util.browser_address.read_token_expiration_uia",
+        lambda: ("30", "opener:30 days"),
+    )
+    got: list[object] = []
+    worker = PathBAddressWorker(read_expiry=True)
+    worker.sample_ready.connect(
+        lambda s: got.append(s),
+        Qt.ConnectionType.DirectConnection,
+    )
+    worker.start()
+    assert worker.wait(3000)
+    assert got[-1]["expiry_days"] == "30"
+    assert "30 days" in got[-1]["expiry_detail"]

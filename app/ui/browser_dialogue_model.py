@@ -62,7 +62,9 @@ def expiry_days_value(label: str) -> str:
 
 
 def expiry_label_for_days(days: str) -> str | None:
-    """Map UIA/read-back days token (``90``, ``none``, …) → chip label."""
+    """Map UIA/read-back days token (``90``, ``none``, ``YYYY-MM-DD``, …) → label."""
+    import re
+
     want = (days or "").strip().lower()
     if want in ("", "no-expiration", "never"):
         want = "none"
@@ -72,6 +74,8 @@ def expiry_label_for_days(days: str) -> str | None:
     # GitHub also offers 7 / 60 — keep a readable label for receipt.
     if want.isdigit():
         return f"{want}일"
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", want):
+        return want
     return None
 
 

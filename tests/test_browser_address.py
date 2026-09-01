@@ -477,6 +477,8 @@ def test_expiration_uia_name_matchers() -> None:
     assert _parse_expiration_opener_days("90 days") == "90"
     assert _parse_expiration_opener_days("No expiration") == "none"
     assert _parse_expiration_opener_days("Expiration") is None
+    assert _parse_expiration_opener_days("2026-12-01") == "2026-12-01"
+    assert _parse_expiration_opener_days("Expires 2026-10-15") == "2026-10-15"
 
 
 def test_path_b_log_sink_tees_masked_lines() -> None:

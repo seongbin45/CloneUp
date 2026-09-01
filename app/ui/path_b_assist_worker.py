@@ -11,21 +11,44 @@ from PySide6.QtCore import QThread, Signal
 
 
 class PathBAddressWorker(QThread):
-    """One-shot ``read_browser_page_sample`` off the UI thread.
+    """One-shot browser sample (+ optional Expiration read) off the UI thread.
 
     Path B used to call UIA on the Qt timer thread; with many Chrome PIDs that
     froze the guide for 10s+ and skipped login detection.
+
+    Emits a dict: ``{sample, expiry_days, expiry_detail}``.
     """
 
-    sample_ready = Signal(object)  # BrowserPageSample | None
+    sample_ready = Signal(object)
+
+    def __init__(self, *, read_expiry: bool = False, parent=None) -> None:
+        super().__init__(parent)
+        self._read_expiry = bool(read_expiry)
 
     def run(self) -> None:  # noqa: N802
+        sample = None
+        expiry_days = None
+        expiry_detail = ""
         try:
             from app.util.browser_address import read_browser_page_sample
 
-            self.sample_ready.emit(read_browser_page_sample())
-        except Exception:
-            self.sample_ready.emit(None)
+            sample = read_browser_page_sample()
+        except Exception as e:
+            expiry_detail = f"sample-error:{e}"
+        if self._read_expiry:
+            try:
+                from app.util.browser_address import read_token_expiration_uia
+
+                expiry_days, expiry_detail = read_token_expiration_uia()
+            except Exception as e:
+                expiry_days, expiry_detail = None, f"expiry-error:{e}"
+        self.sample_ready.emit(
+            {
+                "sample": sample,
+                "expiry_days": expiry_days,
+                "expiry_detail": expiry_detail or "",
+            }
+        )
 
 
 class PathBAssistWorker(QThread):

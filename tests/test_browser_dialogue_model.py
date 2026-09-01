@@ -23,6 +23,7 @@ def test_chip_maps() -> None:
     assert expiry_label_for_days("90") == "90일"
     assert expiry_label_for_days("none") == "만료 없음"
     assert expiry_label_for_days("7") == "7일"
+    assert expiry_label_for_days("2026-12-01") == "2026-12-01"
 
 
 def test_expires_at_for_chip() -> None:
