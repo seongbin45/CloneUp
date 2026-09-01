@@ -183,18 +183,13 @@ def scene_copy(
     if scene == DialogueScene.AUTH_WAIT:
         return _auth_wait_copy(auth_method)
     if scene == DialogueScene.ASK_EXPIRY:
-        exp = (expiry_label or "").strip()
-        if exp:
-            sub = f"브라우저에서 읽은 만료일: {exp}"
-        else:
-            sub = (
-                "GitHub에서 Expiration을 골라 주세요. "
-                "고르신 만료일이 여기에 표시됩니다."
-            )
         return SceneCopy(
             right_tag="3 / 4",
             say="브라우저에서 만료일을 골라 주세요",
-            sub=sub,
+            sub=(
+                "GitHub 화면의 Expiration을 눌러 기간을 선택하세요. "
+                "아래에 감지된 만료일이 초록 테두리로 표시됩니다."
+            ),
             foot_note="맞으면 「골랐어요」를 눌러 주세요",
         )
     if scene == DialogueScene.ASK_SCOPE:

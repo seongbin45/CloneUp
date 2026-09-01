@@ -564,6 +564,22 @@ def _dialogue_qss() -> str:
     QPushButton#dlgChipRec:hover {{
         background: {p.bg_hint};
     }}
+    /* Detected Expiration readout — same green outline as recommended chip */
+    QFrame#dlgExpiryRead {{
+        background: {p.bg_window};
+        border: 2px solid {p.primary};
+        border-radius: 12px;
+    }}
+    QLabel#dlgExpiryReadValue {{
+        font-size: 14px;
+        font-weight: 600;
+        color: {p.text};
+        padding: 2px 0;
+    }}
+    QLabel#dlgExpiryReadHint {{
+        font-size: 12px;
+        color: {p.text_muted};
+    }}
     QFrame#dlgWait {{
         background: {p.bg_muted}; border: none; border-radius: 12px;
     }}
@@ -924,9 +940,7 @@ class ExternalBrowserPatGuide(QDialog):
     def _render(self) -> None:
         sc = scene_copy(
             self._scene,
-            expiry_label=(self._expiry_label or "")
-            if self._scene == DialogueScene.ASK_EXPIRY
-            else (self._expiry_label or "90일"),
+            expiry_label=self._expiry_label or "90일",
             auth_method=self._auth_method,
         )
         self._right_tag.setText(sc.right_tag)
@@ -1021,7 +1035,28 @@ class ExternalBrowserPatGuide(QDialog):
                 w.setParent(None)
                 w.deleteLater()
         if self._scene == DialogueScene.ASK_EXPIRY:
-            # Single confirm — detected expiry is shown in ``sub`` (scene_copy).
+            # Green-bordered box (same visual language as dlgChipRec) + one confirm.
+            card = QFrame()
+            card.setObjectName("dlgExpiryRead")
+            card.setMinimumHeight(52)
+            card.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            )
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(16, 12, 16, 12)
+            cl.setSpacing(4)
+            detected = (self._expiry_label or "").strip()
+            if detected:
+                val = QLabel(detected)
+                val.setObjectName("dlgExpiryReadValue")
+                val.setWordWrap(True)
+                cl.addWidget(val)
+            else:
+                hint = QLabel("만료일을 읽는 중…")
+                hint.setObjectName("dlgExpiryReadHint")
+                hint.setWordWrap(True)
+                cl.addWidget(hint)
+            self._chips_lay.addWidget(card)
             confirm = QPushButton("골랐어요")
             confirm.setObjectName("dlgPrimary")
             confirm.setCursor(Qt.CursorShape.PointingHandCursor)
