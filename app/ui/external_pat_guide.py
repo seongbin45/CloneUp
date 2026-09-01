@@ -489,11 +489,9 @@ from PySide6.QtWidgets import QFrame, QSizePolicy
 
 from app.ui.browser_dialogue_model import (
     DialogueScene,
-    EXPIRY_OPTIONS,
     SCOPE_OPTIONS,
     advance_from_browser_kind,
     build_history,
-    expires_at_for_chip,
     expires_at_for_days,
     expiry_days_value,
     expiry_label_for_days,
@@ -926,7 +924,9 @@ class ExternalBrowserPatGuide(QDialog):
     def _render(self) -> None:
         sc = scene_copy(
             self._scene,
-            expiry_label=self._expiry_label or "90일",
+            expiry_label=(self._expiry_label or "")
+            if self._scene == DialogueScene.ASK_EXPIRY
+            else (self._expiry_label or "90일"),
             auth_method=self._auth_method,
         )
         self._right_tag.setText(sc.right_tag)
@@ -1021,13 +1021,21 @@ class ExternalBrowserPatGuide(QDialog):
                 w.setParent(None)
                 w.deleteLater()
         if self._scene == DialogueScene.ASK_EXPIRY:
-            opts = EXPIRY_OPTIONS
-            # Prefer browser-detected label for highlight; else chip hint.
-            selected = self._expiry_label or self._expiry_hint
-            handler = self._on_expiry_hint
-            confirm_text = "골랐어요"
-            confirm_handler = self._on_expiry_confirm
-        elif self._scene == DialogueScene.ASK_SCOPE:
+            # Single confirm — detected expiry is shown in ``sub`` (scene_copy).
+            confirm = QPushButton("골랐어요")
+            confirm.setObjectName("dlgPrimary")
+            confirm.setCursor(Qt.CursorShape.PointingHandCursor)
+            confirm.setMinimumHeight(46)
+            confirm.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            )
+            confirm.setEnabled(bool(self._expires_at or self._expiry_label))
+            confirm.clicked.connect(self._on_expiry_confirm)
+            self._chips_lay.addWidget(confirm)
+            self._chips_host.show()
+            self._chips_host.raise_()
+            return
+        if self._scene == DialogueScene.ASK_SCOPE:
             opts = SCOPE_OPTIONS
             selected = self._scope_label
             handler = self._on_scope_hint
@@ -1039,7 +1047,6 @@ class ExternalBrowserPatGuide(QDialog):
         for label, _val, rec in opts:
             text = f"{label}    · 권장" if rec else label
             is_sel = selected == label
-            # Highlight the chosen hint; otherwise keep the recommended outline.
             if is_sel:
                 chip_name = "dlgChipRec"
             elif rec and selected is None:
@@ -1117,36 +1124,10 @@ class ExternalBrowserPatGuide(QDialog):
             self._expiry_uia_tries = 0
         self._set_scene(target)
 
-    def _on_expiry_hint(self, label: str) -> None:
-        """Hint chip only — does not advance or auto-set browser Expiration."""
-        self._expiry_hint = label
-        self._guide_log(f"[Path B] 만료 힌트: {label}")
-        hint_days = expiry_days_value(label)
-        if self._last_expiry_days_read == hint_days and self._expires_at:
-            self._sub.setText(
-                f"브라우저 만료일이 이미 「{label}」입니다. "
-                "「골랐어요」를 눌러 주세요."
-            )
-            # Hint matches live detection → advance.
-            self._store_expiry_detection(
-                hint_days,
-                "hint-click-match",
-                source="hint-match",
-                advance=True,
-            )
-            return
-        self._sub.setText(
-            f"브라우저 Expiration에서 「{label}」에 맞춰 고른 뒤 "
-            "「골랐어요」를 눌러 주세요."
-        )
-        self._rebuild_chips()
-
     def _on_expiry_confirm(self) -> None:
-        """User finished picking Expiration — prefer live UIA, else stored."""
-        # Fresh read on confirm (may briefly hitch; user clicked).
+        """User confirmed the detected Expiration — OCR/UIA then advance."""
         if self._apply_expiry_from_browser(force_advance=True):
             return
-        # Use last polled detection if any.
         if self._expires_at and self._last_expiry_days_read:
             label = (
                 expiry_label_for_days(self._last_expiry_days_read)
@@ -1160,14 +1141,11 @@ class ExternalBrowserPatGuide(QDialog):
             )
             self._set_scene(DialogueScene.ASK_SCOPE)
             return
-        # No UIA read — fall back to hint chip (or default 90일).
-        label = self._expiry_hint or self._expiry_label or "90일"
-        self._expiry_label = label
-        self._expires_at = expires_at_for_chip(label)
-        self._guide_log(
-            f"[Path B] 만료 확인(힌트 폴백): {label} → {self._expires_at}"
+        self._sub.setText(
+            "아직 만료일을 못 읽었어요. 브라우저에서 Expiration을 고른 뒤 "
+            "다시 「골랐어요」를 눌러 주세요."
         )
-        self._set_scene(DialogueScene.ASK_SCOPE)
+        self._guide_log("[Path B] 만료 확인 실패 — 감지값 없음")
 
     def _store_expiry_detection(
         self,
@@ -1197,7 +1175,6 @@ class ExternalBrowserPatGuide(QDialog):
         self._expires_at = expires
         self._expiry_uia_ok = True
         if changed:
-            # Keep detail short in the UI log (ms=… is enough).
             short = detail
             if len(short) > 160:
                 short = short[:160] + "…"
@@ -1205,17 +1182,19 @@ class ExternalBrowserPatGuide(QDialog):
                 f"[Path B] 만료 감지({source}): {got} → {label} → {expires}"
                 + (f" ({short})" if short else "")
             )
-            self._sub.setText(
-                f"브라우저 만료일: {label}. "
-                + (
-                    "다음으로 넘어갑니다…"
-                    if advance
-                    else "맞으면 「골랐어요」를 눌러 주세요."
-                )
-            )
             if self._scene == DialogueScene.ASK_EXPIRY and not advance:
-                self._rebuild_chips()
+                # Refresh say/sub (detected label) + enable 「골랐어요」.
+                self._render()
                 self.adjustSize()
+            else:
+                self._sub.setText(
+                    f"브라우저에서 읽은 만료일: {label}. "
+                    + (
+                        "다음으로 넘어갑니다…"
+                        if advance
+                        else "맞으면 「골랐어요」를 눌러 주세요."
+                    )
+                )
         if advance:
             self._guide_log(f"[Path B] 만료 확정·저장: {got} → {expires}")
             self._set_scene(DialogueScene.ASK_SCOPE)
@@ -1555,22 +1534,13 @@ class ExternalBrowserPatGuide(QDialog):
             # can store/reflect even when the tab sample is briefly away.
             if self._scene == DialogueScene.ASK_EXPIRY and self._token_nav_opened:
                 if expiry_days:
-                    hint_days = (
-                        expiry_days_value(self._expiry_hint)
-                        if self._expiry_hint
-                        else None
-                    )
-                    advance = (
-                        hint_days is not None and str(expiry_days) == hint_days
-                    )
+                    # Reflect only — user confirms with 「골랐어요」.
                     self._store_expiry_detection(
                         str(expiry_days),
                         expiry_detail,
                         source="poll",
-                        advance=advance,
+                        advance=False,
                     )
-                    if advance:
-                        return
                 elif expiry_detail:
                     # Cross-check visibility: leave a trail when read fails.
                     # Closed GitHub menu often exposes Name=\"Expiration\" only.

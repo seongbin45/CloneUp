@@ -256,10 +256,11 @@ def _window_rect(hwnd: int) -> tuple[int, int, int, int] | None:
 
 def _grab_hwnd_image(hwnd: int) -> Any | None:
     """
-    Capture a visible top-level window as a Pillow RGB image.
+    Capture a top-level window as a Pillow RGB image.
 
-    Restores minimized windows, then prefers ``ImageGrab.grab(bbox=…)``
-    (real screen pixels). Falls back to ``PrintWindow``.
+    Prefers ``PrintWindow`` so we get **that window's pixels** even when
+    another app (IDE, guide card) covers it. ``ImageGrab`` only sees what is
+    on screen and often OCR'd the wrong window.
     """
     if sys.platform != "win32" or not hwnd:
         return None
@@ -275,44 +276,60 @@ def _grab_hwnd_image(hwnd: int) -> Any | None:
     left, top, right, bottom = box
     w, h = right - left, bottom - top
 
-    # 1) Screen grab (most reliable for Chromium)
-    try:
-        img = ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True)
-        if img is not None and img.size[0] >= 80 and img.size[1] >= 80:
-            return img.convert("RGB")
-    except TypeError:
-        # Older Pillow: no all_screens
-        try:
-            img = ImageGrab.grab(bbox=(left, top, right, bottom))
-            if img is not None and img.size[0] >= 80 and img.size[1] >= 80:
-                return img.convert("RGB")
-        except Exception:
-            pass
-    except Exception:
-        pass
-
-    # 2) PrintWindow fallback
     import ctypes
     from ctypes import wintypes
 
     user32 = ctypes.windll.user32
     gdi32 = ctypes.windll.gdi32
-    user32.GetWindowDC.restype = wintypes.HDC
-    user32.GetWindowDC.argtypes = [wintypes.HWND]
-    gdi32.CreateCompatibleDC.restype = wintypes.HDC
-    gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+    user32.GetWindowDC.restype = ctypes.c_void_p
+    user32.GetWindowDC.argtypes = [ctypes.c_void_p]
+    user32.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    gdi32.CreateCompatibleDC.restype = ctypes.c_void_p
+    gdi32.CreateCompatibleDC.argtypes = [ctypes.c_void_p]
+    gdi32.CreateCompatibleBitmap.restype = ctypes.c_void_p
+    gdi32.CreateCompatibleBitmap.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.c_int,
+    ]
+    gdi32.SelectObject.restype = ctypes.c_void_p
+    gdi32.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    gdi32.DeleteObject.argtypes = [ctypes.c_void_p]
+    gdi32.DeleteDC.argtypes = [ctypes.c_void_p]
+    user32.PrintWindow.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]
+    gdi32.GetDIBits.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint,
+        ctypes.c_uint,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint,
+    ]
 
-    hwnd_dc = user32.GetWindowDC(hwnd)
+    hwnd_p = ctypes.c_void_p(int(hwnd) & 0xFFFFFFFFFFFFFFFF)
+    hwnd_dc = user32.GetWindowDC(hwnd_p)
     if not hwnd_dc:
+        try:
+            img = ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True)
+            if img is not None and img.size[0] >= 80:
+                return img.convert("RGB")
+        except Exception:
+            pass
         return None
-    mem_dc = gdi32.CreateCompatibleDC(hwnd_dc)
-    bmp = gdi32.CreateCompatibleBitmap(hwnd_dc, w, h)
+
+    mem_dc = user32_dc = None
+    mem_dc = gdi32.CreateCompatibleDC(ctypes.c_void_p(hwnd_dc))
+    bmp = gdi32.CreateCompatibleBitmap(ctypes.c_void_p(hwnd_dc), w, h)
     if not mem_dc or not bmp:
-        if hwnd_dc:
-            user32.ReleaseDC(hwnd, hwnd_dc)
+        user32.ReleaseDC(hwnd_p, ctypes.c_void_p(hwnd_dc))
         return None
-    old = gdi32.SelectObject(mem_dc, bmp)
-    user32.PrintWindow(hwnd, mem_dc, 2)
+    mem_dc_p = ctypes.c_void_p(mem_dc)
+    bmp_p = ctypes.c_void_p(bmp)
+    old = gdi32.SelectObject(mem_dc_p, bmp_p)
+    # PW_RENDERFULLCONTENT = 2 — Chromium needs this.
+    if not user32.PrintWindow(hwnd_p, mem_dc_p, 2):
+        user32.PrintWindow(hwnd_p, mem_dc_p, 0)
 
     class BITMAPINFOHEADER(ctypes.Structure):
         _fields_ = [
@@ -341,24 +358,35 @@ def _grab_hwnd_image(hwnd: int) -> Any | None:
     bmi.bmiHeader.biCompression = 0
     buf_len = w * h * 4
     buf = (ctypes.c_char * buf_len)()
-    rows = gdi32.GetDIBits(mem_dc, bmp, 0, h, buf, ctypes.byref(bmi), 0)
-    gdi32.SelectObject(mem_dc, old)
-    gdi32.DeleteObject(bmp)
-    gdi32.DeleteDC(mem_dc)
-    user32.ReleaseDC(hwnd, hwnd_dc)
+    rows = gdi32.GetDIBits(mem_dc_p, bmp_p, 0, h, buf, ctypes.byref(bmi), 0)
+    if old:
+        gdi32.SelectObject(mem_dc_p, ctypes.c_void_p(old))
+    gdi32.DeleteObject(bmp_p)
+    gdi32.DeleteDC(mem_dc_p)
+    user32.ReleaseDC(hwnd_p, ctypes.c_void_p(hwnd_dc))
     if not rows:
+        try:
+            img = ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True)
+            if img is not None and img.size[0] >= 80:
+                return img.convert("RGB")
+        except Exception:
+            pass
         return None
     return Image.frombuffer("RGB", (w, h), bytes(buf), "raw", "BGRX", 0, 1).copy()
 
 
 def _crop_for_expiration(img: Any) -> Any:
-    """Tight band around Note/Expiration — smaller = much faster OCR."""
+    """
+    Band covering Note + Expiration on classic PAT form.
+
+    Too-tight crops (perf experiment) missed Expiration and OCR failed.
+    """
     try:
         w, h = img.size
-        top = int(h * 0.12)
-        bottom = int(h * 0.48)
-        left = int(w * 0.12)
-        right = int(w * 0.78)
+        top = int(h * 0.08)
+        bottom = int(h * 0.58)
+        left = int(w * 0.06)
+        right = int(w * 0.94)
         if bottom - top < 80 or right - left < 80:
             return img
         return img.crop((left, top, right, bottom))
@@ -366,18 +394,17 @@ def _crop_for_expiration(img: Any) -> Any:
         return img
 
 
-def _downscale_for_ocr(img: Any, *, max_width: int = 900) -> Any:
-    """Downscale wide captures — WinOCR/Tesseract scale roughly with pixels."""
+def _downscale_for_ocr(img: Any, *, max_width: int = 1200) -> Any:
+    """Downscale wide captures — keep enough detail for date digits."""
     try:
         w, h = img.size
         if w <= max_width:
             return img
         ratio = max_width / float(w)
         nh = max(40, int(h * ratio))
-        # Pillow 9: Image.Resampling.BILINEAR; older: Image.BILINEAR
         from PIL import Image
 
-        resample = getattr(Image, "Resampling", Image).BILINEAR
+        resample = getattr(getattr(Image, "Resampling", Image), "BILINEAR", Image.BILINEAR)
         return img.resize((max_width, nh), resample)
     except Exception:
         return img
@@ -591,7 +618,7 @@ def read_token_expiration_ocr(*, force_hwnd: bool = False) -> tuple[str | None, 
         if img is None:
             return None, f"capture-failed|{pick_detail}"
 
-    cropped = _downscale_for_ocr(_crop_for_expiration(img), max_width=880)
+    cropped = _downscale_for_ocr(_crop_for_expiration(img), max_width=1200)
     results: list[tuple[str, str, str]] = []
 
     # 1) Windows OCR first (typically <1s on small crop)

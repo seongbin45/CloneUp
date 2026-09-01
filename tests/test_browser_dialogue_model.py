@@ -62,9 +62,12 @@ def test_scene_copy_browser_first() -> None:
     assert "Verify your device" in em.sub
 
     exp = scene_copy(DialogueScene.ASK_EXPIRY)
-    assert "Expiration" in exp.sub or "만료" in exp.say
+    assert "만료" in exp.say or "Expiration" in exp.sub
     assert "골랐어요" in exp.foot_note
     assert "키는 언제까지" not in exp.say
+    assert "추천" not in exp.sub
+    exp2 = scene_copy(DialogueScene.ASK_EXPIRY, expiry_label="2027년 1월 1일")
+    assert "2027년 1월 1일" in exp2.sub
 
     scope = scene_copy(DialogueScene.ASK_SCOPE)
     assert "Select scopes" in scope.sub or "repo" in scope.sub
