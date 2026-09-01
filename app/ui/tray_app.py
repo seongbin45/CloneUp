@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon
-from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 
 from app.ui.boot_notify import BootNotifyToast
 from app.ui.boot_scan import (
+    PendingFolder,
     clear_boot_notify_asked,
     mark_boot_notify_asked,
     should_show_boot_toast,
@@ -23,17 +24,49 @@ from app.ui.settings_store import (
 )
 
 
+def _main_window_visible() -> bool:
+    """True if CloneUp's main window is shown (user is interacting with the app)."""
+    try:
+        for w in QApplication.topLevelWidgets():
+            if not isinstance(w, QWidget):
+                continue
+            if w.isWindow() and w.isVisible() and not w.isMinimized():
+                title = (w.windowTitle() or "")
+                # Main window title from ui/main_window.ui
+                if "클론업" in title and "CloneUp" in title:
+                    return True
+                # Fallback: large main shell (not toast/tool dialogs)
+                if title.startswith("클론업") and w.width() >= 700:
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+class _BootScanWorker(QThread):
+    """Run git status scan off the GUI thread (avoids Windows '응답 없음')."""
+
+    finished_pending = Signal(object)  # list[PendingFolder]
+    failed = Signal(str)
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            pending = should_show_boot_toast()
+            self.finished_pending.emit(list(pending or []))
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class _BootUploadWorker(QThread):
     progress = Signal(str)
     finished_ok = Signal()
     failed = Signal(str, str)  # folder, message (safety or sync)
+    need_auth = Signal(str)  # folder hint when token missing
 
     def __init__(
         self,
         folders: list[str],
         message: str,
-        token: str,
-        user: dict,
         *,
         hide_real_email: bool = False,
         parent=None,
@@ -41,14 +74,25 @@ class _BootUploadWorker(QThread):
         super().__init__(parent)
         self._folders = list(folders)
         self._message = message
-        self._token = token
-        self._user = user
         self._hide_real_email = bool(hide_real_email)
 
     def run(self) -> None:  # noqa: N802
         from pathlib import Path
 
+        from app.auth.session import AuthError, ensure_valid_token
         from app.git.sync_ops import SyncError, commit_and_push
+
+        try:
+            self.progress.emit("GitHub 연결 확인")
+            token, user = ensure_valid_token()
+        except AuthError as e:
+            self.need_auth.emit(self._folders[0] if self._folders else "")
+            self.failed.emit("", f"auth:{e}")
+            return
+        except Exception as e:
+            self.need_auth.emit(self._folders[0] if self._folders else "")
+            self.failed.emit("", f"auth:{e}")
+            return
 
         for raw in self._folders:
             folder = Path(raw)
@@ -57,8 +101,8 @@ class _BootUploadWorker(QThread):
                 commit_and_push(
                     folder,
                     message=self._message,
-                    token=self._token,
-                    user=self._user,
+                    token=str(token),
+                    user=dict(user or {}),
                     allow_secrets=False,
                     hide_real_email=self._hide_real_email,
                 )
@@ -82,6 +126,7 @@ class TrayController(QObject):
         self._app = app
         self._toast: BootNotifyToast | None = None
         self._worker: _BootUploadWorker | None = None
+        self._scan_worker: _BootScanWorker | None = None
 
         icon = load_app_icon()
         if icon.isNull():
@@ -103,7 +148,6 @@ class TrayController(QObject):
         self._tray.activated.connect(self._on_activated)
         self._tray.show()
 
-        # Old builds stamped last_ask on show; clear once so 「나중에」+reboot works.
         try:
             migrate_boot_notify_later_policy()
         except Exception:
@@ -121,14 +165,34 @@ class TrayController(QObject):
             return
         if self._toast is not None and self._toast.isVisible():
             return
-        pending = should_show_boot_toast()
-        if not pending:
+        if self._scan_worker is not None and self._scan_worker.isRunning():
             return
-        # Do not mark asked on show — 「나중에」 must allow same-day reboot re-ask.
+        # Git status on many recent folders — must not run on the GUI thread
+        # (Windows marks the main window as '응답 없음' while scanning).
+        w = _BootScanWorker(parent=self)
+        w.finished_pending.connect(self._on_scan_done)
+        w.failed.connect(self._on_scan_failed)
+        self._scan_worker = w
+        w.start()
+
+    def _on_scan_failed(self, _msg: str) -> None:
+        self._scan_worker = None
+
+    def _on_scan_done(self, pending: object) -> None:
+        self._scan_worker = None
+        items: list[PendingFolder] = list(pending or [])  # type: ignore[arg-type]
+        if not items:
+            return
+        if self._toast is not None and self._toast.isVisible():
+            return
         msg = load_last_commit_message() or "Update"
         if msg.strip() in ("첫 업로드", "Initial commit"):
             msg = "Update"
-        toast = BootNotifyToast(pending, default_message=msg)
+        # Main open → soft popup (no focus steal). Tray-only → normal toast.
+        passive = _main_window_visible()
+        toast = BootNotifyToast(
+            items, default_message=msg, passive=passive
+        )
         toast.upload_requested.connect(self._on_upload)
         toast.later_clicked.connect(self._on_later)
         toast.open_app_requested.connect(self.request_open_main.emit)
@@ -136,14 +200,12 @@ class TrayController(QObject):
         toast.disable_requested.connect(self._on_disable)
         toast.dismissed.connect(self._clear_toast)
         self._toast = toast
-        toast.show()
-        toast.raise_()
+        toast.show_toast()
 
     def _clear_toast(self) -> None:
         self._toast = None
 
     def _on_later(self) -> None:
-        # Explicitly clear any stamp so next boot / manual scan can ask again today.
         clear_boot_notify_asked()
 
     def _on_snooze(self) -> None:
@@ -154,59 +216,45 @@ class TrayController(QObject):
         mark_boot_notify_asked()
 
     def _on_upload(self, folders: list, message: str) -> None:
-        from app.auth.session import AuthError, ensure_valid_token
-
-        # Consumed today's offer (even if auth/upload fails afterward).
         mark_boot_notify_asked()
-
-        try:
-            token, user = ensure_valid_token()
-        except AuthError as e:
-            if self._toast is not None:
-                self._toast.close()
-                self._toast = None
-            self.request_open_main.emit(folders[0] if folders else "")
-            QMessageBox.information(
-                None,
-                "클론업",
-                "GitHub 연결이 필요합니다.\n"
-                "앱을 연 뒤 「GitHub: 연결」을 해 주세요.\n\n"
-                f"{e}",
-            )
-            return
-        except Exception:
-            if self._toast is not None:
-                self._toast.close()
-                self._toast = None
-            self.request_open_main.emit(folders[0] if folders else "")
-            QMessageBox.information(
-                None,
-                "클론업",
-                "GitHub 연결이 필요합니다.\n"
-                "앱을 연 뒤 「GitHub: 연결」을 해 주세요.",
-            )
-            return
         if self._worker is not None and self._worker.isRunning():
             return
         from app.ui.settings_store import load_hide_real_email
 
+        if self._toast is not None:
+            self._toast.set_waiting("GitHub 연결 확인 · 준비 중")
+
         w = _BootUploadWorker(
             list(folders),
             message,
-            str(token),
-            dict(user or {}),
             hide_real_email=load_hide_real_email(),
             parent=self,
         )
         w.progress.connect(self._on_progress)
         w.finished_ok.connect(self._on_upload_ok)
         w.failed.connect(self._on_upload_fail)
+        w.need_auth.connect(self._on_need_auth)
         self._worker = w
         w.start()
 
     def _on_progress(self, name: str) -> None:
         if self._toast is not None:
-            self._toast.set_waiting(f"{name} · 커밋하고 GitHub로 보내는 중")
+            if name.startswith("GitHub"):
+                self._toast.set_waiting(f"{name} 중")
+            else:
+                self._toast.set_waiting(f"{name} · 커밋하고 GitHub로 보내는 중")
+
+    def _on_need_auth(self, folder: str) -> None:
+        if self._toast is not None:
+            self._toast.close()
+            self._toast = None
+        self.request_open_main.emit(folder or "")
+        QMessageBox.information(
+            None,
+            "클론업",
+            "GitHub 연결이 필요합니다.\n"
+            "앱을 연 뒤 「GitHub: 연결」을 해 주세요.",
+        )
 
     def _on_upload_ok(self) -> None:
         if self._toast is not None:
@@ -220,11 +268,16 @@ class TrayController(QObject):
         )
 
     def _on_upload_fail(self, folder: str, message: str) -> None:
+        if message.startswith("auth:"):
+            # Handled via need_auth (or duplicate); avoid double dialogs.
+            if self._toast is not None:
+                self._toast.close()
+                self._toast = None
+            return
         if self._toast is not None:
             self._toast.close()
             self._toast = None
         self.request_open_main.emit(folder)
-        # Safety / sync errors: show in app context
         QMessageBox.warning(
             None,
             "클론업 — 올리지 못했습니다",

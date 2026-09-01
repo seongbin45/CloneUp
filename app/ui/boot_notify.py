@@ -163,6 +163,7 @@ class BootNotifyToast(QWidget):
         pending: list[PendingFolder],
         *,
         default_message: str = "Update",
+        passive: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -175,15 +176,22 @@ class BootNotifyToast(QWidget):
         )
         self._wait_text = ""
         self._dot_i = 0
+        # passive: main window is open — same design/position, no focus steal.
+        self._passive = bool(passive)
 
         self.setObjectName("bootToastShell")
-        self.setWindowFlags(
+        flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
             | Qt.WindowType.WindowStaysOnTopHint
         )
+        if self._passive:
+            flags |= Qt.WindowType.WindowDoesNotAcceptFocus
+        self.setWindowFlags(flags)
         # Transparent shell so only the inner card paints — bottom radii clip.
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        if self._passive:
+            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setFixedWidth(382)
         try:
             app = QGuiApplication.instance()
@@ -290,6 +298,13 @@ class BootNotifyToast(QWidget):
 
         self._render()
         self._place_bottom_right()
+
+    def show_toast(self) -> None:
+        """Show at bottom-right. Passivepassive: do not raise/activate the main window."""
+        self._place_bottom_right()
+        self.show()
+        if not self._passive:
+            self.raise_()
 
     def _apply_theme_qss(self) -> None:
         self.setStyleSheet(_toast_qss())
