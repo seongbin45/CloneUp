@@ -14,6 +14,7 @@ from app.util.auth_ocr import (
     classify_auth_ocr_text,
     looks_like_device_email_verify,
     looks_like_github_sudo_passkey,
+    looks_like_github_webauthn_passkey,
 )
 from app.util.browser_address import detect_signin_method
 
@@ -125,6 +126,63 @@ def test_plain_tokens_new_still_token_stage() -> None:
     assert st == GitHubPageStage.TOKEN_CLASSIC_NEW
 
 
+_WEBAUTHN_PASSKEY_OCR = """
+Two-factor authentication
+Authenticate using your passkey.
+Use passkey
+More options
+"""
+
+_WEBAUTHN_MORE_OPTIONS_OCR = """
+Two-factor authentication
+Authenticate using your passkey.
+Use passkey
+More options
+GitHub Mobile
+Authenticator app
+2FA recovery code
+"""
+
+
+def test_classify_webauthn_2fa_passkey() -> None:
+    """Login 2FA passkey page must be passkey, not email github_2fa."""
+    assert looks_like_github_webauthn_passkey("", _WEBAUTHN_PASSKEY_OCR)
+    assert looks_like_github_webauthn_passkey("", _WEBAUTHN_MORE_OPTIONS_OCR)
+    assert not looks_like_device_email_verify("", _WEBAUTHN_PASSKEY_OCR)
+    assert classify_auth_ocr_text(_WEBAUTHN_PASSKEY_OCR) == "passkey"
+    assert classify_auth_ocr_text(_WEBAUTHN_MORE_OPTIONS_OCR) == "passkey"
+
+    url = "https://github.com/sessions/two-factor/webauthn"
+    assert looks_like_github_webauthn_passkey("", "", url=url)
+    assert detect_signin_method(url, ui_text="") == "passkey"
+    assert (
+        detect_signin_method(
+            "https://github.com/sessions/two-factor",
+            window_title="Two-factor authentication",
+            ui_text=_WEBAUTHN_PASSKEY_OCR,
+        )
+        == "passkey"
+    )
+
+    st = detect_github_page_stage(PageSnapshot(url=url, html=_WEBAUTHN_PASSKEY_OCR))
+    assert st == GitHubPageStage.AUTH_PASSKEY_OS
+    kind, idx, meta = classify_browser_sample(
+        url, window_title="Two-factor authentication", ui_text=_WEBAUTHN_PASSKEY_OCR
+    )
+    assert kind == "current" and idx == 0
+    assert meta.get("method") == "passkey"
+
+
+def test_webauthn_wins_over_guide_verify_your_device_leak() -> None:
+    """Full-desktop OCR may include CloneUp AUTH_WAIT email copy — still passkey."""
+    noisy = (
+        _WEBAUTHN_PASSKEY_OCR
+        + "\nGitHub 「Verify your device」화면입니다.\n"
+        + "이메일 인증 코드를 입력해 주세요\n"
+    )
+    assert classify_auth_ocr_text(noisy) == "passkey"
+
+
 def test_live_screenshot_ocr_if_present() -> None:
     """Optional: run real OCR on user screenshots when files exist."""
     from PIL import Image
@@ -152,3 +210,16 @@ def test_live_screenshot_ocr_if_present() -> None:
         crop = img.crop((int(w * 0.15), int(h * 0.08), int(w * 0.85), int(h * 0.95)))
         text, _ = ocr_image_windows(crop)
         assert classify_auth_ocr_text(text) == "github_2fa", text[:200]
+
+    for name in (
+        "스크린샷 2026-09-02 085115.png",
+        "스크린샷 2026-09-02 085128.png",
+    ):
+        p = Path(r"C:\Users\seong\Pictures\Screenshots") / name
+        if not p.is_file():
+            continue
+        img = Image.open(p).convert("RGB")
+        w, h = img.size
+        crop = img.crop((int(w * 0.15), int(h * 0.08), int(w * 0.85), int(h * 0.92)))
+        text, _ = ocr_image_windows(crop)
+        assert classify_auth_ocr_text(text) == "passkey", (name, text[:240])

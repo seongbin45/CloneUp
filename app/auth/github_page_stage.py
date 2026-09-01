@@ -89,6 +89,10 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
     if path == "/login" or path.startswith("/login/"):
         return GitHubPageStage.LOGIN
 
+    # Passkey WebAuthn 2FA before generic two-factor (email/app OTP).
+    if "/two-factor/webauthn" in path or path.endswith("/webauthn"):
+        return GitHubPageStage.AUTH_PASSKEY_OS
+
     if (
         "/sessions/two-factor" in path
         or path.endswith("/two-factor")
@@ -102,6 +106,9 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
     # Screenshot: Confirm access + Use passkey can sit on tokens/new URL.
     # Treating URL alone as TOKEN_CLASSIC_NEW skipped AUTH_WAIT.
     if _looks_like_sudo_passkey_confirm(title_l, html_l):
+        return GitHubPageStage.AUTH_PASSKEY_OS
+
+    if _looks_like_webauthn_passkey(title_l, html_l):
         return GitHubPageStage.AUTH_PASSKEY_OS
 
     # Device / email verification (Verify your device · Device verification).
@@ -135,6 +142,8 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
         return GitHubPageStage.LOGIN
 
     if "two-factor authentication" in title_l or "two-factor authentication" in html_l:
+        if _looks_like_webauthn_passkey(title_l, html_l):
+            return GitHubPageStage.AUTH_PASSKEY_OS
         if "authentication code" in html_l or "authenticator" in html_l or "otp" in html_l:
             return GitHubPageStage.AUTH_2FA
         if "two-factor authentication" in title_l:
@@ -182,6 +191,19 @@ def _looks_like_sudo_passkey_confirm(title_l: str, body_l: str) -> bool:
         blob = f"{title_l}\n{body_l}"
         return "confirm access" in blob and (
             "use passkey" in blob or "passkey" in blob
+        )
+
+
+def _looks_like_webauthn_passkey(title_l: str, body_l: str) -> bool:
+    """GitHub 2FA 「Authenticate using your passkey」 / Use passkey."""
+    try:
+        from app.util.auth_ocr import looks_like_github_webauthn_passkey
+
+        return looks_like_github_webauthn_passkey(title_l, body_l)
+    except Exception:
+        blob = f"{title_l}\n{body_l}"
+        return "use passkey" in blob and (
+            "two-factor" in blob or "authenticate using your passkey" in blob
         )
 
 

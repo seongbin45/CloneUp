@@ -4,6 +4,7 @@ Supplements title/UIA when StayOnTop guide steals focus or Chromium hides
 DOM text from accessibility. Targets:
 
 - GitHub 「Confirm access」 + 「Use passkey」 (sudo / sensitive settings)
+- GitHub 2FA 「Authenticate using your passkey」 (``/sessions/two-factor/webauthn``)
 - GitHub 「Verify your device」 / 「Device verification」 email code
 - Windows Security 「패스키로 로그인」 OS sheet
 
@@ -54,6 +55,50 @@ def looks_like_github_sudo_passkey(
     return confirm and passkey
 
 
+def looks_like_github_webauthn_passkey(
+    window_title: str = "",
+    ui_text: str = "",
+    *,
+    url: str = "",
+) -> bool:
+    """
+    GitHub login 2FA passkey page (screenshots 2026-09-02).
+
+    URL ``/sessions/two-factor/webauthn`` with heading
+    「Two-factor authentication」 / 「Authenticate using your passkey」 /
+    button 「Use passkey」 (+ optional More options: Mobile / app / recovery).
+    """
+    path = (url or "").lower()
+    if "/two-factor/webauthn" in path or path.endswith("/webauthn"):
+        return True
+    blob = _norm_blob(window_title, ui_text)
+    if not blob.strip():
+        return False
+    if "two-factor/webauthn" in blob or "/sessions/two-factor/webauthn" in blob:
+        return True
+    use_passkey = (
+        "authenticate using your passkey" in blob
+        or "authenticate using y0ur passkey" in blob  # OCR digit confusion
+        or "use passkey" in blob
+    )
+    two_factor = (
+        "two-factor authentication" in blob
+        or "two-fe" in blob  # truncated OCR of Two-factor
+    )
+    # Primary CTA is passkey (More options may list Mobile / Authenticator).
+    if use_passkey and two_factor:
+        return True
+    if use_passkey and (
+        "more options" in blob
+        or "github mobile" in blob
+        or "authenticator app" in blob
+        or "2fa recovery" in blob
+        or "recovery code" in blob
+    ):
+        return True
+    return False
+
+
 def looks_like_device_email_verify(
     window_title: str = "",
     ui_text: str = "",
@@ -64,7 +109,14 @@ def looks_like_device_email_verify(
     Covers both:
     - 「Verify your device」 + code boxes / optional passkey
     - 「Device verification」 + 「We just sent your authentication code…」
+
+    Does **not** match the 2FA WebAuthn passkey page — that is
+    :func:`looks_like_github_webauthn_passkey` (checked first).
     """
+    # Passkey-primary 2FA must not be treated as email OTP (also avoids
+    # CloneUp AUTH_WAIT 「Verify your device」 copy leaking into desktop OCR).
+    if looks_like_github_webauthn_passkey(window_title, ui_text):
+        return False
     blob = _norm_blob(window_title, ui_text)
     if not blob.strip():
         return False
@@ -104,12 +156,14 @@ def classify_auth_ocr_text(
     text: str,
     *,
     window_title: str = "",
+    url: str = "",
 ) -> str | None:
     """
     Classify OCR / UIA blob into a sign-in method.
 
     Returns ``passkey`` | ``github_2fa`` | ``None``.
-    Prefer OS passkey, then GitHub sudo passkey, then email/device verify.
+    Prefer OS / GitHub passkey pages over email OTP (guide overlay can
+    leak 「Verify your device」 into a full-desktop OCR of a passkey tab).
     """
     from app.util.browser_address import looks_like_passkey_os_prompt
 
@@ -118,6 +172,8 @@ def classify_auth_ocr_text(
     if looks_like_passkey_os_prompt(title, body):
         return "passkey"
     if looks_like_github_sudo_passkey(title, body):
+        return "passkey"
+    if looks_like_github_webauthn_passkey(title, body, url=url):
         return "passkey"
     if looks_like_device_email_verify(title, body):
         return "github_2fa"
@@ -221,6 +277,8 @@ def _iter_auth_candidate_hwnds() -> list[tuple[int, str, str]]:
                     or "confirm access" in tl
                     or "verify your device" in tl
                     or "device verification" in tl
+                    or "two-factor" in tl
+                    or "webauthn" in tl
                     or "github" in tl
                 ):
                     _add(hwnd, title, "foreground-title")
@@ -245,9 +303,11 @@ def _iter_auth_candidate_hwnds() -> list[tuple[int, str, str]]:
                 score = 0
                 if "verify your device" in tl or "device verification" in tl:
                     score += 80
+                if "webauthn" in tl or "two-factor" in tl:
+                    score += 75
                 if "confirm access" in tl:
                     score += 70
-                if "two-factor" in tl or "authentication" in tl:
+                if "authentication" in tl:
                     score += 40
                 if "github" in tl:
                     score += 20
@@ -300,7 +360,7 @@ def read_auth_screen_ocr() -> tuple[str | None, str, str]:
             f"{reason}|hwnd={hwnd}|title={title[:40]!r}"
             f"|{ocr_det}|preview={preview!r}"
         )
-        method = classify_auth_ocr_text(text, window_title=title)
+        method = classify_auth_ocr_text(text, window_title=title, url="")
         if method:
             ms = int((time.monotonic() - t0) * 1000)
             return method, text or "", f"hit:{method}|{'|'.join(parts)}|ms={ms}"
@@ -330,6 +390,8 @@ def enrich_sample_with_auth_ocr(sample: Any) -> tuple[Any, str]:
     if looks_like_passkey_os_prompt(title or "", ui or ""):
         return sample, ""
     if looks_like_github_sudo_passkey(title or "", ui or ""):
+        return sample, ""
+    if looks_like_github_webauthn_passkey(title or "", ui or "", url=url or ""):
         return sample, ""
     if looks_like_device_email_verify(title or "", ui or ""):
         return sample, ""

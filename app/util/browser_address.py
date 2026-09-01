@@ -518,9 +518,14 @@ def detect_signin_method(
         from app.util.auth_ocr import (
             looks_like_device_email_verify,
             looks_like_github_sudo_passkey,
+            looks_like_github_webauthn_passkey,
         )
 
         if looks_like_github_sudo_passkey(window_title, ui_text):
+            return "passkey"
+        if looks_like_github_webauthn_passkey(
+            window_title, ui_text, url=url
+        ):
             return "passkey"
         if looks_like_device_email_verify(window_title, ui_text):
             return "github_2fa"
@@ -545,8 +550,19 @@ def detect_signin_method(
             pass
         if path == "/logout" or path.startswith("/logout"):
             return "github_logout"
-        # Device / email verification (before treating /sessions as plain login).
         blob = f"{window_title or ''}\n{ui_text or ''}".lower()
+        # 2FA WebAuthn passkey before generic /sessions/two-factor → github_2fa.
+        if "/two-factor/webauthn" in path or path.endswith("/webauthn"):
+            return "passkey"
+        if (
+            "authenticate using your passkey" in blob
+            or (
+                "use passkey" in blob
+                and "two-factor" in blob
+            )
+        ):
+            return "passkey"
+        # Device / email verification (before treating /sessions as plain login).
         if (
             "verify your device" in blob
             or "device verification" in blob
