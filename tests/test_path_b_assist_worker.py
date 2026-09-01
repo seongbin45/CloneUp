@@ -112,7 +112,7 @@ def test_address_worker_reads_expiry(monkeypatch) -> None:
         lambda: ("30", "ocr:near-label:30-days"),
     )
     got: list[object] = []
-    worker = PathBAddressWorker(read_expiry=True)
+    worker = PathBAddressWorker(read_expiry=True, sample_address=False)
     worker.sample_ready.connect(
         lambda s: got.append(s),
         Qt.ConnectionType.DirectConnection,
@@ -121,6 +121,7 @@ def test_address_worker_reads_expiry(monkeypatch) -> None:
     assert worker.wait(3000)
     assert got[-1]["expiry_days"] == "30"
     assert "ocr:" in got[-1]["expiry_detail"]
+    assert got[-1]["sample"] is None
 
 
 def test_address_worker_expiry_falls_back_to_uia(monkeypatch) -> None:
@@ -144,7 +145,7 @@ def test_address_worker_expiry_falls_back_to_uia(monkeypatch) -> None:
         lambda: ("90", "opener:90 days"),
     )
     got: list[object] = []
-    worker = PathBAddressWorker(read_expiry=True)
+    worker = PathBAddressWorker(read_expiry=True, sample_address=False)
     worker.sample_ready.connect(
         lambda s: got.append(s),
         Qt.ConnectionType.DirectConnection,

@@ -11,33 +11,39 @@ from PySide6.QtCore import QThread, Signal
 
 
 class PathBAddressWorker(QThread):
-    """One-shot browser sample (+ optional Expiration read) off the UI thread.
-
-    Path B used to call UIA on the Qt timer thread; with many Chrome PIDs that
-    froze the guide for 10s+ and skipped login detection.
+    """One-shot browser sample (+ optional Expiration OCR) off the UI thread.
 
     Emits a dict: ``{sample, expiry_days, expiry_detail}``.
+
+    On ASK_EXPIRY, prefer ``sample_address=False`` so we skip the slow UIA
+    page walk and only run fast screenshot OCR.
     """
 
     sample_ready = Signal(object)
 
-    def __init__(self, *, read_expiry: bool = False, parent=None) -> None:
+    def __init__(
+        self,
+        *,
+        read_expiry: bool = False,
+        sample_address: bool = True,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self._read_expiry = bool(read_expiry)
+        self._sample_address = bool(sample_address)
 
     def run(self) -> None:  # noqa: N802
         sample = None
         expiry_days = None
         expiry_detail = ""
-        try:
-            from app.util.browser_address import read_browser_page_sample
+        if self._sample_address:
+            try:
+                from app.util.browser_address import read_browser_page_sample
 
-            sample = read_browser_page_sample()
-        except Exception as e:
-            expiry_detail = f"sample-error:{e}"
+                sample = read_browser_page_sample()
+            except Exception as e:
+                expiry_detail = f"sample-error:{e}"
         if self._read_expiry:
-            # Prefer screenshot+OCR (visible "30 days"); UIA often only sees
-            # bare Name=\"Expiration\" on the closed GitHub action-menu.
             parts: list[str] = []
             try:
                 from app.util.expiry_ocr import read_token_expiration_ocr
@@ -45,8 +51,9 @@ class PathBAddressWorker(QThread):
                 expiry_days, d_ocr = read_token_expiration_ocr()
                 parts.append(f"ocr:{d_ocr}")
             except Exception as e:
-                expiry_days, d_ocr = None, f"ocr-error:{e}"
-                parts.append(d_ocr)
+                expiry_days = None
+                parts.append(f"ocr-error:{e}")
+            # UIA tree walk is slow — only if OCR missed.
             if expiry_days is None:
                 try:
                     from app.util.browser_address import read_token_expiration_uia

@@ -10,7 +10,6 @@ Requires Pillow. Optional: pytesseract+Tesseract binary, winrt Windows OCR packs
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import os
 import re
 import sys
@@ -218,7 +217,8 @@ def _is_minimized(hwnd: int) -> bool:
         return False
 
 
-def _restore_window(hwnd: int) -> None:
+def _restore_window(hwnd: int) -> bool:
+    """Restore if minimized. Returns True if a restore was needed."""
     import ctypes
 
     user32 = ctypes.windll.user32
@@ -226,9 +226,11 @@ def _restore_window(hwnd: int) -> None:
     try:
         if user32.IsIconic(hwnd):
             user32.ShowWindow(hwnd, SW_RESTORE)
-            time.sleep(0.25)
+            time.sleep(0.12)
+            return True
     except Exception:
         pass
+    return False
 
 
 def _window_rect(hwnd: int) -> tuple[int, int, int, int] | None:
@@ -350,15 +352,33 @@ def _grab_hwnd_image(hwnd: int) -> Any | None:
 
 
 def _crop_for_expiration(img: Any) -> Any:
+    """Tight band around Note/Expiration — smaller = much faster OCR."""
     try:
         w, h = img.size
-        top = int(h * 0.10)
-        bottom = int(h * 0.62)
-        left = int(w * 0.08)
-        right = int(w * 0.92)
+        top = int(h * 0.12)
+        bottom = int(h * 0.48)
+        left = int(w * 0.12)
+        right = int(w * 0.78)
         if bottom - top < 80 or right - left < 80:
             return img
         return img.crop((left, top, right, bottom))
+    except Exception:
+        return img
+
+
+def _downscale_for_ocr(img: Any, *, max_width: int = 900) -> Any:
+    """Downscale wide captures — WinOCR/Tesseract scale roughly with pixels."""
+    try:
+        w, h = img.size
+        if w <= max_width:
+            return img
+        ratio = max_width / float(w)
+        nh = max(40, int(h * ratio))
+        # Pillow 9: Image.Resampling.BILINEAR; older: Image.BILINEAR
+        from PIL import Image
+
+        resample = getattr(Image, "Resampling", Image).BILINEAR
+        return img.resize((max_width, nh), resample)
     except Exception:
         return img
 
@@ -428,9 +448,22 @@ def ocr_image_to_string_safe(img: Any) -> tuple[str, str]:
     return ocr_image_tesseract(img)
 
 
-def _pick_token_hwnd() -> tuple[int, str]:
+# Cache PAT hwnd so we do not re-walk every Chromium window each poll (~seconds).
+_HWND_CACHE: tuple[float, int, str] | None = None
+_HWND_CACHE_TTL_S = 8.0
+
+
+def _pick_token_hwnd(*, force: bool = False) -> tuple[int, str]:
+    global _HWND_CACHE
     if sys.platform != "win32":
         return 0, "not-windows"
+
+    now = time.monotonic()
+    if not force and _HWND_CACHE is not None:
+        ts, hwnd, detail = _HWND_CACHE
+        if now - ts < _HWND_CACHE_TTL_S and hwnd and not _is_minimized(hwnd):
+            return hwnd, f"cached|{detail}"
+
     try:
         import uiautomation as auto
 
@@ -465,7 +498,6 @@ def _pick_token_hwnd() -> tuple[int, str]:
                 hwnd = _window_hwnd(w)
                 if not hwnd:
                     continue
-                # Prefer visible windows for screenshot OCR.
                 if _is_minimized(hwnd):
                     score -= 50
                 if score > best_score:
@@ -477,12 +509,15 @@ def _pick_token_hwnd() -> tuple[int, str]:
     except Exception as e:
         return 0, f"scan:{e}"
     if not best_hwnd or best_score < 28:
+        _HWND_CACHE = None
         return (
             0,
             f"no-token-hwnd|best_score={best_score}|title={best_title}"
             f"|pids={len(pids)}",
         )
-    return best_hwnd, f"hwnd={best_hwnd}|title={best_title}|score={best_score}"
+    detail = f"hwnd={best_hwnd}|title={best_title}|score={best_score}"
+    _HWND_CACHE = (now, best_hwnd, detail)
+    return best_hwnd, detail
 
 
 def _pick_best_parse(
@@ -524,12 +559,16 @@ def _pick_best_parse(
     return tok, f"first:{eng}|{'|'.join(details)}"
 
 
-def read_token_expiration_ocr() -> tuple[str | None, str]:
+def read_token_expiration_ocr(*, force_hwnd: bool = False) -> tuple[str | None, str]:
     """
-    Screenshot the PAT Chromium window, run Windows OCR + Tesseract in parallel.
+    Screenshot the PAT Chromium window and OCR Expiration.
+
+    Fast path: Windows.Media.Ocr only on a small downscaled crop.
+    Tesseract runs only if WinOCR misses (much slower).
 
     Returns ``(days_or_none_or_YYYY-MM-DD, detail)``.
     """
+    t0 = time.monotonic()
     if sys.platform != "win32":
         return None, "not-windows"
     try:
@@ -537,34 +576,50 @@ def read_token_expiration_ocr() -> tuple[str | None, str]:
     except Exception as e:
         return None, f"pillow-missing:{e}"
 
-    hwnd, pick_detail = _pick_token_hwnd()
+    hwnd, pick_detail = _pick_token_hwnd(force=force_hwnd)
     if not hwnd:
         return None, pick_detail
 
     img = _grab_hwnd_image(hwnd)
     if img is None:
-        return None, f"capture-failed|{pick_detail}"
+        # Cached hwnd may be stale (closed tab) — refresh once.
+        hwnd2, pick2 = _pick_token_hwnd(force=True)
+        if hwnd2 and hwnd2 != hwnd:
+            img = _grab_hwnd_image(hwnd2)
+            pick_detail = pick2
+            hwnd = hwnd2
+        if img is None:
+            return None, f"capture-failed|{pick_detail}"
 
-    cropped = _crop_for_expiration(img)
-    jobs: list[tuple[str, Any]] = []
+    cropped = _downscale_for_ocr(_crop_for_expiration(img), max_width=880)
+    results: list[tuple[str, str, str]] = []
+
+    # 1) Windows OCR first (typically <1s on small crop)
     if windows_ocr_available():
-        jobs.append(("winocr", ocr_image_windows))
+        text_w, det_w = ocr_image_windows(cropped)
+        results.append(("winocr", text_w, det_w))
+        got_w, how_w = parse_expiration_from_ocr_text(text_w)
+        if got_w is not None:
+            ms = int((time.monotonic() - t0) * 1000)
+            return (
+                got_w,
+                f"{pick_detail}|capture={img.size[0]}x{img.size[1]}"
+                f"|ocr={cropped.size[0]}x{cropped.size[1]}"
+                f"|fast:winocr|{how_w}|ms={ms}",
+            )
+
+    # 2) Tesseract only on miss
     if tesseract_available():
-        jobs.append(("tesseract", ocr_image_tesseract))
-    if not jobs:
+        text_t, det_t = ocr_image_tesseract(cropped)
+        results.append(("tesseract", text_t, det_t))
+
+    if not results:
         return None, f"no-ocr-engine|{pick_detail}"
 
-    results: list[tuple[str, str, str]] = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as pool:
-        futs = {pool.submit(fn, cropped): name for name, fn in jobs}
-        for fut in concurrent.futures.as_completed(futs):
-            name = futs[fut]
-            try:
-                text, eng_detail = fut.result()
-            except Exception as e:
-                text, eng_detail = "", f"error:{e}"
-            results.append((name, text, eng_detail))
-
     got, parse_detail = _pick_best_parse(results)
-    detail = f"{pick_detail}|capture={img.size[0]}x{img.size[1]}|{parse_detail}"
+    ms = int((time.monotonic() - t0) * 1000)
+    detail = (
+        f"{pick_detail}|capture={img.size[0]}x{img.size[1]}"
+        f"|ocr={cropped.size[0]}x{cropped.size[1]}|{parse_detail}|ms={ms}"
+    )
     return got, detail

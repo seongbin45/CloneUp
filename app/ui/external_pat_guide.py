@@ -133,8 +133,10 @@ def _c_faint() -> str:
 
 def _c_title() -> str:
     return active_palette().text
-_ADDR_POLL_MS = 3000
+_ADDR_POLL_MS = 2500
+_EXPIRY_POLL_MS = 1100  # ASK_EXPIRY: OCR-only ticks
 _CLIP_POLL_MS = 500
+
 _TOKEN_PREFIXES = ("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")
 _GITHUB_LOGIN = "https://github.com/login"
 
@@ -650,8 +652,10 @@ class ExternalBrowserPatGuide(QDialog):
         self._addr_poll_busy = False
         self._away_streak = 0
         self._login_rescue_done = False
-        self._last_expiry_days_read: str | None = None  # last UIA days token
+        self._last_expiry_days_read: str | None = None  # last UIA/OCR days token
         self._expiry_miss_log_at = 0.0  # throttle "미감지" logs
+        self._expiry_poll_i = 0  # ASK_EXPIRY: occasional address bounce check
+
 
         # Tee Path B UIA helpers into main textLog while this guide is alive.
         set_path_b_log_sink(self._emit_log)
@@ -915,6 +919,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._scene = scene
         self._guide_log(f"[Path B] 장면 {prev.name} → {scene.name}")
         self._render()
+        self._sync_poll_interval()
         self.adjustSize()
         self._place_bottom_left()
 
@@ -1176,6 +1181,7 @@ class ExternalBrowserPatGuide(QDialog):
         Reflect browser Expiration into guide state and (when advancing) scene.
 
         Always updates ``_expires_at`` so login can save it. Logs on change.
+        Avoids full ``_render`` / ``adjustSize`` on unchanged polls.
         """
         label = expiry_label_for_days(got) or self._expiry_label or (
             f"{got}일" if str(got).isdigit() else str(got)
@@ -1191,9 +1197,13 @@ class ExternalBrowserPatGuide(QDialog):
         self._expires_at = expires
         self._expiry_uia_ok = True
         if changed:
+            # Keep detail short in the UI log (ms=… is enough).
+            short = detail
+            if len(short) > 160:
+                short = short[:160] + "…"
             self._guide_log(
                 f"[Path B] 만료 감지({source}): {got} → {label} → {expires}"
-                + (f" ({detail})" if detail else "")
+                + (f" ({short})" if short else "")
             )
             self._sub.setText(
                 f"브라우저 만료일: {label}. "
@@ -1205,6 +1215,7 @@ class ExternalBrowserPatGuide(QDialog):
             )
             if self._scene == DialogueScene.ASK_EXPIRY and not advance:
                 self._rebuild_chips()
+                self.adjustSize()
         if advance:
             self._guide_log(f"[Path B] 만료 확정·저장: {got} → {expires}")
             self._set_scene(DialogueScene.ASK_SCOPE)
@@ -1485,18 +1496,44 @@ class ExternalBrowserPatGuide(QDialog):
         self._render()
 
     # --- polling ---
+    def _sync_poll_interval(self) -> None:
+        """Faster ticks while watching Expiration; normal otherwise."""
+        want = (
+            _EXPIRY_POLL_MS
+            if (
+                self._scene == DialogueScene.ASK_EXPIRY
+                and self._token_nav_opened
+            )
+            else _ADDR_POLL_MS
+        )
+        if self._addr_timer.interval() != want:
+            self._addr_timer.setInterval(want)
+
     def _poll_address(self) -> None:
-        """Kick a background UIA sample — never block the Qt UI thread."""
+        """Kick a background sample/OCR — never block the Qt UI thread."""
         if self._done or self._addr_poll_busy:
             return
         w = self._addr_worker
         if w is not None and w.isRunning():
             return
+        self._sync_poll_interval()
         self._addr_poll_busy = True
-        read_expiry = (
+        on_expiry = (
             self._scene == DialogueScene.ASK_EXPIRY and self._token_nav_opened
         )
-        worker = PathBAddressWorker(read_expiry=read_expiry, parent=self)
+        if on_expiry:
+            self._expiry_poll_i += 1
+            # Most ticks: OCR only. Every 3rd: also UIA sample for login bounce.
+            sample_address = (self._expiry_poll_i % 3) == 0
+            read_expiry = True
+        else:
+            sample_address = True
+            read_expiry = False
+        worker = PathBAddressWorker(
+            read_expiry=read_expiry,
+            sample_address=sample_address,
+            parent=self,
+        )
         worker.sample_ready.connect(self._on_address_sample)
         self._addr_worker = worker
         worker.start()
