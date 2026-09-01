@@ -1,9 +1,10 @@
 # Path B: Chrome/Edge CDP 직접 제어 (실험)
 
-**기본 Path B는 UIA + (만료일) 스크린샷 OCR / 수동입니다.**  
-Expiration은 창 캡처 + Tesseract로 읽고, 실패 시 UIA로 폴백합니다.  
-CDP는 **옵트인**이며, Playwright로 사용자 Chromium의 디버깅 포트에 붙어  
-classic PAT 폼의 Expiration / Generate를 **DOM**으로 조작합니다.
+**기본 Path B는 UIA + (만료일) 스크린샷 이중 OCR / 수동입니다.**  
+Expiration: Chromium 창을 실제로 캡처한 뒤 **Windows.Media.Ocr**와 **Tesseract**를
+병렬로 돌립니다. Custom 날짜(`2027년 1월 1일` 등)도 파싱합니다. 실패 시 UIA 폴백.  
+Tesseract 설치 파일은 `CloneUp-Setup`에 포함(작업 항목)됩니다.  
+CDP는 **옵트인**이며, Playwright로 Expiration / Generate를 **DOM**으로 조작합니다.
 
 ## 왜 필요한가
 

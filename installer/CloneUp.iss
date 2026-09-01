@@ -56,6 +56,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "autoupdatemanager"; Description: "백그라운드 자동 업데이트 관리자 (시작 시 실행)"; GroupDescription: "업데이트:"; Flags: checkedonce
+; Path B Expiration OCR — bundles UB-Mannheim Tesseract setup (runs with its own UAC)
+Name: "tesseractocr"; Description: "Tesseract OCR 설치 (키 만료일 화면 인식용)"; GroupDescription: "OCR:"; Flags: checkedonce
 
 [Files]
 ; PyInstaller onedir output
@@ -79,6 +81,8 @@ Source: "..\assets\icons\icon-512.png"; DestDir: "{app}\icons"; Flags: ignorever
 Source: "license\CloneUp_Terms_ko.txt"; DestDir: "{app}\legal"; Flags: ignoreversion
 Source: "..\legal\CloneUp_OpenSourceNotices_ko.txt"; DestDir: "{app}\legal"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+; Tesseract OCR installer (downloaded by scripts\fetch_tesseract_redist.ps1)
+Source: "redist\tesseract-ocr-w64-setup-5.4.0.20240606.exe"; DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall; Tasks: tesseractocr
 
 [Icons]
 ; Start Menu — explicit multi-size .ico so shell picks 16/32/48 correctly
@@ -90,6 +94,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "CloneUpUpdateManager"; ValueData: """{localappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"""; Flags: uninsdeletevalue; Tasks: autoupdatemanager
 
 [Run]
+; Tesseract — own UAC elevation; silent-ish English UI (UB-Mannheim Inno-based)
+Filename: "{tmp}\tesseract-ocr-w64-setup-5.4.0.20240606.exe"; Parameters: "/S"; StatusMsg: "Tesseract OCR 설치 중…"; Flags: waituntilterminated; Tasks: tesseractocr
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 ; Start update manager once after install (also registered for logon)
 Filename: "{localappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"; Description: "자동 업데이트 관리자 시작"; Flags: nowait postinstall skipifsilent unchecked; Tasks: autoupdatemanager
@@ -97,3 +103,5 @@ Filename: "{localappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"; Des
 ; Note: Git is NOT bundled. First launch uses DG1/DG2 bootstrap
 ; (download official installer / winget) if git is missing.
 ; Auto-update uses GitHub zip (CloneUp-win64.zip) + file copy — never runs Setup GUI.
+; Tesseract setup is bundled under installer\redist\ and run when task is checked.
+; Windows built-in OCR (Windows.Media.Ocr) needs no extra installer.

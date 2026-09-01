@@ -1,0 +1,3 @@
+# Large third-party installer — fetch with scripts/fetch_tesseract_redist.ps1
+*.exe
+!README.md

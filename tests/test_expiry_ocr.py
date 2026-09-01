@@ -38,6 +38,34 @@ def test_parse_iso_custom() -> None:
     assert got == "2026-12-01"
 
 
+def test_parse_korean_custom_date() -> None:
+    """Screenshot: Custom calendar → opener shows 「2027년 1월 1일」."""
+    text = "Note\nExpiration\n2027년 1월 1일\nGenerate token"
+    got, detail = parse_expiration_from_ocr_text(text)
+    assert got == "2027-01-01"
+    assert "ko" in detail or "near-label" in detail or "custom" in detail
+
+
+def test_parse_dot_custom_date() -> None:
+    text = "Expiration\n2027. 1. 1.\nGenerate"
+    got, _detail = parse_expiration_from_ocr_text(text)
+    assert got == "2027-01-01"
+
+
+def test_parse_en_custom_date() -> None:
+    text = "Expiration\nJan 1, 2027\nGenerate token"
+    got, _detail = parse_expiration_from_ocr_text(text)
+    assert got == "2027-01-01"
+
+
+def test_parse_bare_day_near_label() -> None:
+    """Windows OCR sometimes drops the word 'days'."""
+    text = "Expiration\n30\nCustom"
+    got, detail = parse_expiration_from_ocr_text(text)
+    assert got == "30"
+    assert "bare" in detail or "near-label" in detail
+
+
 def test_parse_empty() -> None:
     got, detail = parse_expiration_from_ocr_text("")
     assert got is None

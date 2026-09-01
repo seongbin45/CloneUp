@@ -53,6 +53,13 @@ if (-not $iscc) {
     exit 2
 }
 
+Write-Host "== Tesseract redist (for Path B OCR) =="
+& (Join-Path $Root "scripts\fetch_tesseract_redist.ps1")
+$tess = Join-Path $Root "installer\redist\tesseract-ocr-w64-setup-5.4.0.20240606.exe"
+if (-not (Test-Path $tess)) {
+    Write-Error "Missing $tess — fetch_tesseract_redist.ps1 failed"
+}
+
 Write-Host "== DG3: Inno Setup ($iscc) =="
 & $iscc (Join-Path $Root "installer\CloneUp.iss")
 if ($LASTEXITCODE -ne 0) {

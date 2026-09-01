@@ -13,11 +13,17 @@ PySide6-Addons>=6.6.0
 #   pip install uiautomation
 uiautomation>=2.0.18
 
-# Path B Expiration: screenshot + OCR (visible "30 days" on classic PAT form)
-# Also needs Tesseract binary: winget install UB-Mannheim.TesseractOCR
-# Or set TESSERACT_CMD to tesseract.exe
+# Path B Expiration: screenshot + dual OCR (Windows.Media.Ocr + Tesseract)
+# Tesseract binary: bundled in CloneUp-Setup (task) or winget / TESSERACT_CMD
 Pillow>=10.0.0
 pytesseract>=0.3.10
+winrt-runtime>=3.0
+winrt-Windows.Foundation>=3.0
+winrt-Windows.Foundation.Collections>=3.0
+winrt-Windows.Globalization>=3.0
+winrt-Windows.Graphics.Imaging>=3.0
+winrt-Windows.Media.Ocr>=3.0
+winrt-Windows.Storage.Streams>=3.0
 
 # Optional experimental Device Flow helper (CLONEUP_PLAYWRIGHT=1):
 #   pip install playwright && playwright install chromium
