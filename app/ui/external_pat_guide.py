@@ -736,7 +736,8 @@ class ExternalBrowserPatGuide(QDialog):
         )
         # Vertical stack — horizontal pills were easy to miss / clip at 440px.
         self._chips_lay = QVBoxLayout(self._chips_host)
-        self._chips_lay.setContentsMargins(0, 4, 0, 4)
+        # Bottom margin keeps the primary chip/button clear of the card radius.
+        self._chips_lay.setContentsMargins(0, 4, 0, 10)
         self._chips_lay.setSpacing(8)
         self._chips_host.hide()
 
@@ -809,7 +810,9 @@ class ExternalBrowserPatGuide(QDialog):
 
         body_w = QWidget()
         body = QVBoxLayout(body_w)
-        body.setContentsMargins(16, 15, 16, 16)
+        # Extra bottom padding so 「골랐어요」 is not clipped by the card's
+        # 16px rounded corner / translucent HWND edge.
+        body.setContentsMargins(16, 15, 16, 22)
         body.setSpacing(12)
         body.addLayout(self._hist_host)
         body.addWidget(self._say)
@@ -820,6 +823,7 @@ class ExternalBrowserPatGuide(QDialog):
         body.addWidget(self._done_host)
         body.addWidget(self._btn_reopen)
         body.addWidget(self._edit)
+        body.addSpacing(4)
         body.addLayout(foot)
 
         card_lay.addWidget(head)
@@ -876,10 +880,16 @@ class ExternalBrowserPatGuide(QDialog):
     def _place_bottom_left(self) -> None:
         """Default: lower-left of the work area (taskbar-safe).
 
-        Clamp height so chip buttons are never clipped below the screen.
+        Prefer sizeHint so newly shown chips/buttons are not clipped; clamp
+        only when the card would exceed the work area.
         """
         margin = 24
-        self.adjustSize()
+        self.updateGeometry()
+        hint = self.sizeHint()
+        if hint.isValid() and hint.height() > 0:
+            self.resize(max(self.width(), hint.width()), hint.height())
+        else:
+            self.adjustSize()
         try:
             screen = None
             if self._anchor is not None:
