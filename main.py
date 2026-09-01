@@ -100,6 +100,13 @@ def main() -> int:
     controller = {"tray": None}
 
     def show_main(folder: str = "") -> None:
+        # Opening the main window: dismiss start-notify (no alarm while UI is up).
+        try:
+            from app.ui.tray_app import suppress_boot_toast_for_connect
+
+            suppress_boot_toast_for_connect()
+        except Exception:
+            pass
         win.show()
         win.raise_()
         win.activateWindow()

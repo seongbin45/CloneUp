@@ -229,6 +229,10 @@ class TrayController(QObject):
     def run_boot_scan(self) -> None:
         if not load_boot_notify_enabled():
             return
+        # Main window open → user can sync in-app; skip alarm entirely.
+        if _main_window_visible():
+            self.dismiss_boot_toast()
+            return
         if github_connect_ui_busy():
             return
         if self._toast is not None and self._toast.isVisible():
@@ -252,7 +256,7 @@ class TrayController(QObject):
         if getattr(self, "_suppress_toast_until_idle", False):
             self._suppress_toast_until_idle = False
             return
-        if github_connect_ui_busy():
+        if _main_window_visible() or github_connect_ui_busy():
             return
         items: list[PendingFolder] = list(pending or [])  # type: ignore[arg-type]
         if not items:
@@ -262,11 +266,8 @@ class TrayController(QObject):
         msg = load_last_commit_message() or "Update"
         if msg.strip() in ("첫 업로드", "Initial commit"):
             msg = "Update"
-        # Main open → soft popup (no focus steal). Tray-only → normal toast.
-        passive = _main_window_visible()
-        toast = BootNotifyToast(
-            items, default_message=msg, passive=passive
-        )
+        # Tray-only session: normal toast (design + bottom-right).
+        toast = BootNotifyToast(items, default_message=msg, passive=False)
         toast.upload_requested.connect(self._on_upload)
         toast.later_clicked.connect(self._on_later)
         toast.open_app_requested.connect(self.request_open_main.emit)
