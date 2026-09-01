@@ -1,8 +1,8 @@
 # 시작 알림 (안 올린 수정)
 
 시안: `desin/CloneUp 시작 알림.dc.html`  
-모양: 폭 **382px**, 카드 **radius 10px**, 헤더 `#f2efe9` · 본문 `#fbfaf8` (시안 라이트 알림).  
-Windows에서 하단이 각지지 않도록 **투명 셸 + 내부 카드** + 그림자.
+모양: 폭 **382px**, 카드 **radius 10px**, 투명 셸 + 내부 카드 + 그림자.  
+색: `active_palette()` — OS 라이트면 시안 크림, **다크면 Window Dark 토큰**.
 
 ## 무엇을 하나요
 
