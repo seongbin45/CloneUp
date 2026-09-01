@@ -1,26 +1,55 @@
-"""Boot toast: unpushed changes (시안 ``desin/CloneUp 시작 알림.dc.html``)."""
+"""Boot toast: unpushed changes (시안 ``desin/CloneUp 시작 알림.dc.html``).
+
+Visual tokens follow the design HTML (light cream card, radius 10px), not the
+app chrome theme — matching Windows-style floating notifications.
+"""
 
 from __future__ import annotations
 
 from enum import IntEnum
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 from app.ui.boot_scan import PendingFolder
 from app.ui.icons import load_app_icon
-from app.ui.theme import active_palette
+
+# --- 시안 tokens (CloneUp 시작 알림.dc.html) ---------------------------------
+_BG = "#fbfaf8"
+_BAR = "#f2efe9"
+_BORDER = "#b9bdc4"
+_BORDER_SOFT = "#ddd8d0"
+_TEXT = "#232019"
+_LEAD = "#4a453b"
+_MUTED = "#6d675c"
+_BRAND = "#3d382f"
+_INPUT_BG = "#ffffff"
+_INPUT_BORDER = "#cdc8bf"
+_INPUT_FG = "#2f2b24"
+_PRIMARY = "#1f6f5c"
+_PRIMARY_HOVER = "#14503f"
+_BTN_NORMAL_BG = "#ffffff"
+_BTN_NORMAL_FG = "#3d382f"
+_BTN_NORMAL_BD = "#b7b1a5"
+_BTN_QUIET_BG = "#f2efe9"
+_BTN_QUIET_FG = "#4a453b"
+_BTN_QUIET_BD = "#cdc8bf"
+_BTN_OFF_BG = "#f2efe9"
+_BTN_OFF_FG = "#b3ac9e"
+_BTN_OFF_BD = "#ddd8d0"
+_RADIUS_CARD = 10
+_RADIUS_INNER = 9
 
 
 class BootNotifyScene(IntEnum):
@@ -31,107 +60,114 @@ class BootNotifyScene(IntEnum):
 
 
 def _toast_qss() -> str:
-    """Toast chrome from ``active_palette()`` (light 시안 + dark Window Dark)."""
-    p = active_palette()
+    """Exact chrome from ``desin/CloneUp 시작 알림.dc.html``."""
+    r = _RADIUS_CARD
+    ri = _RADIUS_INNER
     return f"""
-    QWidget#bootToast {{
-        background: {p.bg_window};
-        color: {p.text};
-        border: 1px solid {p.border};
-        border-radius: 16px;
+    QWidget#bootToastShell {{
+        background: transparent;
+    }}
+    QFrame#bootToastCard {{
+        background: {_BG};
+        color: {_TEXT};
+        border: 1px solid {_BORDER};
+        border-radius: {r}px;
     }}
     QFrame#bootToastHead {{
-        background: {p.bg_bar};
+        background: {_BAR};
         border: none;
-        border-bottom: 1px solid {p.border_soft};
-        border-top-left-radius: 16px;
-        border-top-right-radius: 16px;
+        border-bottom: 1px solid {_BORDER_SOFT};
+        border-top-left-radius: {r}px;
+        border-top-right-radius: {r}px;
     }}
     QLabel#bootToastBrand {{
-        font-size: 11.5px; font-weight: 600; color: {p.text};
+        font-size: 11.5px; font-weight: 600; color: {_BRAND};
         background: transparent; border: none;
     }}
     QLabel#bootToastStamp {{
-        font-size: 11.5px; color: {p.text_muted};
+        font-size: 11.5px; color: {_MUTED};
         background: transparent; border: none;
     }}
     QPushButton#bootToastX {{
-        background: transparent; color: {p.text_muted}; border: none;
+        background: transparent; color: {_MUTED}; border: none;
         font-size: 14px; padding: 0 4px; min-width: 22px;
     }}
-    QPushButton#bootToastX:hover {{ color: {p.text}; }}
+    QPushButton#bootToastX:hover {{ color: {_BRAND}; }}
     QLabel#bootToastTitle {{
-        font-size: 15.5px; font-weight: 600; color: {p.text};
+        font-size: 15.5px; font-weight: 600; color: {_TEXT};
         background: transparent; border: none;
+        letter-spacing: -0.01em;
     }}
     QLabel#bootToastLead {{
-        font-size: 12.5px; color: {p.text_secondary}; background: transparent; border: none;
+        font-size: 12.5px; color: {_LEAD}; background: transparent; border: none;
     }}
     QFrame#bootToastPanel {{
-        background: {p.bg_bar}; border: none; border-radius: 12px;
+        background: {_BAR}; border: none; border-radius: {ri}px;
     }}
     QLabel#bootToastMono {{
-        font-size: 12.5px; font-weight: 500; color: {p.text};
+        font-size: 12.5px; font-weight: 500; color: {_TEXT};
         font-family: "IBM Plex Mono", Consolas, monospace;
         background: transparent; border: none;
     }}
     QLabel#bootToastMeta {{
-        font-size: 11.5px; color: {p.text_muted};
+        font-size: 11.5px; color: {_MUTED};
         background: transparent; border: none;
     }}
     QLabel#bootToastFile {{
-        font-size: 11.5px; color: {p.text_secondary};
+        font-size: 11.5px; color: {_LEAD};
         font-family: "IBM Plex Mono", Consolas, monospace;
         background: transparent; border: none;
     }}
     QLabel#bootToastKind {{
-        font-size: 9px; font-weight: 600; color: {p.bg_window};
+        font-size: 9px; font-weight: 600; color: {_BG};
         font-family: "IBM Plex Mono", Consolas, monospace;
         border-radius: 3px;
     }}
     QLineEdit#bootToastMsg {{
-        background: {p.bg_input}; color: {p.text};
-        border: 1px solid {p.border_input}; border-radius: 7px;
+        background: {_INPUT_BG}; color: {_INPUT_FG};
+        border: 1px solid {_INPUT_BORDER}; border-radius: 7px;
         padding: 0 11px; min-height: 34px; font-size: 12.5px;
     }}
     QPushButton#bootToastPrimary {{
-        background: {p.primary}; color: {p.text_on_primary}; border: 1px solid {p.primary};
-        border-radius: 9px; font-size: 13px; font-weight: 600;
+        background: {_PRIMARY}; color: {_BG}; border: 1px solid {_PRIMARY};
+        border-radius: {ri}px; font-size: 13px; font-weight: 600;
         min-height: 38px; padding: 0 16px;
     }}
-    QPushButton#bootToastPrimary:hover {{ background: {p.primary_hover}; }}
+    QPushButton#bootToastPrimary:hover {{ background: {_PRIMARY_HOVER}; }}
     QPushButton#bootToastPrimary:disabled {{
-        background: {p.bg_muted}; color: {p.text_disabled}; border: 1px solid {p.border_soft};
+        background: {_BTN_OFF_BG}; color: {_BTN_OFF_FG}; border: 1px solid {_BTN_OFF_BD};
     }}
     QPushButton#bootToastNormal {{
-        background: {p.bg_input}; color: {p.text}; border: 1px solid {p.border_outline};
-        border-radius: 9px; font-size: 13px; font-weight: 500;
+        background: {_BTN_NORMAL_BG}; color: {_BTN_NORMAL_FG};
+        border: 1px solid {_BTN_NORMAL_BD};
+        border-radius: {ri}px; font-size: 13px; font-weight: 500;
         min-height: 38px; padding: 0 16px;
     }}
     QPushButton#bootToastQuiet {{
-        background: {p.bg_muted}; color: {p.text_secondary}; border: 1px solid {p.border_input};
-        border-radius: 9px; font-size: 13px; font-weight: 400;
+        background: {_BTN_QUIET_BG}; color: {_BTN_QUIET_FG};
+        border: 1px solid {_BTN_QUIET_BD};
+        border-radius: {ri}px; font-size: 13px; font-weight: 400;
         min-height: 38px; padding: 0 16px;
     }}
     QPushButton#bootToastLink {{
-        background: transparent; color: {p.text_muted}; border: none;
+        background: transparent; color: {_MUTED}; border: none;
         font-size: 11.5px; text-align: left; padding: 0;
     }}
-    QPushButton#bootToastLink:hover {{ color: {p.text}; }}
+    QPushButton#bootToastLink:hover {{ color: {_BRAND}; }}
     QCheckBox#bootToastFolder {{
-        spacing: 10px; font-size: 12.5px; color: {p.text};
+        spacing: 10px; font-size: 12.5px; color: {_TEXT};
         font-family: "IBM Plex Mono", Consolas, monospace;
-        padding: 10px 12px; background: {p.bg_window};
-        border: 1px solid transparent; border-radius: 9px;
+        padding: 11px 13px; background: {_BG};
+        border: 1px solid transparent; border-radius: {ri}px;
     }}
     QCheckBox#bootToastFolder:checked {{
-        border: 1px solid {p.primary}; background: {p.bg_window};
+        border: 1px solid {_PRIMARY}; background: {_BG};
     }}
     """
 
 
 class BootNotifyToast(QWidget):
-    """Frameless bottom-right toast for boot unpushed-changes notify."""
+    """Frameless bottom-right toast — 시안 floating card (382px, radius 10)."""
 
     upload_requested = Signal(list, str)  # folder paths, commit message
     later_clicked = Signal()
@@ -158,27 +194,34 @@ class BootNotifyToast(QWidget):
         self._wait_text = ""
         self._dot_i = 0
 
-        self.setObjectName("bootToast")
+        self.setObjectName("bootToastShell")
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
             | Qt.WindowType.WindowStaysOnTopHint
         )
-        # Translucent so border-radius actually clips on Windows (else sharp HWND).
+        # Transparent shell so only the inner card paints — bottom radii clip.
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self._apply_theme_qss()
+        self.setStyleSheet(_toast_qss())
         self.setFixedWidth(382)
-        # Follow OS / app theme switches while the toast is open.
-        try:
-            app = QGuiApplication.instance()
-            if app is not None and hasattr(app, "styleHints"):
-                app.styleHints().colorSchemeChanged.connect(self._on_color_scheme)
-        except Exception:
-            pass
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
+        shell = QVBoxLayout(self)
+        # Margins leave room for the drop shadow so corners are not clipped.
+        shell.setContentsMargins(10, 10, 10, 14)
+        shell.setSpacing(0)
+
+        card = QFrame()
+        card.setObjectName("bootToastCard")
+        self._card = card
+        shadow = QGraphicsDropShadowEffect(card)
+        shadow.setBlurRadius(34)
+        shadow.setOffset(QPointF(0, 10))
+        shadow.setColor(QColor(20, 24, 30, 87))  # ≈ rgba(20,24,30,.34)
+        card.setGraphicsEffect(shadow)
+
+        card_lay = QVBoxLayout(card)
+        card_lay.setContentsMargins(0, 0, 0, 0)
+        card_lay.setSpacing(0)
 
         head = QFrame()
         head.setObjectName("bootToastHead")
@@ -202,13 +245,13 @@ class BootNotifyToast(QWidget):
         hl.addWidget(self._stamp, 0)
         hl.addStretch(1)
         hl.addWidget(btn_x, 0)
-        root.addWidget(head)
+        card_lay.addWidget(head)
 
         body = QWidget()
         self._body = QVBoxLayout(body)
         self._body.setContentsMargins(16, 15, 16, 16)
         self._body.setSpacing(13)
-        root.addWidget(body)
+        card_lay.addWidget(body)
 
         self._title = QLabel("")
         self._title.setObjectName("bootToastTitle")
@@ -252,6 +295,8 @@ class BootNotifyToast(QWidget):
         foot.addWidget(self._foot, 0)
         self._body.addLayout(foot)
 
+        shell.addWidget(card)
+
         self._dot_timer = QTimer(self)
         self._dot_timer.setInterval(420)
         self._dot_timer.timeout.connect(self._tick_dots)
@@ -260,19 +305,12 @@ class BootNotifyToast(QWidget):
         self._place_bottom_right()
 
     def _apply_theme_qss(self) -> None:
+        # 시안 is light-only; keep stylesheet stable.
         self.setStyleSheet(_toast_qss())
 
     def _on_color_scheme(self, *_args) -> None:
-        try:
-            from app.ui.theme import apply_system_theme
-
-            apply_system_theme()
-        except Exception:
-            pass
+        # Toast stays 시안 light; no palette swap.
         self._apply_theme_qss()
-        # Re-paint dynamic file-kind badges / buttons for the new palette.
-        if self.isVisible():
-            self._render()
 
     # --- public ---
     def set_waiting(self, text: str) -> None:
@@ -299,6 +337,7 @@ class BootNotifyToast(QWidget):
                 self._clear_layout(child)
 
     def _place_bottom_right(self) -> None:
+        # 시안: right 18px, above taskbar (~52px)
         margin = 18
         taskbar = 52
         self.adjustSize()
@@ -355,10 +394,9 @@ class BootNotifyToast(QWidget):
                 kind.setObjectName("bootToastKind")
                 kind.setFixedSize(15, 15)
                 kind.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                # Badge glyph on saturated tone — light cream reads on both themes.
                 kind.setStyleSheet(
                     f"QLabel#bootToastKind {{ background: {f.tone}; "
-                    f"border-radius: 3px; color: #fbfaf8; font-size: 9px; "
+                    f"border-radius: 3px; color: {_BG}; font-size: 9px; "
                     f"font-weight: 600; }}"
                 )
                 path = QLabel(f.path)
@@ -379,15 +417,14 @@ class BootNotifyToast(QWidget):
         elif scene == BootNotifyScene.MANY:
             n_all = len(self._pending)
             chosen = len(self._selected_paths())
-            self._title.setText(
-                f"{'세' if n_all == 3 else str(n_all)} 폴더에 안 올린 수정이 있어요"
-                if n_all != 1
-                else "안 올린 수정이 있어요"
-            )
             if n_all == 2:
                 self._title.setText("두 폴더에 안 올린 수정이 있어요")
+            elif n_all == 3:
+                self._title.setText("세 폴더에 안 올린 수정이 있어요")
             elif n_all > 3:
                 self._title.setText(f"{n_all}개 폴더에 안 올린 수정이 있어요")
+            else:
+                self._title.setText("안 올린 수정이 있어요")
             self._lead.setText(
                 "올릴 폴더를 골라 주세요. 고른 폴더만 커밋하고 푸시합니다."
             )

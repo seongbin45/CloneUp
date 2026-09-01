@@ -1,7 +1,8 @@
 # 시작 알림 (안 올린 수정)
 
 시안: `desin/CloneUp 시작 알림.dc.html`  
-색: `active_palette()` (라이트 시안 + OS 다크 시 `desin/dark` Window Dark 토큰). 라이트 크림으로 고정하지 않음.
+모양: 폭 **382px**, 카드 **radius 10px**, 헤더 `#f2efe9` · 본문 `#fbfaf8` (시안 라이트 알림).  
+Windows에서 하단이 각지지 않도록 **투명 셸 + 내부 카드** + 그림자.
 
 ## 무엇을 하나요
 

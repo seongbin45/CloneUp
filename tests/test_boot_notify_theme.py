@@ -1,15 +1,14 @@
-"""Boot toast QSS follows active light/dark palette (no hard-locked cream)."""
+"""Boot toast follows 시안 light card (desin/CloneUp 시작 알림.dc.html)."""
 
 from __future__ import annotations
 
 import sys
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QFrame
 
 from app.ui.boot_notify import BootNotifyToast, _toast_qss
 from app.ui.boot_scan import ChangedFile, PendingFolder
-from app.ui.theme import DARK, LIGHT, apply_palette
 
 
 @pytest.fixture(scope="module")
@@ -20,28 +19,21 @@ def qapp():
     return app
 
 
-def test_toast_qss_uses_active_palette_light_and_dark(qapp) -> None:
-    apply_palette(LIGHT)
-    light = _toast_qss()
-    assert LIGHT.bg_window in light
-    assert LIGHT.bg_bar in light
-    assert LIGHT.text in light
-    assert "#fbfaf8" in light  # light window token
-    # Must not still be "dark window as text" coincidence only — primary from light
-    assert LIGHT.primary in light
-
-    apply_palette(DARK)
-    dark = _toast_qss()
-    assert DARK.bg_window in dark
-    assert DARK.bg_bar in dark
-    assert DARK.text in dark
-    assert DARK.primary in dark
-    # Dark toast must not keep the light card fill as the widget background rule.
-    assert f"background: {LIGHT.bg_window}" not in dark
-    assert f"background: {DARK.bg_window}" in dark
+def test_toast_qss_matches_design_tokens(qapp) -> None:
+    qss = _toast_qss()
+    # 시안 card
+    assert "border-radius: 10px" in qss
+    assert "#fbfaf8" in qss
+    assert "#f2efe9" in qss
+    assert "#b9bdc4" in qss
+    assert "#1f6f5c" in qss
+    # Transparent shell + inner card (bottom corners clip)
+    assert "bootToastShell" in qss
+    assert "bootToastCard" in qss
+    assert "background: transparent" in qss
 
 
-def test_toast_widget_stylesheet_tracks_palette(qapp) -> None:
+def test_toast_widget_has_rounded_card_shell(qapp) -> None:
     pf = PendingFolder(
         path="C:/tmp/demo",
         name="demo",
@@ -50,12 +42,14 @@ def test_toast_widget_stylesheet_tracks_palette(qapp) -> None:
         ahead=0,
         file_count=1,
     )
-    apply_palette(DARK)
     toast = BootNotifyToast([pf])
     try:
+        assert toast.objectName() == "bootToastShell"
+        card = toast.findChild(QFrame, "bootToastCard")
+        assert card is not None
+        assert toast.width() == 382
         ss = toast.styleSheet()
-        assert DARK.bg_window in ss
-        assert f"background: {LIGHT.bg_window}" not in ss
+        assert "border-radius: 10px" in ss
+        assert card.graphicsEffect() is not None
     finally:
         toast.close()
-        apply_palette(LIGHT)
