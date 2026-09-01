@@ -1190,6 +1190,20 @@ class ExternalBrowserPatGuide(QDialog):
         self._set_scene(DialogueScene.PRESS_GENERATE)
         # Do NOT auto-set Expiration or click Generate — user does both.
 
+    def _open_token_create_page(self) -> None:
+        """Open classic tokens/new with Note (+ optional scopes query prefill)."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        scopes = scope_query_value(self._scope_label or "저장소만")
+        url, note = build_pat_create_url_with_note(scopes=scopes)
+        self._pat_note = note
+        self._create_url = url
+        self._last_family_url = url
+        self._token_nav_opened = True
+        QDesktopServices.openUrl(QUrl(url))
+        self._guide_log(f"[Path B] 키 만들기 URL 오픈 note={note}")
+
     def _wanted_expiry_days(self) -> str:
         return expiry_days_value(self._expiry_label or "90일")
 
@@ -1507,12 +1521,16 @@ class ExternalBrowserPatGuide(QDialog):
             # already on 「키 만들기」 while the user answers expiry/scope.
             if not self._token_nav_opened:
                 self._guide_log("[Path B] 로그인 감지 → 키 만들기 페이지 오픈")
-                self._open_token_create_page()
+                try:
+                    self._open_token_create_page()
+                except Exception as e:
+                    self._guide_log(f"[Path B] 키 만들기 페이지 오픈 실패: {e}")
             # Show above browser without stealing keyboard (user may still type).
             try:
                 self.raise_()
             except Exception:
                 pass
+        # Always advance scene even if URL open failed — otherwise LOGIN_WAIT sticks.
         self._set_scene(nxt)
 
     def _poll_clipboard(self) -> None:

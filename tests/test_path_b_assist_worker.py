@@ -63,6 +63,13 @@ def test_connect_flow_url_helper() -> None:
     assert not _is_connect_flow_url("https://youtube.com/watch?v=1")
 
 
+def test_guide_has_open_token_create_page() -> None:
+    """Regression: chip rewrite once dropped this and stuck LOGIN_WAIT."""
+    from app.ui.external_pat_guide import ExternalBrowserPatGuide
+
+    assert callable(getattr(ExternalBrowserPatGuide, "_open_token_create_page", None))
+
+
 def test_address_worker_emits_sample(monkeypatch) -> None:
     _app()
 
