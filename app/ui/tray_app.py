@@ -32,6 +32,8 @@ class _BootUploadWorker(QThread):
         message: str,
         token: str,
         user: dict,
+        *,
+        hide_real_email: bool = False,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -39,6 +41,7 @@ class _BootUploadWorker(QThread):
         self._message = message
         self._token = token
         self._user = user
+        self._hide_real_email = bool(hide_real_email)
 
     def run(self) -> None:  # noqa: N802
         from pathlib import Path
@@ -55,6 +58,7 @@ class _BootUploadWorker(QThread):
                     token=self._token,
                     user=self._user,
                     allow_secrets=False,
+                    hide_real_email=self._hide_real_email,
                 )
             except SyncError as e:
                 self.failed.emit(str(folder), str(e))
@@ -168,11 +172,14 @@ class TrayController(QObject):
             return
         if self._worker is not None and self._worker.isRunning():
             return
+        from app.ui.settings_store import load_hide_real_email
+
         w = _BootUploadWorker(
             list(folders),
             message,
             str(token),
             dict(user or {}),
+            hide_real_email=load_hide_real_email(),
             parent=self,
         )
         w.progress.connect(self._on_progress)
