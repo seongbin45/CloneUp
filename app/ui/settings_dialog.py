@@ -99,7 +99,11 @@ from app.ui.settings_store import (
     save_last_publish_branch,
     save_secret_pii_scan_enabled,
 )
-from app.util.autostart_win import set_autostart_registered
+from app.util.autostart_win import (
+    apply_autostart_preference,
+    is_autostart_registered,
+    set_autostart_registered,
+)
 from app.ui.git_terms_ko import GLOSSARY_ENTRIES
 from app.ui.theme import Palette, active_palette
 
@@ -649,7 +653,8 @@ class SettingsDialog(QDialog):
 
         # --- boot notify (시안: CloneUp 시작 알림) ---
         self._boot_notify_on = load_boot_notify_enabled()
-        self._boot_autostart_on = load_boot_autostart_enabled()
+        # Pref ↔ HKCU must match: default True used to show ON without Run key.
+        self._boot_autostart_on = self._sync_boot_autostart_pref()
         self._sw_boot_notify = _ToggleSwitch(checked=self._boot_notify_on)
         self._sw_boot_notify.toggled.connect(self._on_boot_notify_toggled)
         lay.addWidget(
@@ -1473,12 +1478,29 @@ class SettingsDialog(QDialog):
             save_boot_notify_snooze_until(None)
         self._notify_prefs("boot_notify")
 
+    def _sync_boot_autostart_pref(self) -> bool:
+        """Apply preference to HKCU; if register fails, store False so UI is honest."""
+        import sys
+
+        want = load_boot_autostart_enabled()
+        ok = apply_autostart_preference(want)
+        if sys.platform == "win32" and want and not ok:
+            save_boot_autostart_enabled(False)
+            return False
+        if sys.platform == "win32" and want and not is_autostart_registered():
+            save_boot_autostart_enabled(False)
+            return False
+        return bool(want)
+
     @Slot(bool)
     def _on_boot_autostart_toggled(self, checked: bool) -> None:
         self._boot_autostart_on = bool(checked)
         save_boot_autostart_enabled(self._boot_autostart_on)
         ok = set_autostart_registered(self._boot_autostart_on)
         if not ok and self._boot_autostart_on:
+            self._boot_autostart_on = False
+            save_boot_autostart_enabled(False)
+            self._sw_boot_autostart.setChecked(False, emit=False)
             QMessageBox.warning(
                 self,
                 "시작 프로그램",

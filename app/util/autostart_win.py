@@ -59,6 +59,21 @@ def set_autostart_registered(enabled: bool) -> bool:
                     winreg.DeleteValue(key, _VALUE_NAME)
                 except FileNotFoundError:
                     pass
-        return True
+        # Confirm: enable must be visible; disable must be gone.
+        return is_autostart_registered() is bool(enabled)
     except Exception:
         return False
+
+
+def apply_autostart_preference(enabled: bool | None = None) -> bool:
+    """
+    Apply QSettings ``boot_autostart_enabled`` to HKCU Run.
+
+    If ``enabled`` is None, reads the current preference. Returns True when
+    the registry state matches the desired value (or non-Windows no-op False).
+    """
+    if enabled is None:
+        from app.ui.settings_store import load_boot_autostart_enabled
+
+        enabled = load_boot_autostart_enabled()
+    return set_autostart_registered(bool(enabled))

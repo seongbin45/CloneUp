@@ -68,6 +68,14 @@ def main() -> int:
 
     tray_mode = _want_tray(sys.argv)
 
+    # Pref default True must actually register HKCU Run (Gap A: UI ON, registry unset).
+    try:
+        from app.util.autostart_win import apply_autostart_preference
+
+        apply_autostart_preference()
+    except Exception:
+        pass
+
     # --- single instance: second launch activates the first ---
     socket = QLocalSocket()
     socket.connectToServer(_INSTANCE_KEY)

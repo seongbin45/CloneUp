@@ -17,6 +17,8 @@
 1. **설정 → 안전**
    - 「켤 때 안 올린 수정 확인」 ON
    - 「Windows 시작 시 트레이에서 대기」 ON (시작 프로그램 등록)
+   - 앱 기동·설정 열 때 **선호값 ↔ HKCU Run(`CloneUpTray`)을 맞춤**  
+     (선호 ON인데 등록 실패 시 토글은 OFF로 되돌림)
 2. 또는 개발 중:
    ```powershell
    .\.venv\Scripts\python.exe main.py --tray
