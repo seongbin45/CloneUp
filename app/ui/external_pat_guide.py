@@ -634,6 +634,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._expiry_hint: str | None = None  # chip hint only
         self._scope_label: str | None = None
         self._logged_in = False
+        self._auth_done = False  # email / passkey / 2FA finished
         self._got_token = False
         self._token_nav_opened = False
         self._create_url = ""
@@ -981,6 +982,7 @@ class ExternalBrowserPatGuide(QDialog):
             scope_label=self._scope_label,
             logged_in=self._logged_in,
             got_token=self._got_token,
+            auth_done=self._auth_done,
         )
         for row in rows:
             bar = QWidget()
@@ -1595,8 +1597,11 @@ class ExternalBrowserPatGuide(QDialog):
         )
         if nxt is None:
             return
-        if nxt == DialogueScene.LOGIN_WAIT and self._scene != DialogueScene.LOGIN_WAIT:
+        prev = self._scene
+
+        if nxt == DialogueScene.LOGIN_WAIT and prev != DialogueScene.LOGIN_WAIT:
             self._logged_in = False
+            self._auth_done = False
             self._expiry_label = None
             self._expiry_hint = None
             self._scope_label = None
@@ -1608,23 +1613,52 @@ class ExternalBrowserPatGuide(QDialog):
             self._expiry_uia_tries = 0
             self._login_rescue_done = False
             self._away_streak = 0
-        if nxt == DialogueScene.ASK_EXPIRY:
+            self._guide_log("[Path B] 로그인 화면으로 돌아감 — 인증·키 단계 초기화")
+
+        if nxt == DialogueScene.AUTH_WAIT:
             self._logged_in = True
+            self._auth_done = False
             self._google_blocked = False
-            self._login_rescue_done = False
-            # Login detected → open classic create page so the browser is
-            # already on 「키 만들기」 while the user answers expiry/scope.
-            if not self._token_nav_opened:
-                self._guide_log("[Path B] 로그인 감지 → 키 만들기 페이지 오픈")
-                try:
-                    self._open_token_create_page()
-                except Exception as e:
-                    self._guide_log(f"[Path B] 키 만들기 페이지 오픈 실패: {e}")
-            # Show above browser without stealing keyboard (user may still type).
+            # Do NOT open tokens/new here — unfinished email/passkey bounces back.
+            if self._token_nav_opened or int(prev) >= int(DialogueScene.ASK_EXPIRY):
+                self._token_nav_opened = False
+                self._expiry_label = None
+                self._expiry_hint = None
+                self._scope_label = None
+                self._expires_at = None
+                self._last_expiry_days_read = None
+                self._guide_log(
+                    "[Path B] 이메일·패스키 인증 필요 — 키 만들기 단계 보류 "
+                    f"(from={prev.name}, method={method or kind})"
+                )
+            elif prev == DialogueScene.LOGIN_WAIT:
+                self._guide_log(
+                    f"[Path B] 인증 단계 진입 (method={method or kind})"
+                )
             try:
                 self.raise_()
             except Exception:
                 pass
+
+        if nxt == DialogueScene.ASK_EXPIRY:
+            self._logged_in = True
+            self._auth_done = True
+            self._google_blocked = False
+            self._login_rescue_done = False
+            # Only open classic create page after auth is done.
+            if not self._token_nav_opened:
+                self._guide_log(
+                    "[Path B] 인증 완료 → 키 만들기 페이지 오픈"
+                )
+                try:
+                    self._open_token_create_page()
+                except Exception as e:
+                    self._guide_log(f"[Path B] 키 만들기 페이지 오픈 실패: {e}")
+            try:
+                self.raise_()
+            except Exception:
+                pass
+
         # Always advance scene even if URL open failed — otherwise LOGIN_WAIT sticks.
         self._set_scene(nxt)
 

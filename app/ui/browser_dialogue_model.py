@@ -102,23 +102,30 @@ def expires_at_for_days(days: str) -> str:
 def scene_copy(scene: DialogueScene, *, expiry_label: str = "90일") -> SceneCopy:
     if scene == DialogueScene.LOGIN_WAIT:
         return SceneCopy(
-            right_tag="1 / 3",
+            right_tag="1 / 4",
             say="로그인만 해주시면 돼요",
-            sub="브라우저를 열어 두었습니다. 편한 방법으로 로그인해 주세요.",
+            sub=(
+                "브라우저를 열어 두었습니다. 편한 방법으로 로그인해 주세요. "
+                "곧 이메일 코드나 패스키 확인이 이어질 수 있어요."
+            ),
             foot_note="비밀번호는 저를 거치지 않아요",
             wait_text="로그인이 끝나는 것을 지켜보고 있어요.",
         )
     if scene == DialogueScene.AUTH_WAIT:
         return SceneCopy(
-            right_tag="1 / 3",
-            say="이건 직접 확인해 주세요",
-            sub="패스키 창이 떴습니다. 제가 대신 누를 수 없는 부분이라 잠시 기다릴게요.",
-            foot_note="이메일 코드도 같은 방식이에요",
-            wait_text="확인이 끝나면 알아서 이어갑니다.",
+            right_tag="2 / 4",
+            say="이메일·패스키 인증을 끝내 주세요",
+            sub=(
+                "거의 항상 한 번 더 확인합니다. "
+                "이메일로 온 코드를 입력하거나, 패스키(휴대폰·Windows)로 확인해 주세요. "
+                "이 단계가 끝나기 전에 키 만들기 화면으로 가면 다시 로그인으로 돌아옵니다."
+            ),
+            foot_note="확인이 끝나면 키 만들기로 이어져요",
+            wait_text="인증이 끝나는 것을 지켜보고 있어요.",
         )
     if scene == DialogueScene.ASK_EXPIRY:
         return SceneCopy(
-            right_tag="2 / 3",
+            right_tag="3 / 4",
             say="브라우저에서 만료일을 골라 주세요",
             sub=(
                 "GitHub 화면의 Expiration을 눌러 기간을 선택하세요. "
@@ -128,7 +135,7 @@ def scene_copy(scene: DialogueScene, *, expiry_label: str = "90일") -> SceneCop
         )
     if scene == DialogueScene.ASK_SCOPE:
         return SceneCopy(
-            right_tag="2 / 3",
+            right_tag="3 / 4",
             say="권한 체크를 확인해 주세요",
             sub=(
                 "Select scopes에서 저장소(repo)가 켜져 있는지 보세요. "
@@ -139,7 +146,7 @@ def scene_copy(scene: DialogueScene, *, expiry_label: str = "90일") -> SceneCop
     if scene == DialogueScene.PRESS_GENERATE:
         exp = expiry_label or "직접 선택"
         return SceneCopy(
-            right_tag="3 / 3",
+            right_tag="4 / 4",
             say="초록 Generate token만 눌러 주세요",
             sub=(
                 "이름(Note)은 채워 두었습니다. "
@@ -169,10 +176,13 @@ def build_history(
     scope_label: str | None,
     logged_in: bool,
     got_token: bool,
+    auth_done: bool = False,
 ) -> list[HistoryRow]:
     rows: list[HistoryRow] = []
-    if logged_in or int(scene) >= int(DialogueScene.ASK_EXPIRY):
+    if logged_in or auth_done or int(scene) >= int(DialogueScene.AUTH_WAIT):
         rows.append(HistoryRow("로그인했어요", editable=False))
+    if auth_done or int(scene) >= int(DialogueScene.ASK_EXPIRY):
+        rows.append(HistoryRow("이메일·패스키 인증했어요", editable=False))
     if expiry_label and int(scene) >= int(DialogueScene.ASK_SCOPE):
         rows.append(
             HistoryRow(
@@ -204,33 +214,38 @@ def advance_from_browser_kind(
     """
     Map classify_browser_sample → next scene, or None if no change.
 
-    Does not skip chip questions — only login/auth → ASK_EXPIRY.
+    Auth (email / passkey / 2FA) is a hard gate before ASK_EXPIRY.
+    If the browser falls back to login or 2FA while on a later scene,
+    bounce to AUTH_WAIT / LOGIN_WAIT so we do not keep a dead token page.
     """
     m = (method or "").strip()
+    past_key_steps = int(scene) >= int(DialogueScene.ASK_EXPIRY)
+
     if kind in ("logged_out",) or m in ("github_logout", "github_logged_out"):
         return DialogueScene.LOGIN_WAIT
 
     if kind == "rejected" or m == "google_blocked":
-        # Stay on login wait; UI shows reopen hint
         return DialogueScene.LOGIN_WAIT if scene != DialogueScene.LOGIN_WAIT else None
 
-    # Auth in progress (passkey / 2FA / apple) — not a failure
-    if m in ("passkey", "apple", "github_2fa"):
-        if scene in (DialogueScene.LOGIN_WAIT, DialogueScene.AUTH_WAIT):
+    # Auth in progress — always park on AUTH_WAIT (even if we had jumped ahead).
+    if m in ("passkey", "apple", "github_2fa", "google"):
+        if scene != DialogueScene.AUTH_WAIT:
             return DialogueScene.AUTH_WAIT
         return None
+
+    # Still on GitHub password / username login form
     if kind == "current" and m == "github_login":
-        # /sessions/two-factor also maps to github_login — treat as auth wait
-        # when idx hints 2FA via meta is unavailable; stay/auth:
-        if scene == DialogueScene.LOGIN_WAIT:
-            # Keep waiting on login form; 2FA URLs still "current"
-            return None
-        if scene == DialogueScene.AUTH_WAIT:
-            return None
+        if past_key_steps:
+            # Key page redirected back to login — finish email/passkey first.
+            return DialogueScene.AUTH_WAIT
         return None
 
-    # Logged in / on github after auth (home, tokens list/new, …)
-    # idx>=1 includes home(1) and token pages(2); both mean "past login".
+    if kind == "current":
+        if past_key_steps:
+            return DialogueScene.AUTH_WAIT
+        return None
+
+    # Fully past auth: home / token pages. Only then leave AUTH / LOGIN.
     if kind == "reached" and idx is not None and idx >= 1:
         if scene in (DialogueScene.LOGIN_WAIT, DialogueScene.AUTH_WAIT):
             return DialogueScene.ASK_EXPIRY
