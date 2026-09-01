@@ -39,10 +39,12 @@ def test_expires_at_for_chip() -> None:
 def test_scene_copy_tags() -> None:
     assert scene_copy(DialogueScene.LOGIN_WAIT).right_tag == "1 / 4"
     assert scene_copy(DialogueScene.AUTH_WAIT).right_tag == "2 / 4"
+    assert scene_copy(DialogueScene.ASK_SCOPE).right_tag == "3 / 4"
     assert scene_copy(DialogueScene.ASK_EXPIRY).right_tag == "3 / 4"
     assert scene_copy(DialogueScene.PRESS_GENERATE).right_tag == "4 / 4"
     assert scene_copy(DialogueScene.DONE).right_tag == "끝"
     assert "Generate" in scene_copy(DialogueScene.PRESS_GENERATE).nudge_text
+    assert int(DialogueScene.ASK_SCOPE) < int(DialogueScene.ASK_EXPIRY)
 
 
 def test_scene_copy_browser_first() -> None:
@@ -90,10 +92,10 @@ def test_history_change_targets() -> None:
     texts = [r.text for r in rows]
     assert texts[0] == "로그인했어요"
     assert "이메일·패스키 인증했어요" in texts[1]
-    assert "만료 90일" in texts[2]
-    assert "권한 저장소만" in texts[3]
-    assert rows[2].back_to == DialogueScene.ASK_EXPIRY
-    assert rows[3].back_to == DialogueScene.ASK_SCOPE
+    assert "권한 저장소만" in texts[2]
+    assert "만료 90일" in texts[3]
+    assert rows[2].back_to == DialogueScene.ASK_SCOPE
+    assert rows[3].back_to == DialogueScene.ASK_EXPIRY
 
 
 def test_advance_login_and_auth() -> None:
@@ -110,12 +112,17 @@ def test_advance_login_and_auth() -> None:
     nxt2 = advance_from_browser_kind(
         DialogueScene.AUTH_WAIT, "reached", 1, method="token_list"
     )
-    assert nxt2 == DialogueScene.ASK_EXPIRY
+    assert nxt2 == DialogueScene.ASK_SCOPE
 
     nxt3 = advance_from_browser_kind(
-        DialogueScene.ASK_EXPIRY, "reached", 2, method=""
+        DialogueScene.ASK_SCOPE, "reached", 2, method=""
     )
     assert nxt3 is None  # chips gate further progress
+
+    nxt4 = advance_from_browser_kind(
+        DialogueScene.ASK_EXPIRY, "reached", 2, method=""
+    )
+    assert nxt4 is None
 
 
 def test_advance_bounce_back_when_auth_incomplete() -> None:

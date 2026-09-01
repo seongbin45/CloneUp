@@ -1230,21 +1230,26 @@ class ExternalBrowserPatGuide(QDialog):
 
     # --- chip / history handlers ---
     def _on_history_change(self, target: DialogueScene) -> None:
+        if target == DialogueScene.ASK_SCOPE:
+            # Re-picking scopes reloads URL — clear expiry (it will reset).
+            self._expires_at = None
+            self._expiry_label = None
+            self._expiry_hint = None
+            self._last_expiry_days_read = None
+            self._expiry_uia_ok = False
+            self._expiry_uia_tries = 0
+            self._expiry_scanning = False
         if target == DialogueScene.ASK_EXPIRY:
-            self._scope_label = None
             self._expires_at = None
             self._expiry_hint = None
             self._last_expiry_days_read = None
             self._expiry_uia_ok = False
             self._expiry_uia_tries = 0
-            # Keep token page open; user re-picks Expiration in the browser.
-        if target == DialogueScene.ASK_SCOPE:
-            self._expiry_uia_ok = False
-            self._expiry_uia_tries = 0
+            self._expiry_scanning = True
         self._set_scene(target)
 
     def _on_expiry_confirm(self) -> None:
-        """User confirmed the detected Expiration — OCR/UIA then advance."""
+        """User confirmed the detected Expiration — then Generate."""
         if self._apply_expiry_from_browser(force_advance=True):
             return
         if self._expires_at and self._last_expiry_days_read:
@@ -1258,7 +1263,7 @@ class ExternalBrowserPatGuide(QDialog):
                 f"[Path B] 만료 확인(감지값 사용): {self._last_expiry_days_read} "
                 f"→ {label} → {self._expires_at}"
             )
-            self._set_scene(DialogueScene.ASK_SCOPE)
+            self._set_scene(DialogueScene.PRESS_GENERATE)
             return
         self._sub.setText(
             "아직 만료일을 못 읽었어요. 브라우저에서 Expiration을 고른 뒤 "
@@ -1316,7 +1321,7 @@ class ExternalBrowserPatGuide(QDialog):
                 )
         if advance:
             self._guide_log(f"[Path B] 만료 확정·저장: {got} → {expires}")
-            self._set_scene(DialogueScene.ASK_SCOPE)
+            self._set_scene(DialogueScene.PRESS_GENERATE)
             return True
         return False
 
@@ -1372,14 +1377,20 @@ class ExternalBrowserPatGuide(QDialog):
         self._rebuild_chips()
 
     def _on_scope_confirm(self) -> None:
-        """User confirmed scopes in the browser — go to Generate (no auto-click)."""
+        """User confirmed scopes — then Expiration (URL reload resets expiry)."""
         if not self._scope_label:
             self._scope_label = "저장소만"
         self._guide_log(f"[Path B] 권한 확인: {self._scope_label}")
-        if not self._token_nav_opened:
-            self._open_token_create_page()
-        self._set_scene(DialogueScene.PRESS_GENERATE)
-        # Do NOT auto-set Expiration or click Generate — user does both.
+        # Ensure create URL matches chosen scopes (reloads form → fresh Expiration).
+        self._open_token_create_page()
+        # Clear any prior expiry read — page just reloaded.
+        self._expires_at = None
+        self._expiry_label = None
+        self._expiry_hint = None
+        self._last_expiry_days_read = None
+        self._expiry_uia_ok = False
+        self._expiry_scanning = True
+        self._set_scene(DialogueScene.ASK_EXPIRY)
 
     def _open_token_create_page(self) -> None:
         """Open classic tokens/new with Note (+ optional scopes query prefill)."""
@@ -1723,7 +1734,11 @@ class ExternalBrowserPatGuide(QDialog):
                         "브라우저에서 로그인해 주세요."
                     )
                 return
-            if self._scene == DialogueScene.ASK_EXPIRY and self._token_nav_opened:
+            if (
+                self._scene
+                in (DialogueScene.ASK_SCOPE, DialogueScene.ASK_EXPIRY)
+                and self._token_nav_opened
+            ):
                 self._away_streak += 1
                 if self._away_streak >= 2:
                     self._away_streak = 0
@@ -1731,10 +1746,18 @@ class ExternalBrowserPatGuide(QDialog):
                         f"[Path B] 키 만들기 탭 미검출({kind}) → 페이지 재오픈"
                     )
                     self._open_token_create_page()
-                    self._sub.setText(
-                        "키 만들기 페이지를 다시 열었어요. "
-                        "브라우저에서 Expiration을 골라 주세요."
-                    )
+                    if self._scene == DialogueScene.ASK_SCOPE:
+                        self._sub.setText(
+                            "키 만들기 페이지를 다시 열었어요. "
+                            "Select scopes를 확인해 주세요."
+                        )
+                    else:
+                        self._expiry_scanning = True
+                        self._sub.setText(
+                            "키 만들기 페이지를 다시 열었어요. "
+                            "브라우저에서 Expiration을 골라 주세요."
+                        )
+                        self._refresh_expiry_readout()
                 return
         self._away_streak = 0
 
@@ -1809,7 +1832,7 @@ class ExternalBrowserPatGuide(QDialog):
             if method in ("passkey", "github_2fa", "apple", "google"):
                 self._auth_method = method
             # Do NOT open tokens/new here — unfinished email/passkey bounces back.
-            if self._token_nav_opened or int(prev) >= int(DialogueScene.ASK_EXPIRY):
+            if self._token_nav_opened or int(prev) >= int(DialogueScene.ASK_SCOPE):
                 self._token_nav_opened = False
                 self._expiry_label = None
                 self._expiry_hint = None
@@ -1829,21 +1852,30 @@ class ExternalBrowserPatGuide(QDialog):
             except Exception:
                 pass
 
-        if nxt == DialogueScene.ASK_EXPIRY:
+        if nxt == DialogueScene.ASK_SCOPE:
             self._logged_in = True
             self._auth_done = True
             self._google_blocked = False
             self._login_rescue_done = False
-            self._expiry_scanning = True  # first OCR — show spinner in green box
-            # Only open classic create page after auth is done.
+            # Open tokens/new here (scopes). Expiration comes after confirm.
             if not self._token_nav_opened:
                 self._guide_log(
-                    "[Path B] 인증 완료 → 키 만들기 페이지 오픈"
+                    "[Path B] 인증 완료 → 키 만들기 페이지 오픈 (권한 먼저)"
                 )
                 try:
                     self._open_token_create_page()
                 except Exception as e:
                     self._guide_log(f"[Path B] 키 만들기 페이지 오픈 실패: {e}")
+            try:
+                self.raise_()
+            except Exception:
+                pass
+
+        if nxt == DialogueScene.ASK_EXPIRY:
+            self._logged_in = True
+            self._auth_done = True
+            self._google_blocked = False
+            self._expiry_scanning = True  # OCR after scope URL is stable
             try:
                 self.raise_()
             except Exception:

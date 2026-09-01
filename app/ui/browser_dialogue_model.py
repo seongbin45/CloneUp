@@ -14,8 +14,9 @@ from app.auth.token_expiry import parse_expires_label
 class DialogueScene(IntEnum):
     LOGIN_WAIT = 0
     AUTH_WAIT = 1
-    ASK_EXPIRY = 2
-    ASK_SCOPE = 3
+    # Scope before expiry: changing ?scopes= reloads the form and resets Expiration.
+    ASK_SCOPE = 2
+    ASK_EXPIRY = 3
     PRESS_GENERATE = 4
     DONE = 5
 
@@ -182,6 +183,17 @@ def scene_copy(
         )
     if scene == DialogueScene.AUTH_WAIT:
         return _auth_wait_copy(auth_method)
+    if scene == DialogueScene.ASK_SCOPE:
+        return SceneCopy(
+            right_tag="3 / 4",
+            say="권한 체크를 확인해 주세요",
+            sub=(
+                "Select scopes에서 저장소(repo)가 켜져 있는지 보세요. "
+                "워크플로 파일이 있으면 workflow도 함께 체크하세요. "
+                "권한을 바꾼 뒤에는 페이지가 다시 열리므로, 만료일은 그다음에 고릅니다."
+            ),
+            foot_note="확인 후 「확인했어요」를 눌러 주세요",
+        )
     if scene == DialogueScene.ASK_EXPIRY:
         return SceneCopy(
             right_tag="3 / 4",
@@ -191,16 +203,6 @@ def scene_copy(
                 "아래에 감지된 만료일이 초록 테두리로 표시됩니다."
             ),
             foot_note="맞으면 「골랐어요」를 눌러 주세요",
-        )
-    if scene == DialogueScene.ASK_SCOPE:
-        return SceneCopy(
-            right_tag="3 / 4",
-            say="권한 체크를 확인해 주세요",
-            sub=(
-                "Select scopes에서 저장소(repo)가 켜져 있는지 보세요. "
-                "워크플로 파일이 있으면 workflow도 함께 체크하세요."
-            ),
-            foot_note="확인 후 「확인했어요」를 눌러 주세요",
         )
     if scene == DialogueScene.PRESS_GENERATE:
         exp = expiry_label or "직접 선택"
@@ -240,22 +242,22 @@ def build_history(
     rows: list[HistoryRow] = []
     if logged_in or auth_done or int(scene) >= int(DialogueScene.AUTH_WAIT):
         rows.append(HistoryRow("로그인했어요", editable=False))
-    if auth_done or int(scene) >= int(DialogueScene.ASK_EXPIRY):
+    if auth_done or int(scene) >= int(DialogueScene.ASK_SCOPE):
         rows.append(HistoryRow("이메일·패스키 인증했어요", editable=False))
-    if expiry_label and int(scene) >= int(DialogueScene.ASK_SCOPE):
-        rows.append(
-            HistoryRow(
-                f"만료 {expiry_label}",
-                editable=True,
-                back_to=DialogueScene.ASK_EXPIRY,
-            )
-        )
-    if scope_label and int(scene) >= int(DialogueScene.PRESS_GENERATE):
+    if scope_label and int(scene) >= int(DialogueScene.ASK_EXPIRY):
         rows.append(
             HistoryRow(
                 f"권한 {scope_label}",
                 editable=True,
                 back_to=DialogueScene.ASK_SCOPE,
+            )
+        )
+    if expiry_label and int(scene) >= int(DialogueScene.PRESS_GENERATE):
+        rows.append(
+            HistoryRow(
+                f"만료 {expiry_label}",
+                editable=True,
+                back_to=DialogueScene.ASK_EXPIRY,
             )
         )
     if got_token or scene == DialogueScene.DONE:
@@ -273,12 +275,13 @@ def advance_from_browser_kind(
     """
     Map classify_browser_sample → next scene, or None if no change.
 
-    Auth (email / passkey / 2FA) is a hard gate before ASK_EXPIRY.
+    Auth (email / passkey / 2FA) is a hard gate before ASK_SCOPE.
+    Scope comes before expiry because ``?scopes=`` URL reload resets Expiration.
     If the browser falls back to login or 2FA while on a later scene,
     bounce to AUTH_WAIT / LOGIN_WAIT so we do not keep a dead token page.
     """
     m = (method or "").strip()
-    past_key_steps = int(scene) >= int(DialogueScene.ASK_EXPIRY)
+    past_key_steps = int(scene) >= int(DialogueScene.ASK_SCOPE)
 
     if kind in ("logged_out",) or m in ("github_logout", "github_logged_out"):
         return DialogueScene.LOGIN_WAIT
@@ -304,10 +307,10 @@ def advance_from_browser_kind(
             return DialogueScene.AUTH_WAIT
         return None
 
-    # Fully past auth: home / token pages. Only then leave AUTH / LOGIN.
+    # Fully past auth: home / token pages → scope first (then expiry).
     if kind == "reached" and idx is not None and idx >= 1:
         if scene in (DialogueScene.LOGIN_WAIT, DialogueScene.AUTH_WAIT):
-            return DialogueScene.ASK_EXPIRY
+            return DialogueScene.ASK_SCOPE
         return None
 
     return None
