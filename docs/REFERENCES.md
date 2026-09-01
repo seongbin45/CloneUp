@@ -74,8 +74,8 @@
 
 | 관찰 | 내용 |
 |------|------|
-| 버전 표기 편차 | `CLONEUP_SECURITY_REVIEW.md`는 **v0.1.2** 기준 스냅샷(외부 리뷰), 이후 `SECURITY_CROSS_VERIFY.md`(2026-08-07 보안 재검증)가 최신을 맡음. 현재 버전은 **0.1.8** — 보안 문서를 볼 땐 `SECURITY_CROSS_VERIFY.md`를 최신으로 우선 참고하고, `CLONEUP_SECURITY_REVIEW.md`는 "최초 외부 리뷰 원문(0.1.2 시점)"으로 읽을 것. |
-| RELEASE 노트 | `RELEASE_0.1.1.md` ~ `RELEASE_0.1.8.md` 순서대로 존재, `VERSION` · `installer/CloneUp.iss` · `app/__init__.py` 와 일치. 다음 배포 시 새 `RELEASE_0.1.x.md` + 위 버전 필드 동시 갱신. |
+| 버전 표기 편차 | `CLONEUP_SECURITY_REVIEW.md`는 **v0.1.2** 기준 스냅샷(외부 리뷰), 이후 `SECURITY_CROSS_VERIFY.md`(2026-08-07 보안 재검증)가 최신을 맡음. 현재 버전은 **0.1.9** — 보안 문서를 볼 땐 `SECURITY_CROSS_VERIFY.md`를 최신으로 우선 참고하고, `CLONEUP_SECURITY_REVIEW.md`는 "최초 외부 리뷰 원문(0.1.2 시점)"으로 읽을 것. |
+| RELEASE 노트 | `RELEASE_0.1.1.md` ~ `RELEASE_0.1.9.md` 순서대로 존재, `VERSION` · `installer/CloneUp.iss` · `app/__init__.py` 와 일치. 다음 배포 시 새 `RELEASE_0.1.x.md` + 위 버전 필드 동시 갱신. |
 | 구조 | 폴더별 README.md(`app/*/README.md`, `ui/`, `assets/`, `scripts/`, `installer/`, `desin/`)가 이미 일관되게 존재 — 새 폴더를 추가할 때도 이 패턴(무엇 하는 곳/언제 만지나/다음 참고)을 따르면 됨. |
 
 별도의 대규모 재정리는 필요 없어 보인다 (중복·죽은 링크 없음).
