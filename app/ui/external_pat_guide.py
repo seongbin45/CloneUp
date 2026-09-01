@@ -580,6 +580,12 @@ def _dialogue_qss() -> str:
         font-size: 12px;
         color: {p.text_muted};
     }}
+    QLabel#dlgExpiryReadSpin {{
+        font-size: 11px;
+        font-weight: 600;
+        color: {p.primary};
+        min-width: 28px;
+    }}
     QFrame#dlgWait {{
         background: {p.bg_muted}; border: none; border-radius: 12px;
     }}
@@ -669,6 +675,11 @@ class ExternalBrowserPatGuide(QDialog):
         self._last_expiry_days_read: str | None = None  # last UIA/OCR days token
         self._expiry_miss_log_at = 0.0  # throttle "미감지" logs
         self._expiry_poll_i = 0  # ASK_EXPIRY: occasional address bounce check
+        self._expiry_scanning = False  # spinner while OCR re-reads
+        self._expiry_scan_gen = 0  # cancel delayed spinner if result is fast
+        self._expiry_read_spin: QLabel | None = None
+        self._expiry_read_value: QLabel | None = None
+        self._expiry_confirm_btn: QPushButton | None = None
 
 
         # Tee Path B UIA helpers into main textLog while this guide is alive.
@@ -971,6 +982,9 @@ class ExternalBrowserPatGuide(QDialog):
             self._wait_text.setText(sc.wait_text)
             if not self._dot_timer.isActive():
                 self._dot_timer.start()
+        elif self._expiry_scanning:
+            if not self._dot_timer.isActive():
+                self._dot_timer.start()
         else:
             self._dot_timer.stop()
 
@@ -1045,41 +1059,11 @@ class ExternalBrowserPatGuide(QDialog):
                 w.setParent(None)
                 w.deleteLater()
         if self._scene == DialogueScene.ASK_EXPIRY:
-            # Green-bordered box (same visual language as dlgChipRec) + one confirm.
-            card = QFrame()
-            card.setObjectName("dlgExpiryRead")
-            card.setMinimumHeight(52)
-            card.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-            )
-            cl = QVBoxLayout(card)
-            cl.setContentsMargins(16, 12, 16, 12)
-            cl.setSpacing(4)
-            detected = (self._expiry_label or "").strip()
-            if detected:
-                val = QLabel(detected)
-                val.setObjectName("dlgExpiryReadValue")
-                val.setWordWrap(True)
-                cl.addWidget(val)
-            else:
-                hint = QLabel("만료일을 읽는 중…")
-                hint.setObjectName("dlgExpiryReadHint")
-                hint.setWordWrap(True)
-                cl.addWidget(hint)
-            self._chips_lay.addWidget(card)
-            confirm = QPushButton("골랐어요")
-            confirm.setObjectName("dlgPrimary")
-            confirm.setCursor(Qt.CursorShape.PointingHandCursor)
-            confirm.setMinimumHeight(46)
-            confirm.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-            )
-            confirm.setEnabled(bool(self._expires_at or self._expiry_label))
-            confirm.clicked.connect(self._on_expiry_confirm)
-            self._chips_lay.addWidget(confirm)
-            self._chips_host.show()
-            self._chips_host.raise_()
+            self._build_expiry_readout()
             return
+        self._expiry_read_spin = None
+        self._expiry_read_value = None
+        self._expiry_confirm_btn = None
         if self._scene == DialogueScene.ASK_SCOPE:
             opts = SCOPE_OPTIONS
             selected = self._scope_label
@@ -1119,6 +1103,93 @@ class ExternalBrowserPatGuide(QDialog):
         self._chips_host.show()
         self._chips_host.raise_()
 
+    def _build_expiry_readout(self) -> None:
+        """Green box + optional spinner + single 「골랐어요」."""
+        card = QFrame()
+        card.setObjectName("dlgExpiryRead")
+        card.setMinimumHeight(52)
+        card.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        row = QHBoxLayout(card)
+        row.setContentsMargins(16, 12, 16, 12)
+        row.setSpacing(10)
+        spin = QLabel("●○○")
+        spin.setObjectName("dlgExpiryReadSpin")
+        spin.setAlignment(
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        )
+        val = QLabel("")
+        val.setWordWrap(True)
+        row.addWidget(spin, 0)
+        row.addWidget(val, 1)
+        self._expiry_read_spin = spin
+        self._expiry_read_value = val
+        self._chips_lay.addWidget(card)
+        confirm = QPushButton("골랐어요")
+        confirm.setObjectName("dlgPrimary")
+        confirm.setCursor(Qt.CursorShape.PointingHandCursor)
+        confirm.setMinimumHeight(46)
+        confirm.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        confirm.clicked.connect(self._on_expiry_confirm)
+        self._expiry_confirm_btn = confirm
+        self._chips_lay.addWidget(confirm)
+        self._chips_host.show()
+        self._chips_host.raise_()
+        self._refresh_expiry_readout()
+
+    def _refresh_expiry_readout(self) -> None:
+        """Update green-box text/spinner without rebuilding the whole card."""
+        spin = self._expiry_read_spin
+        val = self._expiry_read_value
+        btn = self._expiry_confirm_btn
+        if spin is None or val is None:
+            return
+        detected = (self._expiry_label or "").strip()
+        if self._expiry_scanning:
+            spin.show()
+            if detected:
+                val.setObjectName("dlgExpiryReadHint")
+                val.setText(f"{detected}  ·  새 만료일 확인 중…")
+            else:
+                val.setObjectName("dlgExpiryReadHint")
+                val.setText("만료일을 읽는 중…")
+            if not self._dot_timer.isActive():
+                self._dot_timer.start()
+        else:
+            spin.hide()
+            if detected:
+                val.setObjectName("dlgExpiryReadValue")
+                val.setText(detected)
+            else:
+                val.setObjectName("dlgExpiryReadHint")
+                val.setText("만료일을 읽는 중…")
+            # Stop dots if login/auth wait is not also active.
+            if self._scene not in (
+                DialogueScene.LOGIN_WAIT,
+                DialogueScene.AUTH_WAIT,
+            ):
+                self._dot_timer.stop()
+        # Force style refresh after objectName change
+        val.style().unpolish(val)
+        val.style().polish(val)
+        if btn is not None:
+            btn.setEnabled(bool(self._expires_at or self._expiry_label))
+
+    def _show_expiry_spinner_if_pending(self, gen: int) -> None:
+        """Show spinner only if OCR is still running (avoids flash on fast hits)."""
+        if gen != self._expiry_scan_gen:
+            return
+        if self._done or not self._addr_poll_busy:
+            return
+        if self._scene != DialogueScene.ASK_EXPIRY:
+            return
+        if not self._expiry_scanning:
+            self._expiry_scanning = True
+            self._refresh_expiry_readout()
+
     def _rebuild_receipt(self) -> None:
         while self._done_lay.count():
             item = self._done_lay.takeAt(0)
@@ -1153,6 +1224,9 @@ class ExternalBrowserPatGuide(QDialog):
         self._wait_dot_i = (self._wait_dot_i + 1) % 3
         dots = ["●○○", "○●○", "○○●"][self._wait_dot_i]
         self._wait_dots.setText(dots)
+        spin = self._expiry_read_spin
+        if spin is not None and self._expiry_scanning and spin.isVisible():
+            spin.setText(dots)
 
     # --- chip / history handlers ---
     def _on_history_change(self, target: DialogueScene) -> None:
@@ -1228,8 +1302,8 @@ class ExternalBrowserPatGuide(QDialog):
                 + (f" ({short})" if short else "")
             )
             if self._scene == DialogueScene.ASK_EXPIRY and not advance:
-                # Refresh say/sub (detected label) + enable 「골랐어요」.
-                self._render()
+                # Update green box in place (no full rebuild — keeps spinner smooth).
+                self._refresh_expiry_readout()
                 self.adjustSize()
             else:
                 self._sub.setText(
@@ -1550,6 +1624,14 @@ class ExternalBrowserPatGuide(QDialog):
             # Most ticks: OCR only. Every 3rd: also UIA sample for login bounce.
             sample_address = (self._expiry_poll_i % 3) == 0
             read_expiry = True
+            # If a value is already shown, arm a delayed spinner so slow OCR
+            # re-reads don't feel like a hard cut when the user changes Expiration.
+            if self._expiry_label:
+                self._expiry_scan_gen += 1
+                gen = self._expiry_scan_gen
+                QTimer.singleShot(
+                    180, lambda g=gen: self._show_expiry_spinner_if_pending(g)
+                )
         else:
             sample_address = True
             read_expiry = False
@@ -1565,7 +1647,10 @@ class ExternalBrowserPatGuide(QDialog):
     def _on_address_sample(self, payload: object) -> None:
         self._addr_poll_busy = False
         self._addr_worker = None
+        # Cancel pending spinner; clear scanning after we apply the result.
+        self._expiry_scan_gen += 1
         if self._done:
+            self._expiry_scanning = False
             return
         try:
             sample = payload
@@ -1578,6 +1663,7 @@ class ExternalBrowserPatGuide(QDialog):
             # Apply Expiration detection before scene classify so ASK_EXPIRY
             # can store/reflect even when the tab sample is briefly away.
             if self._scene == DialogueScene.ASK_EXPIRY and self._token_nav_opened:
+                self._expiry_scanning = False
                 if expiry_days:
                     # Reflect only — user confirms with 「골랐어요」.
                     self._store_expiry_detection(
@@ -1586,9 +1672,10 @@ class ExternalBrowserPatGuide(QDialog):
                         source="poll",
                         advance=False,
                     )
+                    self._refresh_expiry_readout()
                 elif expiry_detail:
+                    self._refresh_expiry_readout()
                     # Cross-check visibility: leave a trail when read fails.
-                    # Closed GitHub menu often exposes Name=\"Expiration\" only.
                     import time as _time
 
                     now = _time.monotonic()
@@ -1599,8 +1686,7 @@ class ExternalBrowserPatGuide(QDialog):
                         )
                         self._sub.setText(
                             "만료일을 아직 못 읽었어요. "
-                            "키 만들기 창이 보이도록 두거나, "
-                            "아래 추천을 고른 뒤 「골랐어요」를 눌러 주세요."
+                            "키 만들기 창이 보이도록 둔 뒤 잠시 기다려 주세요."
                         )
             self._poll_address_inner(sample)
         except Exception as e:
@@ -1748,6 +1834,7 @@ class ExternalBrowserPatGuide(QDialog):
             self._auth_done = True
             self._google_blocked = False
             self._login_rescue_done = False
+            self._expiry_scanning = True  # first OCR — show spinner in green box
             # Only open classic create page after auth is done.
             if not self._token_nav_opened:
                 self._guide_log(
