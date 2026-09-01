@@ -77,6 +77,8 @@ from app.ui.settings_store import (
     USER_GLOSSARY_TERM_MAX,
     add_user_glossary_entry,
     clear_recent_folders,
+    load_boot_autostart_enabled,
+    load_boot_notify_enabled,
     load_hide_real_email,
     load_history_revert_enabled,
     load_last_commit_message,
@@ -87,6 +89,9 @@ from app.ui.settings_store import (
     load_secret_pii_scan_enabled,
     load_user_glossary,
     remove_user_glossary_entry,
+    save_boot_autostart_enabled,
+    save_boot_notify_enabled,
+    save_boot_notify_snooze_until,
     save_hide_real_email,
     save_history_revert_enabled,
     save_last_commit_message,
@@ -94,6 +99,7 @@ from app.ui.settings_store import (
     save_last_publish_branch,
     save_secret_pii_scan_enabled,
 )
+from app.util.autostart_win import set_autostart_registered
 from app.ui.git_terms_ko import GLOSSARY_ENTRIES
 from app.ui.theme import Palette, active_palette
 
@@ -637,6 +643,34 @@ class SettingsDialog(QDialog):
                     "올리기·동기화 전에 비밀번호·키가 들어 있을 만한 파일 이름과 "
                     "개인정보 후보를 찾아 알려드립니다. "
                     "끄려면 경고 창에서 안내 문구를 그대로 입력해야 합니다."
+                ),
+            )
+        )
+
+        # --- boot notify (시안: CloneUp 시작 알림) ---
+        self._boot_notify_on = load_boot_notify_enabled()
+        self._boot_autostart_on = load_boot_autostart_enabled()
+        self._sw_boot_notify = _ToggleSwitch(checked=self._boot_notify_on)
+        self._sw_boot_notify.toggled.connect(self._on_boot_notify_toggled)
+        lay.addWidget(
+            self._safety_toggle_card(
+                switch=self._sw_boot_notify,
+                title="켤 때 안 올린 수정 확인",
+                body=(
+                    "컴퓨터에 로그인한 뒤, 최근 폴더에 GitHub로 안 보낸 변경이 있으면 "
+                    "작은 알림으로 물어봅니다. 알림에서 올려도 비밀 파일 점검은 그대로입니다."
+                ),
+            )
+        )
+        self._sw_boot_autostart = _ToggleSwitch(checked=self._boot_autostart_on)
+        self._sw_boot_autostart.toggled.connect(self._on_boot_autostart_toggled)
+        lay.addWidget(
+            self._safety_toggle_card(
+                switch=self._sw_boot_autostart,
+                title="Windows 시작 시 트레이에서 대기",
+                body=(
+                    "로그온할 때 클론업을 트레이에만 띄워 위 알림을 확인할 수 있게 합니다. "
+                    "끄면 시작 프로그램에서 빼 둡니다."
                 ),
             )
         )
@@ -1429,6 +1463,29 @@ class SettingsDialog(QDialog):
         self._history_revert = bool(checked)
         save_history_revert_enabled(self._history_revert)
         self._notify_prefs("history_revert")
+
+    @Slot(bool)
+    def _on_boot_notify_toggled(self, checked: bool) -> None:
+        self._boot_notify_on = bool(checked)
+        save_boot_notify_enabled(self._boot_notify_on)
+        if self._boot_notify_on:
+            # Clearing snooze when user turns notify back on.
+            save_boot_notify_snooze_until(None)
+        self._notify_prefs("boot_notify")
+
+    @Slot(bool)
+    def _on_boot_autostart_toggled(self, checked: bool) -> None:
+        self._boot_autostart_on = bool(checked)
+        save_boot_autostart_enabled(self._boot_autostart_on)
+        ok = set_autostart_registered(self._boot_autostart_on)
+        if not ok and self._boot_autostart_on:
+            QMessageBox.warning(
+                self,
+                "시작 프로그램",
+                "Windows 시작 항목을 등록하지 못했습니다.\n"
+                "직접 시작 폴더에 바로가기를 넣을 수 있습니다.",
+            )
+        self._notify_prefs("boot_autostart")
 
     # ----- folders -----
     def _refresh_folders(self) -> None:

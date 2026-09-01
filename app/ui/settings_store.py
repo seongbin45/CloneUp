@@ -79,6 +79,53 @@ def save_last_github_login(login: str) -> None:
         _settings().setValue("last_github_login", login.strip())
 
 
+# --- Boot / tray: unpushed-changes notify ---------------------------------
+
+
+def load_boot_notify_enabled() -> bool:
+    """Default True: check recent folders after logon (tray)."""
+    return bool(_settings().value("boot_notify_enabled", True, type=bool))
+
+
+def save_boot_notify_enabled(enabled: bool) -> None:
+    _settings().setValue("boot_notify_enabled", bool(enabled))
+
+
+def load_boot_notify_snooze_until() -> str | None:
+    """ISO date ``YYYY-MM-DD`` until which boot notify is quiet, or None."""
+    val = _settings().value("boot_notify_snooze_until", "")
+    s = str(val).strip() if val else ""
+    return s or None
+
+
+def save_boot_notify_snooze_until(day: str | None) -> None:
+    if day and str(day).strip():
+        _settings().setValue("boot_notify_snooze_until", str(day).strip())
+    else:
+        _settings().remove("boot_notify_snooze_until")
+
+
+def load_boot_notify_last_ask_day() -> str | None:
+    """Global last ask day ``YYYY-MM-DD`` (at most once per calendar day)."""
+    val = _settings().value("boot_notify_last_ask_day", "")
+    s = str(val).strip() if val else ""
+    return s or None
+
+
+def save_boot_notify_last_ask_day(day: str) -> None:
+    if day.strip():
+        _settings().setValue("boot_notify_last_ask_day", day.strip())
+
+
+def load_boot_autostart_enabled() -> bool:
+    """Whether user wants CloneUp --tray in Windows startup."""
+    return bool(_settings().value("boot_autostart_enabled", True, type=bool))
+
+
+def save_boot_autostart_enabled(enabled: bool) -> None:
+    _settings().setValue("boot_autostart_enabled", bool(enabled))
+
+
 def load_hide_real_email() -> bool:
     """Default True: beginner-safe hide school/work email in commits."""
     return bool(_settings().value("hide_real_email", True, type=bool))
