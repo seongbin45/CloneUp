@@ -162,6 +162,61 @@ def guard_choice_client_size(
     return cw, ch
 
 
+def choice_size_near(
+    actual_w: int,
+    actual_h: int,
+    target_w: int,
+    target_h: int,
+    *,
+    tol: int = 16,
+) -> bool:
+    """True when actual client size is close enough to the target.
+
+    On Windows + high DPI, ``setGeometry``/``resize`` often lands a few (or
+    tens of) logical pixels off the requested size. Exact equality checks in
+    ``resizeEvent`` then fight the platform forever → white / Not Responding.
+    """
+    try:
+        aw, ah = int(actual_w), int(actual_h)
+        tw, th = int(target_w), int(target_h)
+        t = max(0, int(tol))
+    except (TypeError, ValueError):
+        return False
+    return abs(aw - tw) <= t and abs(ah - th) <= t
+
+
+def accept_choice_client_size(
+    requested_w: int,
+    requested_h: int,
+    actual_w: int,
+    actual_h: int,
+    *,
+    tol: int = 16,
+    max_extra_w: int = 80,
+    max_extra_h: int = 120,
+) -> tuple[int, int]:
+    """Prefer the platform-applied size when it differs beyond ``tol``.
+
+    Stops clamp loops: if Windows refuses 500×527 and yields 500×593, keep
+    500×593 as the locked choice size instead of resizing forever.
+
+    Caps runaway actual sizes (e.g. maximize flicker) so the choice shell
+    cannot lock a near-fullscreen geometry.
+    """
+    try:
+        rw, rh = int(requested_w), int(requested_h)
+        aw, ah = int(actual_w), int(actual_h)
+    except (TypeError, ValueError):
+        return int(requested_w), int(requested_h)
+    if aw <= 0 or ah <= 0:
+        return rw, rh
+    if choice_size_near(aw, ah, rw, rh, tol=tol):
+        return rw, rh
+    aw = max(320, min(aw, rw + max(0, int(max_extra_w))))
+    ah = max(280, min(ah, rh + max(0, int(max_extra_h))))
+    return aw, ah
+
+
 def compute_choice_dialog_size(
     avail_w: int,
     avail_h: int,

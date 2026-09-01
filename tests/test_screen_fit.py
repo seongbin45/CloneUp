@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from app.util.screen_fit import (
+    accept_choice_client_size,
     center_client_in_available,
+    choice_size_near,
     clear_size_locks,
     compute_choice_dialog_size,
     guard_choice_client_size,
@@ -27,6 +29,22 @@ def test_guard_choice_client_size_rejects_strip() -> None:
     w, h = guard_choice_client_size(320, 600)
     assert w >= 450
     assert w / h >= 0.75
+
+
+def test_choice_size_near_tolerance() -> None:
+    assert choice_size_near(500, 527, 500, 527)
+    assert choice_size_near(500, 535, 500, 527, tol=16)
+    assert not choice_size_near(500, 593, 500, 527, tol=16)
+
+
+def test_accept_choice_client_size_stops_dpi_fight() -> None:
+    """Windows dpr=2 often yields taller client than requested — accept it."""
+    assert accept_choice_client_size(500, 527, 500, 530) == (500, 527)
+    assert accept_choice_client_size(500, 527, 500, 593) == (500, 593)
+    # Runaway maximize-sized actual must not lock fullscreen choice shell
+    w, h = accept_choice_client_size(500, 527, 1440, 852)
+    assert w <= 500 + 80
+    assert h <= 527 + 120
 
 
 def test_absurd_chrome_plus_center_does_not_lock_strip() -> None:
