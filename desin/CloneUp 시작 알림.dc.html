@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #cfd3d8; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 32px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; overflow-x: auto;">
+
+  <div style="width: 1080px; flex-shrink: 0; margin-inline: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+    <div style="font-size: 12px; color: #4a4f57;">화면</div>
+    <div style="display: flex; gap: 6px;">
+      <sc-for list="{{ picker }}" as="p" hint-placeholder-count="4">
+        <div onClick="{{ p.go }}" style="padding: 7px 12px; border-radius: 5px; cursor: pointer; font-size: 12.5px; border: 1px solid {{ p.border }}; background: {{ p.bg }}; color: {{ p.fg }}; font-weight: {{ p.weight }};">{{ p.label }}</div>
+      </sc-for>
+    </div>
+    <div style="margin-left: auto; font-size: 11.5px; color: #4a4f57;">앱이 닫혀 있어도 뜨는 알림입니다</div>
+  </div>
+
+  <div style="width: 1080px; height: 600px; flex-shrink: 0; margin-inline: auto; box-sizing: border-box; position: relative; border-radius: 10px; overflow: hidden; background: linear-gradient(160deg, #2f3944 0%, #4a5560 100%); box-shadow: 0 18px 48px rgba(30,34,40,.28);">
+
+    <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: rgba(232,236,240,.92); display: flex; align-items: center; gap: 14px; padding: 0 14px;">
+      <div style="width: 22px; height: 22px; border-radius: 4px; background: #5a6472; flex-shrink: 0;"></div>
+      <div style="display: flex; gap: 8px;">
+        <div style="width: 26px; height: 22px; border-radius: 4px; background: #c3cad3;"></div>
+        <div style="width: 26px; height: 22px; border-radius: 4px; background: #c3cad3;"></div>
+        <div style="width: 26px; height: 22px; border-radius: 4px; background: #dfe4ea; border: 1px solid #b9c1cb; display: flex; align-items: center; justify-content: center;">
+          <img src="assets/icon-32.png" alt="클론업" style="width: 13px; height: 13px; display: block;">
+        </div>
+      </div>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 11.5px; color: #3c434c;">
+        <span>오전 9:14</span>
+        <span>2026-09-01</span>
+      </div>
+    </div>
+
+    <div style="position: absolute; right: 18px; bottom: 52px; width: {{ w.width }}; background: #fbfaf8; border: 1px solid #b9bdc4; border-radius: 10px; box-shadow: 0 14px 34px rgba(20,24,30,.34); overflow: hidden; display: flex; flex-direction: column;">
+
+      <div style="flex-shrink: 0; display: flex; align-items: center; gap: 9px; padding: 10px 13px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+        <img src="assets/icon-32.png" alt="클론업" style="width: 14px; height: 14px; display: block; flex-shrink: 0;">
+        <div style="font-size: 11.5px; font-weight: 600; color: #3d382f;">클론업</div>
+        <div style="font-size: 11.5px; color: #6d675c;">{{ w.stamp }}</div>
+        <div style="margin-left: auto; flex-shrink: 0; font-size: 14px; color: #6d675c; cursor: pointer;" style-hover="color: #3d382f;">✕</div>
+      </div>
+
+      <div style="padding: 15px 16px 16px; display: flex; flex-direction: column; gap: 13px;">
+
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="font-size: 15.5px; font-weight: 600; color: #232019; letter-spacing: -0.01em; line-height: 1.45; text-wrap: pretty;">{{ w.title }}</div>
+          <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6; text-wrap: pretty;">{{ w.lead }}</div>
+        </div>
+
+        <sc-if value="{{ w.showOne }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; background: #f2efe9; border-radius: 9px;">
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <span style="font-size: 12.5px; font-weight: 500; color: #232019; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">my-project</span>
+              <span style="margin-left: auto; flex-shrink: 0; font-size: 11.5px; color: #6d675c;">파일 3개</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <sc-for list="{{ files }}" as="f" hint-placeholder-count="3">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="width: 15px; height: 15px; flex-shrink: 0; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; color: #fbfaf8; background: {{ f.tone }};">{{ f.kind }}</span>
+                  <span style="font-size: 11.5px; color: #4a453b; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ f.path }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ w.showMany }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 7px;">
+            <sc-for list="{{ folders }}" as="d" hint-placeholder-count="3">
+              <div onClick="{{ d.toggle }}" style="display: flex; align-items: center; gap: 11px; padding: 11px 13px; border-radius: 9px; cursor: pointer; background: {{ d.bg }}; border: 1px solid {{ d.border }};" style-hover="background: #e9e5dd;">
+                <span style="width: 15px; height: 15px; flex-shrink: 0; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #fbfaf8; background: {{ d.boxBg }}; border: 1px solid {{ d.boxBorder }};">{{ d.check }}</span>
+                <span style="font-size: 12.5px; color: #232019; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ d.name }}</span>
+                <span style="margin-left: auto; flex-shrink: 0; font-size: 11.5px; color: #6d675c;">{{ d.count }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ w.showMsg }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <div style="font-size: 11.5px; color: #6d675c;">저장 메시지</div>
+            <div style="height: 34px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 7px; font-size: 12.5px; color: #2f2b24;">{{ w.msg }}</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ w.showWait }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #f2efe9; border-radius: 9px;">
+            <div style="display: flex; gap: 4px; flex-shrink: 0;">
+              <div style="width: 5px; height: 5px; border-radius: 50%; background: #1f6f5c;"></div>
+              <div style="width: 5px; height: 5px; border-radius: 50%; background: #a9c4bb;"></div>
+              <div style="width: 5px; height: 5px; border-radius: 50%; background: #cdd9d4;"></div>
+            </div>
+            <div style="font-size: 12.5px; color: #4a453b; line-height: 1.55;">{{ w.waitText }}</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ w.showDone }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 7px;">
+            <sc-for list="{{ receipt }}" as="r" hint-placeholder-count="2">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; background: #f2efe9; border-radius: 9px;">
+                <span style="font-size: 12px; color: #6d675c;">{{ r.key }}</span>
+                <span style="font-size: 12px; color: #232019; font-family: 'IBM Plex Mono', monospace;">{{ r.value }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <div style="display: flex; align-items: center; gap: 9px; padding-top: 1px;">
+          <sc-for list="{{ w.buttons }}" as="b" hint-placeholder-count="2">
+            <div onClick="{{ b.act }}" style="height: 38px; padding: 0 16px; flex: {{ b.flex }}; display: flex; align-items: center; justify-content: center; border-radius: 9px; cursor: {{ b.cursor }}; font-size: 13px; font-weight: {{ b.weight }}; border: 1px solid {{ b.border }}; background: {{ b.bg }}; color: {{ b.fg }}; white-space: nowrap;">{{ b.label }}</div>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ w.showQuiet }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div onClick="{{ openQuiet }}" style="font-size: 11.5px; color: #6d675c; cursor: pointer;" style-hover="color: #3d382f;">이 알림 그만 받기</div>
+            <div style="margin-left: auto; font-size: 11.5px; color: #6d675c;">{{ w.foot }}</div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div style="width: 1080px; flex-shrink: 0; margin-inline: auto; box-sizing: border-box; padding: 15px 20px; background: #fbfaf8; border: 1px solid #b9bdc4; border-radius: 10px; display: flex; flex-direction: column; gap: 9px;">
+    <div style="font-size: 12.5px; font-weight: 600; color: #232019;">알림 규칙</div>
+    <div style="font-size: 12.5px; color: #4a453b; line-height: 1.7;">컴퓨터가 켜진 뒤 한 번만 확인합니다. 안 올린 변경이 없으면 아무것도 띄우지 않습니다. 무시하면 조용히 사라지고, 다음 부팅 때 다시 묻습니다. 같은 폴더로 하루에 두 번 이상 묻지 않습니다.</div>
+    <div style="font-size: 12.5px; color: #4a453b; line-height: 1.7;">알림에서 바로 올리더라도 <strong style="color: #232019;">비밀 파일 점검은 그대로 돕니다.</strong> 걸리면 올리지 않고 앱 창을 열어 보여줍니다. 알림이 안전장치를 건너뛰는 길이 되어서는 안 되기 때문입니다.</div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1160,&quot;height&quot;:860}}">
+class Component extends DCLogic {
+  state = { i: 0, picked: { "my-project": true, "codyssey": true, "portfolio-site": false } };
+
+  btn(label, kind, act, flex) {
+    const kinds = {
+      primary: { bg: "#1f6f5c", fg: "#fbfaf8", border: "#1f6f5c", weight: "600" },
+      normal: { bg: "#fff", fg: "#3d382f", border: "#b7b1a5", weight: "500" },
+      quiet: { bg: "#f2efe9", fg: "#4a453b", border: "#cdc8bf", weight: "400" },
+      off: { bg: "#f2efe9", fg: "#b3ac9e", border: "#ddd8d0", weight: "400" },
+    };
+    return {
+      label, ...kinds[kind], flex: flex || "0",
+      cursor: kind === "off" ? "default" : "pointer",
+      act: act || (() => {}),
+    };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const labels = ["한 폴더", "여러 폴더", "올리는 중", "그만 받기"];
+    const i = Math.max(0, Math.min(s.i, 3));
+    const go = (n) => () => this.setState({ i: n });
+
+    const names = [
+      { name: "my-project", count: "파일 3개" },
+      { name: "codyssey", count: "파일 1개" },
+      { name: "portfolio-site", count: "파일 8개" },
+    ];
+    const folders = names.map((d) => {
+      const on = !!s.picked[d.name];
+      return {
+        name: d.name, count: d.count, check: on ? "✓" : "",
+        bg: on ? "#fbfaf8" : "#f2efe9",
+        border: on ? "#1f6f5c" : "transparent",
+        boxBg: on ? "#1f6f5c" : "#fff",
+        boxBorder: on ? "#1f6f5c" : "#cdc8bf",
+        toggle: () => this.setState({ picked: { ...s.picked, [d.name]: !on } }),
+      };
+    });
+    const chosen = names.filter((d) => s.picked[d.name]).length;
+
+    const views = [
+      {
+        width: "382px",
+        stamp: "지금",
+        title: "안 올린 수정이 있어요",
+        lead: "my-project 폴더에 GitHub로 보내지 않은 변경이 있습니다. 지금 올릴까요?",
+        showOne: true, showMsg: true, msg: "Update",
+        buttons: [
+          this.btn("올리기", "primary", go(2), "1"),
+          this.btn("나중에", "normal", null, "0"),
+          this.btn("열어서 보기", "quiet", null, "0"),
+        ],
+        showQuiet: true, foot: "커밋하고 푸시합니다",
+      },
+      {
+        width: "382px",
+        stamp: "지금",
+        title: "세 폴더에 안 올린 수정이 있어요",
+        lead: "올릴 폴더를 골라 주세요. 고른 폴더만 커밋하고 푸시합니다.",
+        showMany: true, showMsg: true, msg: "Update",
+        buttons: [
+          this.btn(chosen > 0 ? chosen + "개 올리기" : "폴더를 골라 주세요", chosen > 0 ? "primary" : "off", chosen > 0 ? go(2) : null, "1"),
+          this.btn("나중에", "normal", null, "0"),
+        ],
+        showQuiet: true, foot: "메시지는 모두에 같이 씁니다",
+      },
+      {
+        width: "382px",
+        stamp: "방금",
+        title: "올리는 중입니다",
+        lead: "끝나면 알려드릴게요. 이 알림은 닫아도 됩니다.",
+        showWait: true,
+        waitText: "my-project · 커밋하고 GitHub로 보내는 중",
+        buttons: [
+          this.btn("앱에서 보기", "normal", null, "1"),
+          this.btn("닫기", "quiet", null, "0"),
+        ],
+        showQuiet: false, foot: "",
+      },
+      {
+        width: "382px",
+        stamp: "설정",
+        title: "이 알림을 어떻게 할까요?",
+        lead: "언제든 설정에서 다시 켤 수 있습니다.",
+        showDone: true,
+        buttons: [
+          this.btn("일주일 쉬기", "primary", go(0), "1"),
+          this.btn("아예 끄기", "normal", go(0), "0"),
+          this.btn("취소", "quiet", go(0), "0"),
+        ],
+        showQuiet: false, foot: "",
+      },
+    ];
+
+    const w = views[i];
+    return {
+      picker: labels.map((label, n) => ({
+        label,
+        bg: n === i ? "#fbfaf8" : "transparent",
+        fg: n === i ? "#1f6f5c" : "#3c434c",
+        border: n === i ? "#1f6f5c" : "#98a0aa",
+        weight: n === i ? "600" : "400",
+        go: go(n),
+      })),
+      w,
+      folders,
+      files: [
+        { kind: "M", path: "app/ui/main_window.py", tone: "#8a6d12" },
+        { kind: "M", path: "app/git/sync_ops.py", tone: "#8a6d12" },
+        { kind: "A", path: "app/ui/notify.py", tone: "#1f6f5c" },
+      ],
+      receipt: [
+        { key: "지금", value: "부팅할 때마다 확인" },
+        { key: "바꾸면", value: "설정 · 알림" },
+      ],
+      openQuiet: go(3),
+    };
+  }
+}
+</script>
+</body>
+</html>
