@@ -69,10 +69,11 @@ def kill_cloneup_processes(*, wait_sec: float = 30.0) -> bool:
 
     flags = _create_no_window_flags()
     try:
+        # text=False: Korean Windows taskkill messages are cp949 (same as tasklist).
         subprocess.run(
             ["taskkill", "/IM", CLONEUP_EXE_NAME, "/T", "/F"],
             capture_output=True,
-            text=True,
+            text=False,
             timeout=60,
             creationflags=flags,
             check=False,
