@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
 
 from app.ui.boot_notify import BootNotifyToast
 from app.ui.boot_scan import (
+    clear_boot_notify_asked,
     mark_boot_notify_asked,
     should_show_boot_toast,
     snooze_until_days,
@@ -16,6 +17,7 @@ from app.ui.icons import load_app_icon
 from app.ui.settings_store import (
     load_boot_notify_enabled,
     load_last_commit_message,
+    migrate_boot_notify_later_policy,
     save_boot_notify_enabled,
     save_boot_notify_snooze_until,
 )
@@ -101,6 +103,12 @@ class TrayController(QObject):
         self._tray.activated.connect(self._on_activated)
         self._tray.show()
 
+        # Old builds stamped last_ask on show; clear once so 「나중에」+reboot works.
+        try:
+            migrate_boot_notify_later_policy()
+        except Exception:
+            pass
+
         # Delay after logon so disks / VPN settle.
         QTimer.singleShot(8000, self.run_boot_scan)
 
@@ -116,13 +124,13 @@ class TrayController(QObject):
         pending = should_show_boot_toast()
         if not pending:
             return
-        mark_boot_notify_asked()
+        # Do not mark asked on show — 「나중에」 must allow same-day reboot re-ask.
         msg = load_last_commit_message() or "Update"
         if msg.strip() in ("첫 업로드", "Initial commit"):
             msg = "Update"
         toast = BootNotifyToast(pending, default_message=msg)
         toast.upload_requested.connect(self._on_upload)
-        toast.later_clicked.connect(lambda: None)
+        toast.later_clicked.connect(self._on_later)
         toast.open_app_requested.connect(self.request_open_main.emit)
         toast.snooze_week_requested.connect(self._on_snooze)
         toast.disable_requested.connect(self._on_disable)
@@ -134,14 +142,22 @@ class TrayController(QObject):
     def _clear_toast(self) -> None:
         self._toast = None
 
+    def _on_later(self) -> None:
+        # Explicitly clear any stamp so next boot / manual scan can ask again today.
+        clear_boot_notify_asked()
+
     def _on_snooze(self) -> None:
         save_boot_notify_snooze_until(snooze_until_days(7))
 
     def _on_disable(self) -> None:
         save_boot_notify_enabled(False)
+        mark_boot_notify_asked()
 
     def _on_upload(self, folders: list, message: str) -> None:
         from app.auth.session import AuthError, ensure_valid_token
+
+        # Consumed today's offer (even if auth/upload fails afterward).
+        mark_boot_notify_asked()
 
         try:
             token, user = ensure_valid_token()

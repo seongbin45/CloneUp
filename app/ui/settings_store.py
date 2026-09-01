@@ -106,15 +106,32 @@ def save_boot_notify_snooze_until(day: str | None) -> None:
 
 
 def load_boot_notify_last_ask_day() -> str | None:
-    """Global last ask day ``YYYY-MM-DD`` (at most once per calendar day)."""
+    """
+    Day the user already acted on a boot toast (upload / dismiss-for-today).
+
+    ``나중에`` does **not** set this — same-day reboot may ask again.
+    """
     val = _settings().value("boot_notify_last_ask_day", "")
     s = str(val).strip() if val else ""
     return s or None
 
 
-def save_boot_notify_last_ask_day(day: str) -> None:
-    if day.strip():
-        _settings().setValue("boot_notify_last_ask_day", day.strip())
+def save_boot_notify_last_ask_day(day: str | None) -> None:
+    if day and str(day).strip():
+        _settings().setValue("boot_notify_last_ask_day", str(day).strip())
+    else:
+        _settings().remove("boot_notify_last_ask_day")
+
+
+def migrate_boot_notify_later_policy() -> None:
+    """
+    One-shot: old builds stamped last_ask on toast *show*, blocking same-day
+    reboot after 「나중에». Clear that stamp once under policy v2.
+    """
+    if bool(_settings().value("boot_notify_later_policy_v2", False, type=bool)):
+        return
+    _settings().remove("boot_notify_last_ask_day")
+    _settings().setValue("boot_notify_later_policy_v2", True)
 
 
 def load_boot_autostart_enabled() -> bool:

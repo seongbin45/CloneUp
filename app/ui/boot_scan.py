@@ -61,7 +61,13 @@ def boot_notify_is_quiet(*, today: str | None = None) -> bool:
 
 
 def mark_boot_notify_asked(*, today: str | None = None) -> None:
+    """Record that the user consumed today's offer (upload / turn off)."""
     save_boot_notify_last_ask_day(today or today_iso())
+
+
+def clear_boot_notify_asked() -> None:
+    """「나중에」— allow the same calendar day to ask again after reboot."""
+    save_boot_notify_last_ask_day(None)
 
 
 def parse_porcelain_line(line: str) -> ChangedFile | None:

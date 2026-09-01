@@ -55,6 +55,7 @@ def test_quiet_prefs(monkeypatch) -> None:
         "app.ui.boot_scan.load_boot_notify_last_ask_day",
         lambda: "2026-09-02",
     )
+    # After upload / disable — quiet for the rest of that day.
     assert boot_notify_is_quiet(today="2026-09-02") is True
     assert boot_notify_is_quiet(today="2026-09-03") is False
 
@@ -62,6 +63,21 @@ def test_quiet_prefs(monkeypatch) -> None:
         "app.ui.boot_scan.load_boot_notify_enabled", lambda: False
     )
     assert boot_notify_is_quiet(today="2026-09-03") is True
+
+
+def test_clear_boot_notify_asked(monkeypatch) -> None:
+    from app.ui.boot_scan import clear_boot_notify_asked, mark_boot_notify_asked
+
+    stored: dict[str, str | None] = {"day": "2026-09-02"}
+
+    monkeypatch.setattr(
+        "app.ui.boot_scan.save_boot_notify_last_ask_day",
+        lambda day: stored.__setitem__("day", day),
+    )
+    clear_boot_notify_asked()
+    assert stored["day"] is None
+    mark_boot_notify_asked(today="2026-09-02")
+    assert stored["day"] == "2026-09-02"
 
 
 def test_snooze_until_days_format() -> None:
