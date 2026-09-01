@@ -36,12 +36,28 @@ class PathBAddressWorker(QThread):
         except Exception as e:
             expiry_detail = f"sample-error:{e}"
         if self._read_expiry:
+            # Prefer screenshot+OCR (visible "30 days"); UIA often only sees
+            # bare Name=\"Expiration\" on the closed GitHub action-menu.
+            parts: list[str] = []
             try:
-                from app.util.browser_address import read_token_expiration_uia
+                from app.util.expiry_ocr import read_token_expiration_ocr
 
-                expiry_days, expiry_detail = read_token_expiration_uia()
+                expiry_days, d_ocr = read_token_expiration_ocr()
+                parts.append(f"ocr:{d_ocr}")
             except Exception as e:
-                expiry_days, expiry_detail = None, f"expiry-error:{e}"
+                expiry_days, d_ocr = None, f"ocr-error:{e}"
+                parts.append(d_ocr)
+            if expiry_days is None:
+                try:
+                    from app.util.browser_address import read_token_expiration_uia
+
+                    uia_days, d_uia = read_token_expiration_uia()
+                    parts.append(f"uia:{d_uia}")
+                    if uia_days is not None:
+                        expiry_days = uia_days
+                except Exception as e:
+                    parts.append(f"uia-error:{e}")
+            expiry_detail = "|".join(parts)
         self.sample_ready.emit(
             {
                 "sample": sample,

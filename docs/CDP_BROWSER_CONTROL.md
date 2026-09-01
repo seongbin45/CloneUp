@@ -1,6 +1,7 @@
 # Path B: Chrome/Edge CDP 직접 제어 (실험)
 
-**기본 Path B는 UIA/수동입니다.**  
+**기본 Path B는 UIA + (만료일) 스크린샷 OCR / 수동입니다.**  
+Expiration은 창 캡처 + Tesseract로 읽고, 실패 시 UIA로 폴백합니다.  
 CDP는 **옵트인**이며, Playwright로 사용자 Chromium의 디버깅 포트에 붙어  
 classic PAT 폼의 Expiration / Generate를 **DOM**으로 조작합니다.
 

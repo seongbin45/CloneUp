@@ -1213,10 +1213,24 @@ class ExternalBrowserPatGuide(QDialog):
 
     def _apply_expiry_from_browser(self, *, force_advance: bool) -> bool:
         """
-        Sync read Expiration (UI thread). Prefer background poll for detect;
-        confirm uses this for a fresh snapshot.
+        Sync read Expiration (UI thread). Screenshot+OCR first, UIA fallback.
+        Prefer background poll for detect; confirm uses this for a fresh snapshot.
         """
-        got, detail = read_token_expiration_uia()
+        got, detail = None, ""
+        try:
+            from app.util.expiry_ocr import read_token_expiration_ocr
+
+            got, detail = read_token_expiration_ocr()
+            detail = f"ocr:{detail}"
+        except Exception as e:
+            detail = f"ocr-error:{e}"
+        if got is None:
+            try:
+                uia_got, uia_detail = read_token_expiration_uia()
+                detail = f"{detail}|uia:{uia_detail}"
+                got = uia_got
+            except Exception as e:
+                detail = f"{detail}|uia-error:{e}"
         if got is None:
             if force_advance:
                 self._guide_log(f"[Path B] 만료 읽기 실패: {detail}")
@@ -1533,7 +1547,7 @@ class ExternalBrowserPatGuide(QDialog):
                         )
                         self._sub.setText(
                             "만료일을 아직 못 읽었어요. "
-                            "Expiration 목록을 열어 두거나, "
+                            "키 만들기 창이 보이도록 두거나, "
                             "아래 추천을 고른 뒤 「골랐어요」를 눌러 주세요."
                         )
             self._poll_address_inner(sample)
