@@ -31,106 +31,99 @@ class BootNotifyScene(IntEnum):
 
 
 def _toast_qss() -> str:
+    """Toast chrome from ``active_palette()`` (light 시안 + dark Window Dark)."""
     p = active_palette()
-    # Prefer 시안 light toast colors; fall back to palette.
-    bg = "#fbfaf8"
-    bar = "#f2efe9"
-    text = "#232019"
-    muted = "#6d675c"
-    lead = "#4a453b"
-    border = "#b9bdc4"
-    primary = getattr(p, "primary", None) or "#1f6f5c"
     return f"""
     QWidget#bootToast {{
-        background: {bg};
-        color: {text};
-        border: 1px solid {border};
+        background: {p.bg_window};
+        color: {p.text};
+        border: 1px solid {p.border};
         border-radius: 10px;
     }}
     QFrame#bootToastHead {{
-        background: {bar};
+        background: {p.bg_bar};
         border: none;
-        border-bottom: 1px solid #ddd8d0;
+        border-bottom: 1px solid {p.border_soft};
     }}
     QLabel#bootToastBrand {{
-        font-size: 11.5px; font-weight: 600; color: #3d382f;
+        font-size: 11.5px; font-weight: 600; color: {p.text};
         background: transparent; border: none;
     }}
     QLabel#bootToastStamp {{
-        font-size: 11.5px; color: {muted};
+        font-size: 11.5px; color: {p.text_muted};
         background: transparent; border: none;
     }}
     QPushButton#bootToastX {{
-        background: transparent; color: {muted}; border: none;
+        background: transparent; color: {p.text_muted}; border: none;
         font-size: 14px; padding: 0 4px; min-width: 22px;
     }}
-    QPushButton#bootToastX:hover {{ color: #3d382f; }}
+    QPushButton#bootToastX:hover {{ color: {p.text}; }}
     QLabel#bootToastTitle {{
-        font-size: 15.5px; font-weight: 600; color: {text};
+        font-size: 15.5px; font-weight: 600; color: {p.text};
         background: transparent; border: none;
     }}
     QLabel#bootToastLead {{
-        font-size: 12.5px; color: {lead}; background: transparent; border: none;
+        font-size: 12.5px; color: {p.text_secondary}; background: transparent; border: none;
     }}
     QFrame#bootToastPanel {{
-        background: {bar}; border: none; border-radius: 9px;
+        background: {p.bg_bar}; border: none; border-radius: 9px;
     }}
     QLabel#bootToastMono {{
-        font-size: 12.5px; font-weight: 500; color: {text};
+        font-size: 12.5px; font-weight: 500; color: {p.text};
         font-family: "IBM Plex Mono", Consolas, monospace;
         background: transparent; border: none;
     }}
     QLabel#bootToastMeta {{
-        font-size: 11.5px; color: {muted};
+        font-size: 11.5px; color: {p.text_muted};
         background: transparent; border: none;
     }}
     QLabel#bootToastFile {{
-        font-size: 11.5px; color: {lead};
+        font-size: 11.5px; color: {p.text_secondary};
         font-family: "IBM Plex Mono", Consolas, monospace;
         background: transparent; border: none;
     }}
     QLabel#bootToastKind {{
-        font-size: 9px; font-weight: 600; color: #fbfaf8;
+        font-size: 9px; font-weight: 600; color: {p.bg_window};
         font-family: "IBM Plex Mono", Consolas, monospace;
         border-radius: 3px;
     }}
     QLineEdit#bootToastMsg {{
-        background: #fff; color: #2f2b24;
-        border: 1px solid #cdc8bf; border-radius: 7px;
+        background: {p.bg_input}; color: {p.text};
+        border: 1px solid {p.border_input}; border-radius: 7px;
         padding: 0 11px; min-height: 34px; font-size: 12.5px;
     }}
     QPushButton#bootToastPrimary {{
-        background: {primary}; color: #fbfaf8; border: 1px solid {primary};
+        background: {p.primary}; color: {p.text_on_primary}; border: 1px solid {p.primary};
         border-radius: 9px; font-size: 13px; font-weight: 600;
         min-height: 38px; padding: 0 16px;
     }}
-    QPushButton#bootToastPrimary:hover {{ background: #14503f; }}
+    QPushButton#bootToastPrimary:hover {{ background: {p.primary_hover}; }}
     QPushButton#bootToastPrimary:disabled {{
-        background: #f2efe9; color: #b3ac9e; border: 1px solid #ddd8d0;
+        background: {p.bg_muted}; color: {p.text_disabled}; border: 1px solid {p.border_soft};
     }}
     QPushButton#bootToastNormal {{
-        background: #fff; color: #3d382f; border: 1px solid #b7b1a5;
+        background: {p.bg_input}; color: {p.text}; border: 1px solid {p.border_outline};
         border-radius: 9px; font-size: 13px; font-weight: 500;
         min-height: 38px; padding: 0 16px;
     }}
     QPushButton#bootToastQuiet {{
-        background: #f2efe9; color: #4a453b; border: 1px solid #cdc8bf;
+        background: {p.bg_muted}; color: {p.text_secondary}; border: 1px solid {p.border_input};
         border-radius: 9px; font-size: 13px; font-weight: 400;
         min-height: 38px; padding: 0 16px;
     }}
     QPushButton#bootToastLink {{
-        background: transparent; color: {muted}; border: none;
+        background: transparent; color: {p.text_muted}; border: none;
         font-size: 11.5px; text-align: left; padding: 0;
     }}
-    QPushButton#bootToastLink:hover {{ color: #3d382f; }}
+    QPushButton#bootToastLink:hover {{ color: {p.text}; }}
     QCheckBox#bootToastFolder {{
-        spacing: 10px; font-size: 12.5px; color: {text};
+        spacing: 10px; font-size: 12.5px; color: {p.text};
         font-family: "IBM Plex Mono", Consolas, monospace;
-        padding: 10px 12px; background: #fbfaf8;
+        padding: 10px 12px; background: {p.bg_window};
         border: 1px solid transparent; border-radius: 9px;
     }}
     QCheckBox#bootToastFolder:checked {{
-        border: 1px solid {primary}; background: #fbfaf8;
+        border: 1px solid {p.primary}; background: {p.bg_window};
     }}
     """
 
@@ -170,8 +163,15 @@ class BootNotifyToast(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setStyleSheet(_toast_qss())
+        self._apply_theme_qss()
         self.setFixedWidth(382)
+        # Follow OS / app theme switches while the toast is open.
+        try:
+            app = QGuiApplication.instance()
+            if app is not None and hasattr(app, "styleHints"):
+                app.styleHints().colorSchemeChanged.connect(self._on_color_scheme)
+        except Exception:
+            pass
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -256,6 +256,21 @@ class BootNotifyToast(QWidget):
         self._render()
         self._place_bottom_right()
 
+    def _apply_theme_qss(self) -> None:
+        self.setStyleSheet(_toast_qss())
+
+    def _on_color_scheme(self, *_args) -> None:
+        try:
+            from app.ui.theme import apply_system_theme
+
+            apply_system_theme()
+        except Exception:
+            pass
+        self._apply_theme_qss()
+        # Re-paint dynamic file-kind badges / buttons for the new palette.
+        if self.isVisible():
+            self._render()
+
     # --- public ---
     def set_waiting(self, text: str) -> None:
         self._wait_text = text
@@ -337,6 +352,7 @@ class BootNotifyToast(QWidget):
                 kind.setObjectName("bootToastKind")
                 kind.setFixedSize(15, 15)
                 kind.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                # Badge glyph on saturated tone — light cream reads on both themes.
                 kind.setStyleSheet(
                     f"QLabel#bootToastKind {{ background: {f.tone}; "
                     f"border-radius: 3px; color: #fbfaf8; font-size: 9px; "

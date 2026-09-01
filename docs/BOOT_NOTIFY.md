@@ -1,6 +1,7 @@
 # 시작 알림 (안 올린 수정)
 
-시안: `desin/CloneUp 시작 알림.dc.html`
+시안: `desin/CloneUp 시작 알림.dc.html`  
+색: `active_palette()` (라이트 시안 + OS 다크 시 `desin/dark` Window Dark 토큰). 라이트 크림으로 고정하지 않음.
 
 ## 무엇을 하나요
 
