@@ -52,7 +52,14 @@ def test_scene_copy_browser_first() -> None:
 
     auth = scene_copy(DialogueScene.AUTH_WAIT)
     assert "이메일" in auth.say or "패스키" in auth.say
-    assert "키 만들기" in auth.sub
+
+    pk = scene_copy(DialogueScene.AUTH_WAIT, auth_method="passkey")
+    assert "패스키" in pk.say
+    assert "Windows 보안" in pk.sub or "QR" in pk.sub
+
+    em = scene_copy(DialogueScene.AUTH_WAIT, auth_method="github_2fa")
+    assert "이메일" in em.say
+    assert "Verify your device" in em.sub
 
     exp = scene_copy(DialogueScene.ASK_EXPIRY)
     assert "Expiration" in exp.sub or "만료" in exp.say
@@ -111,11 +118,11 @@ def test_advance_login_and_auth() -> None:
 
 
 def test_advance_bounce_back_when_auth_incomplete() -> None:
-    """Key page without finished 2FA → back to AUTH_WAIT, not stuck on ASK_*."""
+    """Key page without finished auth → bounce; password → LOGIN, 2FA/passkey → AUTH."""
     nxt = advance_from_browser_kind(
         DialogueScene.ASK_EXPIRY, "current", 0, method="github_login"
     )
-    assert nxt == DialogueScene.AUTH_WAIT
+    assert nxt == DialogueScene.LOGIN_WAIT
 
     nxt2 = advance_from_browser_kind(
         DialogueScene.ASK_SCOPE, "current", 0, method="passkey"

@@ -326,7 +326,12 @@ def is_github_flow_family_url(
 
 
 def looks_like_passkey_os_prompt(window_title: str, ui_text: str = "") -> bool:
-    """True if foreground looks like Windows Security passkey sheet."""
+    """
+    True if foreground looks like Windows Security passkey sheet.
+
+    Screenshot (ko): title 「Windows 보안」, heading 「패스키로 로그인」,
+    options 「iPhone, iPad 또는 Android…」(QR) / 「이 디바이스」.
+    """
     blob = f"{window_title or ''}\n{ui_text or ''}".lower()
     if not blob.strip():
         return False
@@ -336,12 +341,15 @@ def looks_like_passkey_os_prompt(window_title: str, ui_text: str = "") -> bool:
         or "windows hello" in blob
     )
     passkey = (
-        "패스키" in blob
+        "패스키로 로그인" in blob
+        or "패스키" in blob
         or "passkey" in blob
         or "보안 키" in blob
         or "security key" in blob
         or "qr 코드" in blob
         or "qr code" in blob
+        or "이 디바이스" in blob
+        or "this device" in blob
     )
     return win_sec and passkey
 

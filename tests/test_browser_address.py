@@ -93,6 +93,11 @@ def test_apple_and_passkey_detection() -> None:
         "Windows 보안",
         "패스키로 github.com에 로그인 QR 코드",
     )
+    # Screenshot 2026-08-22: 「패스키로 로그인」 + QR / 이 디바이스
+    assert looks_like_passkey_os_prompt(
+        "Windows 보안",
+        "패스키로 로그인\niPhone, iPad 또는 Android 디바이스\n이 디바이스",
+    )
     assert (
         detect_signin_method(
             "",

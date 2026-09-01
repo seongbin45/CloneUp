@@ -99,7 +99,76 @@ def expires_at_for_days(days: str) -> str:
     return got or "none"
 
 
-def scene_copy(scene: DialogueScene, *, expiry_label: str = "90일") -> SceneCopy:
+def _auth_wait_copy(auth_method: str = "") -> SceneCopy:
+    """
+    AUTH_WAIT copy tailored to the live browser/OS prompt.
+
+    - ``passkey``: Windows 보안 「패스키로 로그인」 (QR / 이 디바이스)
+    - ``github_2fa``: GitHub 「Verify your device」 email code
+    - else: short combined hint
+    """
+    m = (auth_method or "").strip().lower()
+    if m == "passkey":
+        return SceneCopy(
+            right_tag="2 / 4",
+            say="패스키로 확인해 주세요",
+            sub=(
+                "「Windows 보안」창이 떴습니다. "
+                "휴대폰으로 QR을 스캔하거나, 「이 디바이스」에서 확인하세요. "
+                "이 단계는 제가 대신 누를 수 없어요."
+            ),
+            foot_note="확인이 끝나면 키 만들기로 이어져요",
+            wait_text="패스키 확인이 끝나는 것을 지켜보고 있어요.",
+        )
+    if m in ("github_2fa", "email", "device"):
+        return SceneCopy(
+            right_tag="2 / 4",
+            say="이메일 인증 코드를 입력해 주세요",
+            sub=(
+                "GitHub 「Verify your device」화면입니다. "
+                "이메일로 온 숫자 코드를 칸에 입력하세요. "
+                "패스키로 확인할 수도 있어요. "
+                "이 단계가 끝나기 전에 키 화면으로 가면 다시 로그인으로 돌아옵니다."
+            ),
+            foot_note="확인이 끝나면 키 만들기로 이어져요",
+            wait_text="이메일 인증이 끝나는 것을 지켜보고 있어요.",
+        )
+    if m == "apple":
+        return SceneCopy(
+            right_tag="2 / 4",
+            say="Apple 로그인을 끝내 주세요",
+            sub="Apple 로그인 창에서 확인을 마치면 GitHub으로 돌아옵니다.",
+            foot_note="확인이 끝나면 키 만들기로 이어져요",
+            wait_text="Apple 확인이 끝나는 것을 지켜보고 있어요.",
+        )
+    if m == "google":
+        return SceneCopy(
+            right_tag="2 / 4",
+            say="Google 로그인을 끝내 주세요",
+            sub="Google 로그인 창에서 확인을 마치면 GitHub으로 돌아옵니다.",
+            foot_note="확인이 끝나면 키 만들기로 이어져요",
+            wait_text="Google 확인이 끝나는 것을 지켜보고 있어요.",
+        )
+    return SceneCopy(
+        right_tag="2 / 4",
+        say="이메일·패스키 인증을 끝내 주세요",
+        sub=(
+            "거의 항상 한 번 더 확인합니다. "
+            "이메일 코드(Verify your device) 또는 "
+            "Windows 패스키(QR·이 디바이스)로 확인해 주세요. "
+            "끝나기 전에 키 만들기 화면으로 가면 다시 로그인으로 돌아옵니다."
+        ),
+        foot_note="확인이 끝나면 키 만들기로 이어져요",
+        wait_text="인증이 끝나는 것을 지켜보고 있어요.",
+    )
+
+
+def scene_copy(
+    scene: DialogueScene,
+    *,
+    expiry_label: str = "90일",
+    auth_method: str = "",
+) -> SceneCopy:
     if scene == DialogueScene.LOGIN_WAIT:
         return SceneCopy(
             right_tag="1 / 4",
@@ -112,17 +181,7 @@ def scene_copy(scene: DialogueScene, *, expiry_label: str = "90일") -> SceneCop
             wait_text="로그인이 끝나는 것을 지켜보고 있어요.",
         )
     if scene == DialogueScene.AUTH_WAIT:
-        return SceneCopy(
-            right_tag="2 / 4",
-            say="이메일·패스키 인증을 끝내 주세요",
-            sub=(
-                "거의 항상 한 번 더 확인합니다. "
-                "이메일로 온 코드를 입력하거나, 패스키(휴대폰·Windows)로 확인해 주세요. "
-                "이 단계가 끝나기 전에 키 만들기 화면으로 가면 다시 로그인으로 돌아옵니다."
-            ),
-            foot_note="확인이 끝나면 키 만들기로 이어져요",
-            wait_text="인증이 끝나는 것을 지켜보고 있어요.",
-        )
+        return _auth_wait_copy(auth_method)
     if scene == DialogueScene.ASK_EXPIRY:
         return SceneCopy(
             right_tag="3 / 4",
@@ -236,8 +295,8 @@ def advance_from_browser_kind(
     # Still on GitHub password / username login form
     if kind == "current" and m == "github_login":
         if past_key_steps:
-            # Key page redirected back to login — finish email/passkey first.
-            return DialogueScene.AUTH_WAIT
+            # Token URL bounced to password login — start over at login step.
+            return DialogueScene.LOGIN_WAIT
         return None
 
     if kind == "current":

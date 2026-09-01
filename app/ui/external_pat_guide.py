@@ -635,6 +635,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._scope_label: str | None = None
         self._logged_in = False
         self._auth_done = False  # email / passkey / 2FA finished
+        self._auth_method = ""  # passkey | github_2fa | apple | google | …
         self._got_token = False
         self._token_nav_opened = False
         self._create_url = ""
@@ -920,6 +921,7 @@ class ExternalBrowserPatGuide(QDialog):
         sc = scene_copy(
             self._scene,
             expiry_label=self._expiry_label or "90일",
+            auth_method=self._auth_method,
         )
         self._right_tag.setText(sc.right_tag)
         self._say.setText(sc.say)
@@ -1595,6 +1597,22 @@ class ExternalBrowserPatGuide(QDialog):
         nxt = advance_from_browser_kind(
             self._scene, kind, idx, method=method
         )
+
+        # Update AUTH_WAIT copy even when the scene does not change.
+        if method in ("passkey", "github_2fa", "apple", "google"):
+            if method != self._auth_method:
+                self._auth_method = method
+                label = {
+                    "passkey": "패스키(Windows 보안)",
+                    "github_2fa": "이메일 인증(Verify your device)",
+                    "apple": "Apple",
+                    "google": "Google",
+                }.get(method, method)
+                self._guide_log(f"[Path B] 인증 화면 감지: {label}")
+                if self._scene == DialogueScene.AUTH_WAIT:
+                    self._render()
+                    self.adjustSize()
+
         if nxt is None:
             return
         prev = self._scene
@@ -1602,6 +1620,7 @@ class ExternalBrowserPatGuide(QDialog):
         if nxt == DialogueScene.LOGIN_WAIT and prev != DialogueScene.LOGIN_WAIT:
             self._logged_in = False
             self._auth_done = False
+            self._auth_method = ""
             self._expiry_label = None
             self._expiry_hint = None
             self._scope_label = None
@@ -1619,6 +1638,8 @@ class ExternalBrowserPatGuide(QDialog):
             self._logged_in = True
             self._auth_done = False
             self._google_blocked = False
+            if method in ("passkey", "github_2fa", "apple", "google"):
+                self._auth_method = method
             # Do NOT open tokens/new here — unfinished email/passkey bounces back.
             if self._token_nav_opened or int(prev) >= int(DialogueScene.ASK_EXPIRY):
                 self._token_nav_opened = False
