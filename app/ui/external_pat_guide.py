@@ -498,7 +498,7 @@ from app.ui.browser_dialogue_model import (
     scene_copy,
     scope_query_value,
 )
-from app.ui.path_b_assist_worker import PathBAssistWorker
+from app.ui.path_b_assist_worker import PathBAddressWorker, PathBAssistWorker
 from app.util.browser_address import (
     path_b_log,
     read_token_expiration_uia,
@@ -643,6 +643,10 @@ class ExternalBrowserPatGuide(QDialog):
         self._expiry_uia_ok = False
         self._expiry_uia_tries = 0
         self._assist_worker: PathBAssistWorker | None = None
+        self._addr_worker: PathBAddressWorker | None = None
+        self._addr_poll_busy = False
+        self._away_streak = 0
+        self._login_rescue_done = False
 
         # Tee Path B UIA helpers into main textLog while this guide is alive.
         set_path_b_log_sink(self._emit_log)
@@ -1384,14 +1388,34 @@ class ExternalBrowserPatGuide(QDialog):
 
     # --- polling ---
     def _poll_address(self) -> None:
+        """Kick a background UIA sample — never block the Qt UI thread."""
+        if self._done or self._addr_poll_busy:
+            return
+        w = self._addr_worker
+        if w is not None and w.isRunning():
+            return
+        self._addr_poll_busy = True
+        worker = PathBAddressWorker(parent=self)
+        worker.sample_ready.connect(self._on_address_sample)
+        self._addr_worker = worker
+        worker.start()
+
+    def _on_address_sample(self, sample: object) -> None:
+        self._addr_poll_busy = False
+        self._addr_worker = None
         if self._done:
             return
-        sample = read_browser_page_sample()
+        try:
+            self._poll_address_inner(sample)
+        except Exception as e:
+            self._guide_log(f"[Path B] 주소 폴링 오류: {e}")
+
+    def _poll_address_inner(self, sample: object) -> None:
         if sample is None:
             return
-        url = sample.url or ""
-        title = sample.window_title or ""
-        ui = sample.ui_text or ""
+        url = getattr(sample, "url", "") or ""
+        title = getattr(sample, "window_title", "") or ""
+        ui = getattr(sample, "ui_text", "") or ""
         if is_github_flow_family_url(url):
             self._last_family_url = url
 
@@ -1399,6 +1423,38 @@ class ExternalBrowserPatGuide(QDialog):
             url, window_title=title, ui_text=ui
         )
         method = str((meta or {}).get("method") or "")
+
+        # Wrong-tab recovery: StayOnTop guide often leaves a non-GitHub Chrome
+        # window ranked first. Re-open once so the GitHub tab comes forward.
+        if kind in ("away", "unknown"):
+            if self._scene == DialogueScene.LOGIN_WAIT:
+                self._away_streak += 1
+                if self._away_streak >= 2 and not self._login_rescue_done:
+                    self._login_rescue_done = True
+                    self._guide_log(
+                        f"[Path B] GitHub 창 미검출({kind}) → 로그인 페이지 재오픈 "
+                        f"sample={(title or '')[:40]!r}"
+                    )
+                    self._reopen_github_login()
+                    self._sub.setText(
+                        "GitHub 로그인 화면을 다시 열었어요. "
+                        "브라우저에서 로그인해 주세요."
+                    )
+                return
+            if self._scene == DialogueScene.ASK_EXPIRY and self._token_nav_opened:
+                self._away_streak += 1
+                if self._away_streak >= 2:
+                    self._away_streak = 0
+                    self._guide_log(
+                        f"[Path B] 키 만들기 탭 미검출({kind}) → 페이지 재오픈"
+                    )
+                    self._open_token_create_page()
+                    self._sub.setText(
+                        "키 만들기 페이지를 다시 열었어요. "
+                        "브라우저에서 Expiration을 골라 주세요."
+                    )
+                return
+        self._away_streak = 0
 
         if kind == "rejected" or method == "google_blocked":
             if not self._google_blocked:
@@ -1418,10 +1474,8 @@ class ExternalBrowserPatGuide(QDialog):
                 # issued page — clipboard poll will catch copy; keep waiting
                 pass
 
-        # Read-back Expiration while guiding the user (no auto-set).
-        if self._scene == DialogueScene.ASK_EXPIRY and self._token_nav_opened:
-            if self._apply_expiry_from_browser(force_advance=False):
-                return
+        # Expiration read-back is only on 「골랐어요」 — polling UIA here
+        # froze the UI for several seconds per tick.
 
         if kind == "token_error":
             # Note collision — open fresh note URL
@@ -1443,12 +1497,16 @@ class ExternalBrowserPatGuide(QDialog):
             self._got_token = False
             self._expiry_uia_ok = False
             self._expiry_uia_tries = 0
+            self._login_rescue_done = False
+            self._away_streak = 0
         if nxt == DialogueScene.ASK_EXPIRY:
             self._logged_in = True
             self._google_blocked = False
+            self._login_rescue_done = False
             # Login detected → open classic create page so the browser is
             # already on 「키 만들기」 while the user answers expiry/scope.
             if not self._token_nav_opened:
+                self._guide_log("[Path B] 로그인 감지 → 키 만들기 페이지 오픈")
                 self._open_token_create_page()
             # Show above browser without stealing keyboard (user may still type).
             try:
@@ -1523,12 +1581,14 @@ class ExternalBrowserPatGuide(QDialog):
         for t in (self._clip_timer, self._addr_timer, self._dot_timer):
             if t.isActive():
                 t.stop()
-        w = self._assist_worker
-        if w is not None:
-            if w.isRunning():
-                # Best-effort: do not block the UI long on close.
-                w.wait(600)
-            self._assist_worker = None
+        for w in (self._assist_worker, self._addr_worker):
+            if w is not None:
+                if w.isRunning():
+                    # Best-effort: do not block the UI long on close.
+                    w.wait(600)
+        self._assist_worker = None
+        self._addr_worker = None
+        self._addr_poll_busy = False
         set_path_b_log_sink(None)
 
     def closeEvent(self, event) -> None:  # noqa: N802

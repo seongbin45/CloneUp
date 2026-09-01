@@ -10,6 +10,24 @@ from __future__ import annotations
 from PySide6.QtCore import QThread, Signal
 
 
+class PathBAddressWorker(QThread):
+    """One-shot ``read_browser_page_sample`` off the UI thread.
+
+    Path B used to call UIA on the Qt timer thread; with many Chrome PIDs that
+    froze the guide for 10s+ and skipped login detection.
+    """
+
+    sample_ready = Signal(object)  # BrowserPageSample | None
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            from app.util.browser_address import read_browser_page_sample
+
+            self.sample_ready.emit(read_browser_page_sample())
+        except Exception:
+            self.sample_ready.emit(None)
+
+
 class PathBAssistWorker(QThread):
     """One-shot background op for Path B browser assist.
 

@@ -5,7 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
-from app.ui.path_b_assist_worker import PathBAssistWorker
+from app.ui.path_b_assist_worker import PathBAddressWorker, PathBAssistWorker
+from app.util.browser_address import _is_connect_flow_url
 
 
 def _app() -> QApplication:
@@ -53,3 +54,33 @@ def test_assist_worker_unknown_op() -> None:
     assert worker.wait(3000)
     assert results[-1][0] == "nope"
     assert results[-1][1] is False
+
+
+def test_connect_flow_url_helper() -> None:
+    assert _is_connect_flow_url("https://github.com/login")
+    assert _is_connect_flow_url("https://accounts.google.com/v3/signin")
+    assert not _is_connect_flow_url("https://intel.co.kr/support")
+    assert not _is_connect_flow_url("https://youtube.com/watch?v=1")
+
+
+def test_address_worker_emits_sample(monkeypatch) -> None:
+    _app()
+
+    class _Fake:
+        url = "https://github.com/"
+        window_title = "GitHub"
+        ui_text = "Dashboard"
+
+    monkeypatch.setattr(
+        "app.util.browser_address.read_browser_page_sample",
+        lambda: _Fake(),
+    )
+    got: list[object] = []
+    worker = PathBAddressWorker()
+    worker.sample_ready.connect(
+        lambda s: got.append(s),
+        Qt.ConnectionType.DirectConnection,
+    )
+    worker.start()
+    assert worker.wait(3000)
+    assert got and getattr(got[-1], "url", "") == "https://github.com/"

@@ -642,61 +642,92 @@ _CHROMIUM_IMAGE_NAMES: tuple[str, ...] = (
     "opera.exe",
     "vivaldi.exe",
 )
+_CHROMIUM_IMAGE_SET = frozenset(n.lower() for n in _CHROMIUM_IMAGE_NAMES)
+
+# Path B polls every ~3s — spawning 6× tasklist froze the UI (~12s). Cache.
+_PID_CACHE: tuple[float, frozenset[int]] | None = None
+_PID_CACHE_TTL_S = 5.0
 
 
-def list_chromium_browser_pids() -> set[int]:
+def list_chromium_browser_pids(*, force: bool = False) -> set[int]:
     """
     Collect PIDs for Chrome / Edge / Brave / … via ``tasklist`` (no window flash).
 
     Chrome is multi-process — callers should treat the set as \"any PID that
     belongs to a Chromium-family browser\", then match top-level UIA windows
     whose ``ProcessId`` is in this set.
+
+    Results are cached for a few seconds so Path B address polls stay snappy.
     """
     import sys
+    import time
 
     if sys.platform != "win32":
         return set()
-    pids: set[int] = set()
+    global _PID_CACHE
+    now = time.monotonic()
+    if not force and _PID_CACHE is not None:
+        ts, cached = _PID_CACHE
+        if now - ts < _PID_CACHE_TTL_S:
+            return set(cached)
+
+    pids = _list_chromium_browser_pids_uncached()
+    _PID_CACHE = (now, frozenset(pids))
+    return pids
+
+
+def _list_chromium_browser_pids_uncached() -> set[int]:
+    """One ``tasklist`` pass filtered to Chromium image names."""
+    import csv
+    import io
+    import subprocess
+
     try:
         from app.util.winproc import run_hidden
     except Exception:
         run_hidden = None  # type: ignore[assignment]
 
-    for image in _CHROMIUM_IMAGE_NAMES:
-        try:
-            cmd = [
-                "tasklist",
-                "/FI",
-                f"IMAGENAME eq {image}",
-                "/FO",
-                "CSV",
-                "/NH",
-            ]
-            if run_hidden is not None:
-                proc = run_hidden(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=8,
-                )
-            else:
-                import subprocess
+    cmd = ["tasklist", "/FO", "CSV", "/NH"]
+    try:
+        if run_hidden is not None:
+            proc = run_hidden(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=8,
+            )
+        else:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=8,
+            )
+        raw = proc.stdout or ""
+    except Exception:
+        return set()
 
-                proc = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=8,
-                )
-            raw = proc.stdout or ""
-        except Exception:
-            continue
-        pids |= parse_tasklist_csv_pids(raw)
-    return pids
+    if not (raw or "").strip() or not raw.lstrip().startswith('"'):
+        return set()
+    out: set[int] = set()
+    try:
+        for row in csv.reader(io.StringIO(raw)):
+            if len(row) < 2:
+                continue
+            image = str(row[0]).strip().strip('"').lower()
+            if image not in _CHROMIUM_IMAGE_SET:
+                continue
+            try:
+                out.add(int(str(row[1]).strip().strip('"')))
+            except ValueError:
+                continue
+    except Exception:
+        return out
+    return out
 
 
 def parse_tasklist_csv_pids(raw: str) -> set[int]:
@@ -1417,6 +1448,16 @@ def try_set_token_expiration_uia(
         return False, f"scan:{e}"
 
 
+def _is_connect_flow_url(url: str) -> bool:
+    u = (url or "").lower()
+    return (
+        "github.com" in u
+        or "accounts.google.com" in u
+        or "appleid.apple.com" in u
+        or "idmsa.apple.com" in u
+    )
+
+
 def read_browser_page_sample() -> BrowserPageSample | None:
     """
     Best-effort sample: omnibox URL + window title + accessible UI names.
@@ -1425,6 +1466,10 @@ def read_browser_page_sample() -> BrowserPageSample | None:
     Chromium window. Also samples a foreground Windows Security sheet
     (passkey). Does not use screenshots (DOM often hidden from a11y);
     callers may combine with coordinate click if UIA Invoke fails.
+
+    Performance: first pass reads **URL + title only** (no deep a11y walk).
+    Full UI harvest runs only on the chosen window — otherwise Path B polls
+    freeze the UI for 10s+ when many Chromium windows are open.
     """
     if not browser_address_available():
         return None
@@ -1433,18 +1478,34 @@ def read_browser_page_sample() -> BrowserPageSample | None:
     except Exception:
         return None
 
-    def _sample_win(win, source: str, *, need_url: bool = False) -> BrowserPageSample | None:
+    def _peek(win) -> tuple[str, str]:
+        """URL + title only — cheap enough to run on every Chromium window."""
         try:
-            url = _read_edit_url(win) if (win.ClassName or "") == _BROWSER_CLASS else ""
             title = (win.Name or "").strip()
-            ui_text = _harvest_ui_text(win)
-            if need_url and not url:
-                return None
+            url = ""
+            if (win.ClassName or "") == _BROWSER_CLASS:
+                url = _read_edit_url(win) or ""
+            return url, title
+        except Exception:
+            return "", ""
+
+    def _finish(
+        win,
+        source: str,
+        *,
+        url: str = "",
+        title: str = "",
+        harvest: bool = True,
+    ) -> BrowserPageSample | None:
+        try:
+            if not url and not title:
+                url, title = _peek(win)
+            ui_text = _harvest_ui_text(win) if harvest else ""
             if not url and not title and not ui_text:
                 return None
             return BrowserPageSample(
                 url=url or "",
-                window_title=title,
+                window_title=title or "",
                 ui_text=ui_text,
                 source=source,
             )
@@ -1467,67 +1528,95 @@ def read_browser_page_sample() -> BrowserPageSample | None:
                 break
             win = parent
 
-        weak_fg: BrowserPageSample | None = None
+        weak_fg_win = None
+        weak_fg_url = ""
+        weak_fg_title = ""
         if top is not None:
-            title = (top.Name or "").strip()
-            ui_text = _harvest_ui_text(top)
-            if looks_like_passkey_os_prompt(title, ui_text):
-                return BrowserPageSample(
-                    url="",
-                    window_title=title,
-                    ui_text=ui_text,
-                    source="foreground-os",
-                )
+            # Cheap passkey title check before any deep harvest.
+            fg_title = (top.Name or "").strip()
+            if looks_like_passkey_os_prompt(fg_title, ""):
+                # Confirm with a harvest only when the title already looks right.
+                ui_text = _harvest_ui_text(top)
+                if looks_like_passkey_os_prompt(fg_title, ui_text):
+                    return BrowserPageSample(
+                        url="",
+                        window_title=fg_title,
+                        ui_text=ui_text,
+                        source="foreground-os",
+                    )
             # Foreground Chromium: only short-circuit when it looks like our
             # connect flow. A Google-search tab in front must not hide a
             # background "New Personal Access Token" window (same as UIA rank).
             if (top.ClassName or "") == _BROWSER_CLASS:
-                sample = _sample_win(top, "foreground")
-                if sample and (sample.url or sample.window_title):
-                    u_fg = (sample.url or "").lower()
-                    score_fg = window_title_connect_score(
-                        sample.window_title or ""
+                u_fg, t_fg = _peek(top)
+                score_fg = window_title_connect_score(t_fg)
+                if score_fg >= 28 or _is_connect_flow_url(u_fg):
+                    return _finish(
+                        top, "foreground", url=u_fg, title=t_fg, harvest=True
                     )
-                    if (
-                        score_fg >= 28
-                        or "github.com" in u_fg
-                        or "accounts.google.com" in u_fg
-                        or "appleid.apple.com" in u_fg
-                        or "idmsa.apple.com" in u_fg
-                    ):
-                        return sample
-                    weak_fg = sample
+                if u_fg or t_fg:
+                    weak_fg_win = top
+                    weak_fg_url = u_fg
+                    weak_fg_title = t_fg
 
         # CloneUp guide is often StayOnTop, so foreground may not be the
-        # browser. Walk PID-scoped windows in rank order (title / Z-order).
+        # browser. Walk PID-scoped windows — URL/title first, harvest last.
         pids = list_chromium_browser_pids()
-        fallback: BrowserPageSample | None = weak_fg
-        github_fallback: BrowserPageSample | None = None
+        fallback_win = weak_fg_win
+        fallback_url = weak_fg_url
+        fallback_title = weak_fg_title
+        github_win = None
+        github_url = ""
+        github_title = ""
         for w in _iter_chromium_windows(auto, pids=pids or None):
             try:
-                sample = _sample_win(w, "scan-ranked")
-                if sample is None:
+                u, title = _peek(w)
+                if not u and not title:
                     continue
-                u = (sample.url or "").lower()
-                title_l = (sample.window_title or "").lower()
-                title_score = window_title_connect_score(sample.window_title or "")
-                if (
-                    "accounts.google.com" in u
-                    or "appleid.apple.com" in u
-                    or "idmsa.apple.com" in u
-                    or "github.com" in u
-                ):
-                    return sample
+                title_l = title.lower()
+                title_score = window_title_connect_score(title)
+                if _is_connect_flow_url(u):
+                    return _finish(
+                        w, "scan-ranked", url=u, title=title, harvest=True
+                    )
                 # Strong PAT / GitHub title — take immediately (ranked first).
                 if title_score >= 28:
-                    return sample
-                if ("github" in title_l or title_score > 0) and github_fallback is None:
-                    github_fallback = sample
-                if fallback is None and (sample.url or sample.window_title):
-                    fallback = sample
+                    return _finish(
+                        w, "scan-ranked", url=u, title=title, harvest=True
+                    )
+                if (
+                    ("github" in title_l or title_score > 0)
+                    and github_win is None
+                ):
+                    github_win = w
+                    github_url = u
+                    github_title = title
+                if fallback_win is None:
+                    fallback_win = w
+                    fallback_url = u
+                    fallback_title = title
             except Exception:
                 continue
-        return github_fallback or fallback
+        if github_win is not None:
+            return _finish(
+                github_win,
+                "scan-ranked",
+                url=github_url,
+                title=github_title,
+                harvest=True,
+            )
+        if fallback_win is not None:
+            # Unrelated tabs (news, Intel DSA, …): URL+title is enough to
+            # classify as ``away``. Deep harvest here froze Path B polls for
+            # 10s+ on busy Chromium profiles.
+            return _finish(
+                fallback_win,
+                "scan-ranked" if fallback_win is not weak_fg_win else "foreground",
+                url=fallback_url,
+                title=fallback_title,
+                harvest=False,
+            )
+        return None
     except Exception:
         return None
 
