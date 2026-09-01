@@ -73,9 +73,13 @@ def _read_arp_display_version() -> tuple[int, int, int] | None:
             r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
         ),
     )
+    guid = INNO_APP_ID.strip("{}")
+    braced = f"{{{guid}}}"
     keys = {
         INNO_APP_ID,
-        f"{{{INNO_APP_ID.strip('{}')}}}",
+        braced,
+        f"{braced}_is1",
+        f"{guid}_is1",
     }
     for hive, base in roots:
         for key_name in keys:

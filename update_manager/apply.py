@@ -75,11 +75,18 @@ def _find_onedir_root(extract_dir: Path) -> Path:
     raise RuntimeError("zip does not contain CloneUp.exe")
 
 
-def _clear_dir_contents(folder: Path) -> None:
-    """Remove files/dirs inside folder but keep folder itself."""
+def _preserve_name(name: str) -> bool:
+    """Keep Inno uninstaller files so Apps & Features removal still works."""
+    return name.lower().startswith("unins")
+
+
+def _clear_dir_contents(folder: Path, *, preserve_unins: bool = True) -> None:
+    """Remove files/dirs inside folder but keep folder itself (and optional unins*)."""
     if not folder.is_dir():
         return
     for child in list(folder.iterdir()):
+        if preserve_unins and _preserve_name(child.name):
+            continue
         try:
             if child.is_dir() and not child.is_symlink():
                 shutil.rmtree(child, ignore_errors=False)
@@ -95,13 +102,18 @@ def copy_onedir_into(src_root: Path, install_dir: Path) -> None:
     Replace install_dir contents with src_root (Inno-like file copy).
 
     Keeps install_dir path stable (Start Menu / ARP still valid).
+    Preserves ``unins*`` so the existing Inno uninstaller keeps working.
     """
     install_dir.mkdir(parents=True, exist_ok=True)
     # Wipe then copy — same effect as ignoreversion recursesubdirs overwrite.
-    _clear_dir_contents(install_dir)
+    _clear_dir_contents(install_dir, preserve_unins=True)
     for item in src_root.iterdir():
+        if _preserve_name(item.name):
+            continue
         dest = install_dir / item.name
         if item.is_dir():
+            if dest.exists():
+                shutil.rmtree(dest)
             shutil.copytree(item, dest, dirs_exist_ok=True)
         else:
             shutil.copy2(item, dest)
@@ -111,25 +123,42 @@ def copy_onedir_into(src_root: Path, install_dir: Path) -> None:
         shutil.copy2(ver_src, install_dir / "VERSION")
 
 
+def stage_zip_update(release: LatestRelease, staging_dir: Path) -> Path:
+    """
+    Download + extract zip into ``staging_dir``; return onedir root with CloneUp.exe.
+
+    Call this **before** killing CloneUp so a failed download leaves the app running.
+    """
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = staging_dir / release.asset_name
+    log.info(
+        "downloading %s (%s) → %s",
+        release.asset_name,
+        version_tuple_to_str(release.version),
+        zip_path,
+    )
+    download_asset(release.download_url, zip_path, digest=release.digest)
+    extract_dir = staging_dir / "extract"
+    extract_dir.mkdir(exist_ok=True)
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        zf.extractall(extract_dir)
+    src = _find_onedir_root(extract_dir)
+    if not (src / "CloneUp.exe").is_file():
+        raise RuntimeError("staged update missing CloneUp.exe")
+    return src
+
+
+def install_staged_onedir(src_root: Path, install_dir: Path) -> None:
+    """File-copy a previously staged onedir into the live install dir."""
+    log.info("file-copy %s → %s", src_root, install_dir)
+    copy_onedir_into(src_root, install_dir)
+
+
 def apply_zip_update(release: LatestRelease, install_dir: Path) -> None:
-    """Download zip for ``release`` and file-copy into ``install_dir``."""
+    """Download zip and install (used by tests; production prefers stage-then-kill)."""
     with tempfile.TemporaryDirectory(prefix="cloneup_upd_") as tmp:
-        tmp_path = Path(tmp)
-        zip_path = tmp_path / release.asset_name
-        log.info(
-            "downloading %s (%s) → %s",
-            release.asset_name,
-            version_tuple_to_str(release.version),
-            zip_path,
-        )
-        download_asset(release.download_url, zip_path, digest=release.digest)
-        extract_dir = tmp_path / "extract"
-        extract_dir.mkdir()
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(extract_dir)
-        src = _find_onedir_root(extract_dir)
-        log.info("file-copy %s → %s", src, install_dir)
-        copy_onedir_into(src, install_dir)
+        src = stage_zip_update(release, Path(tmp))
+        install_staged_onedir(src, install_dir)
     log.info(
         "updated install dir to %s",
         version_tuple_to_str(release.version),

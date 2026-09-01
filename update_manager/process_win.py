@@ -92,18 +92,26 @@ def kill_cloneup_processes(*, wait_sec: float = 30.0) -> bool:
 
 
 def _cloneup_exe_running() -> bool:
+    """
+    True if CloneUp.exe appears in tasklist.
+
+    Uses raw bytes (not text=True): Korean Windows tasklist is cp949 and
+    UTF-8 decoding raises, which used to make the kill-wait exit early.
+    """
     flags = _create_no_window_flags()
     try:
         r = subprocess.run(
             ["tasklist", "/FI", f"IMAGENAME eq {CLONEUP_EXE_NAME}", "/NH"],
             capture_output=True,
-            text=True,
+            text=False,
             timeout=30,
             creationflags=flags,
             check=False,
         )
-        out = (r.stdout or "").lower()
-        return CLONEUP_EXE_NAME.lower() in out and "no tasks" not in out
+        out = (r.stdout or b"").lower()
+        needle = CLONEUP_EXE_NAME.lower().encode("ascii")
+        # "no tasks" messages (EN/KO) do not contain the image name.
+        return needle in out
     except Exception:
         return False
 

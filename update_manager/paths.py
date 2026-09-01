@@ -65,10 +65,15 @@ def _read_uninstall_install_location() -> Path | None:
             r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
         ),
     )
+    # Inno often registers as ``{AppId}_is1`` under HKCU Uninstall.
+    guid = INNO_APP_ID.strip("{}")
+    braced = f"{{{guid}}}"
     app_id_keys = {
         INNO_APP_ID,
-        INNO_APP_ID.strip("{}"),
-        f"{{{INNO_APP_ID.strip('{}')}}}",
+        guid,
+        braced,
+        f"{braced}_is1",
+        f"{guid}_is1",
     }
     for hive, base in roots:
         # Direct AppId subkey (Inno often uses AppId as key name).

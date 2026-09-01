@@ -13,7 +13,10 @@ import sys
 import time
 
 from update_manager import __version__
-from update_manager.apply import apply_zip_update
+import tempfile
+from pathlib import Path
+
+from update_manager.apply import install_staged_onedir, stage_zip_update
 from update_manager.config import INTERVAL_SEC
 from update_manager.github_release import fetch_latest_release
 from update_manager.logutil import setup_logging
@@ -88,12 +91,18 @@ def run_once(log: logging.Logger) -> str:
         log.info("main window visible — defer update")
         return "deferred_ui"
 
-    if not kill_cloneup_processes():
-        log.error("could not stop CloneUp.exe — abort update")
-        return "killed_failed"
-
+    # Gap A: download + verify while CloneUp may still be running.
+    # Only kill after the staged onedir is ready.
     try:
-        apply_zip_update(release, install_dir)
+        with tempfile.TemporaryDirectory(prefix="cloneup_upd_") as tmp:
+            src = stage_zip_update(release, Path(tmp))
+            if main_window_visible():
+                log.info("main window opened during download — defer apply")
+                return "deferred_ui"
+            if not kill_cloneup_processes():
+                log.error("could not stop CloneUp.exe — abort update (files intact)")
+                return "killed_failed"
+            install_staged_onedir(src, install_dir)
     except Exception as e:
         log.exception("apply failed: %s", e)
         return "error"
