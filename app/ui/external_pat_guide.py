@@ -917,7 +917,18 @@ class ExternalBrowserPatGuide(QDialog):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
 
-        # Footer always visible below the scroll (그만하기 / 안내).
+        # Sticky bottom: DONE CTA stays visible; quit row under it.
+        self._done_cta_host = QWidget()
+        done_cta_l = QVBoxLayout(self._done_cta_host)
+        done_cta_l.setContentsMargins(16, 0, 16, 8)
+        done_cta_l.setSpacing(0)
+        self._btn_done_go = QPushButton("클론업으로 돌아가기")
+        self._btn_done_go.setObjectName("dlgPrimary")
+        self._btn_done_go.setDefault(True)
+        self._btn_done_go.clicked.connect(self._finish_accept)
+        done_cta_l.addWidget(self._btn_done_go)
+        self._done_cta_host.hide()
+
         foot_w = QWidget()
         foot = QHBoxLayout(foot_w)
         foot.setContentsMargins(16, 4, 16, 16)
@@ -936,6 +947,7 @@ class ExternalBrowserPatGuide(QDialog):
 
         card_lay.addWidget(head)
         card_lay.addWidget(self._scroll, 1)
+        card_lay.addWidget(self._done_cta_host, 0)
         card_lay.addWidget(foot_w, 0)
 
         root = QVBoxLayout(self)
@@ -1029,7 +1041,8 @@ class ExternalBrowserPatGuide(QDialog):
                 self.adjustSize()
                 return
             avail = screen.availableGeometry()
-            max_h = max(280, avail.height() - 2 * margin)
+            # Leave headroom so taskbar / DPI frame never eats the CTA.
+            max_h = max(280, int(avail.height() * 0.85) - margin)
             max_w = min(440, max(360, avail.width() - 2 * margin))
             self.setMaximumHeight(max_h)
             self.setMaximumWidth(max_w)
@@ -1041,6 +1054,16 @@ class ExternalBrowserPatGuide(QDialog):
             want_h = hint.height() if hint.isValid() and hint.height() > 0 else 420
             want_h = max(220, min(want_h, max_h))
             self.resize(want_w, want_h)
+            # Force the scroll viewport to the remaining height so long
+            # history never pushes the sticky CTA off-screen.
+            try:
+                head_h = 48
+                foot_h = 52
+                cta_h = 56 if self._done_cta_host.isVisible() else 0
+                scroll_h = max(120, want_h - head_h - foot_h - cta_h)
+                self._scroll.setMaximumHeight(scroll_h)
+            except Exception:
+                pass
 
             fg = self.frameGeometry()
             x = avail.left() + margin
@@ -1145,8 +1168,11 @@ class ExternalBrowserPatGuide(QDialog):
 
         done = self._scene == DialogueScene.DONE
         self._done_host.setVisible(done)
+        self._done_cta_host.setVisible(done)
+        self._btn_quit.setVisible(sc.show_cancel and not done)
         if done:
             self._rebuild_receipt()
+            self._foot_note.setText("")
 
         self._btn_reopen.setVisible(
             self._scene == DialogueScene.LOGIN_WAIT and self._google_blocked
@@ -1350,11 +1376,7 @@ class ExternalBrowserPatGuide(QDialog):
             rl.addStretch(1)
             rl.addWidget(vl)
             self._done_lay.addWidget(card)
-        go = QPushButton("클론업으로 돌아가기")
-        go.setObjectName("dlgPrimary")
-        go.setDefault(True)
-        go.clicked.connect(self._finish_accept)
-        self._done_lay.addWidget(go)
+        # Primary CTA lives in sticky ``_done_cta_host`` (never clipped).
 
     def _tick_dots(self) -> None:
         self._wait_dot_i = (self._wait_dot_i + 1) % 3

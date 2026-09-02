@@ -1491,15 +1491,20 @@ class MainController(QObject):
             or "키가 올바르지" in message
             or "만료되었" in message
         )
-        body = message
-        if next_line:
-            body = f"{message}\n\n{next_line}"
+        # Keep the detailed error (good for support) and always append a
+        # plain-language “what to do next” for the popup.
+        hint = next_line or (
+            "다음: 위 내용을 확인한 뒤 다시 시도해 보세요. "
+            "계속 안 되면 창 위쪽 「GitHub: 연결」에서 키를 다시 연결해 보세요."
+        )
+        intro = "작업을 끝내지 못했어요."
+        body = f"{intro}\n\n{message}\n\n{hint}"
 
         if needs_login and not self._busy():
             reply = QMessageBox.warning(
                 self.window,
                 "GitHub 연결 필요",
-                body + "\n\n지금 키를 붙여 넣을까요?",
+                body + "\n\n지금 키를 연결할까요?",
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Ok,
             )

@@ -938,6 +938,29 @@ class CommitHistoryDialog(QDialog):
         self.activateWindow()
         self._fs_hint.setText("전체 화면 · Esc 닫기 · F11 창 모드")
 
+    def _fit_windowed_to_screen(self) -> None:
+        """Keep windowed mode inside the work area (long lists still scroll)."""
+        try:
+            screen = self.screen()
+            if screen is None:
+                from PySide6.QtGui import QGuiApplication
+
+                screen = QGuiApplication.primaryScreen()
+            if screen is None:
+                return
+            avail = screen.availableGeometry()
+            margin = 24
+            max_w = max(640, avail.width() - 2 * margin)
+            max_h = max(420, avail.height() - 2 * margin)
+            w = min(980, max_w)
+            h = min(640, max_h)
+            self.resize(w, h)
+            g = self.frameGeometry()
+            g.moveCenter(avail.center())
+            self.move(g.topLeft())
+        except Exception:
+            pass
+
     def _leave_fullscreen(self) -> None:
         """
         Exit fullscreen into a normal, movable window on the usable desktop
