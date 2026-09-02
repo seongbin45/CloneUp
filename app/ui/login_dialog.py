@@ -1192,6 +1192,9 @@ class ConnectGitHubWizard(QDialog):
         self._choice_fit_gen = 0
         self._normal_fit_gen = 0
         self._normal_fit_expected = 0
+        # Path A: ApplicationModal can cover Windows Security passkey sheet.
+        self._passkey_yield_active = False
+        self._passkey_poll: QTimer | None = None
         if self._use_web:
             # 시안 step0: 항상 「GitHub 계정을 연결할게요」인트로부터
             # (재연결이어도 동일 — 한 화면에 하나만)
@@ -1459,6 +1462,80 @@ class ConnectGitHubWizard(QDialog):
         finally:
             # Longer than any leave-max → place_normal(50ms) from maximize flicker.
             QTimer.singleShot(600, self._clear_suppress_state_fit)
+            self._start_passkey_os_poll()
+
+    def _start_passkey_os_poll(self) -> None:
+        """Watch for Windows Security passkey sheet while Path A WebView is up."""
+        if not self._use_web:
+            return
+        if self._passkey_poll is None:
+            self._passkey_poll = QTimer(self)
+            self._passkey_poll.setInterval(700)
+            self._passkey_poll.timeout.connect(self._poll_passkey_os_prompt)
+        if not self._passkey_poll.isActive():
+            self._passkey_poll.start()
+
+    def _stop_passkey_os_poll(self) -> None:
+        if self._passkey_poll is not None and self._passkey_poll.isActive():
+            self._passkey_poll.stop()
+        self._restore_after_passkey_os_prompt()
+
+    def _poll_passkey_os_prompt(self) -> None:
+        """If OS passkey UI is open (often behind us), yield and raise it."""
+        if not self._use_web or self._on_flow_narrow_page():
+            return
+        try:
+            from app.util.browser_address import find_passkey_os_hwnd
+
+            hwnd, _title = find_passkey_os_hwnd()
+        except Exception:
+            hwnd = 0
+        if hwnd:
+            self._yield_for_passkey_os_prompt(force=False)
+        elif self._passkey_yield_active:
+            self._restore_after_passkey_os_prompt()
+
+    def _yield_for_passkey_os_prompt(self, *, force: bool = False) -> None:
+        """
+        Let Windows Security / passkey sheet appear above this dialog.
+
+        ApplicationModal Qt dialogs often paint *over* the OS credential UI
+        after WebAuthn in Qt WebEngine — PIN/QR becomes unreachable.
+        """
+        from app.util.browser_address import bring_passkey_os_prompt_forward
+
+        if self._passkey_yield_active and not force:
+            # Still refresh z-order — sheet can lose top again.
+            ok, detail = bring_passkey_os_prompt_forward()
+            if ok:
+                self._wiz_log(f"[연결] 패스키 창 앞으로: {detail}")
+            return
+        self._passkey_yield_active = True
+        try:
+            # Drop modal so OS UI can take focus; dim so the sheet is obvious.
+            self.setWindowModality(Qt.WindowModality.NonModal)
+            self.setWindowOpacity(0.55)
+        except Exception:
+            pass
+        ok, detail = bring_passkey_os_prompt_forward()
+        self._wiz_log(
+            f"[연결] 패스키 인증 창 양보 "
+            f"({'OK' if ok else '대기'} {detail})"
+        )
+        self._start_passkey_os_poll()
+
+    def _restore_after_passkey_os_prompt(self) -> None:
+        if not self._passkey_yield_active:
+            return
+        self._passkey_yield_active = False
+        try:
+            self.setWindowModality(Qt.WindowModality.ApplicationModal)
+            self.setWindowOpacity(1.0)
+            self.raise_()
+            self.activateWindow()
+        except Exception:
+            pass
+        self._wiz_log("[연결] 패스키 양보 해제 — 연결 창 복귀")
 
     def changeEvent(self, event) -> None:  # noqa: N802
         super().changeEvent(event)
@@ -1699,6 +1776,7 @@ class ConnectGitHubWizard(QDialog):
                 + ("(키는 있었음)" if has else "(키 없음)")
             )
         self._dismiss_away_return_banner()
+        self._stop_passkey_os_poll()
         self._stop_clipboard_watch()
         super().closeEvent(event)
 
@@ -1712,6 +1790,7 @@ class ConnectGitHubWizard(QDialog):
             + ("— 키는 필드에 있었음" if has else "— 사용자 취소/닫기")
         )
         self._dismiss_away_return_banner()
+        self._stop_passkey_os_poll()
         self._stop_clipboard_watch()
         super().reject()
 
@@ -1724,6 +1803,7 @@ class ConnectGitHubWizard(QDialog):
             f"만료={self._token_expires_at or '—'}"
         )
         self._dismiss_away_return_banner()
+        self._stop_passkey_os_poll()
         self._stop_clipboard_watch()
         super().accept()
 
@@ -3311,6 +3391,8 @@ class ConnectGitHubWizard(QDialog):
         from app.ui.connect_webview import ui_index_for_stage
 
         st = stage if isinstance(stage, GitHubPageStage) else GitHubPageStage.UNKNOWN
+        if st == GitHubPageStage.AUTH_PASSKEY_OS:
+            self._yield_for_passkey_os_prompt(force=True)
         ui = ui_index_for_stage(st)
         if ui is not None:
             # Advance sticky max; current follows live page
@@ -3572,6 +3654,9 @@ class ConnectGitHubWizard(QDialog):
             self._dismiss_away_return_banner()
             if method in ("github_login", "google", "apple", "passkey"):
                 self._saw_github_login_page = True
+            if method == "passkey":
+                # WebAuthn page — OS sheet may already be behind this modal.
+                self._yield_for_passkey_os_prompt(force=True)
             try:
                 i = int(idx)
             except (TypeError, ValueError):

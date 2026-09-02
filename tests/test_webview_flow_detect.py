@@ -217,3 +217,20 @@ def test_guide_copy_leads_short() -> None:
         assert pair is not None
         guide_lead(pair[1])
         assert len(pair[1]) <= GUIDE_LEAD_MAX_CHARS
+
+
+def test_webview_webauthn_passkey_is_current() -> None:
+    """In-app WebView: /sessions/two-factor/webauthn must be passkey auth."""
+    assert (
+        detect_webview_method(
+            "https://github.com/sessions/two-factor/webauthn"
+        )
+        == "passkey"
+    )
+    kind, idx, meta = classify_webview_sample(
+        "https://github.com/sessions/two-factor/webauthn",
+        title="Two-factor authentication",
+        html="Authenticate using your passkey\nUse passkey",
+    )
+    assert kind == "current" and idx == 0
+    assert meta.get("method") == "passkey"

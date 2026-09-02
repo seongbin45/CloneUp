@@ -147,6 +147,14 @@ def detect_webview_method(url: str, title: str = "", html: str = "") -> str:
     if host == "github.com" or (host and host.endswith(".github.com")):
         if path == "/logout" or path.startswith("/logout"):
             return "github_logout"
+        # WebAuthn / passkey 2FA before generic /sessions → github_login.
+        if "/two-factor/webauthn" in path or path.endswith("/webauthn"):
+            return "passkey"
+        blob = _blob(title, html)
+        if "authenticate using your passkey" in blob or (
+            "use passkey" in blob and "two-factor" in blob
+        ):
+            return "passkey"
         if path.startswith("/login") or path.startswith("/sessions/"):
             return "github_login"
         if looks_like_github_logged_out_html(u, title, html):
@@ -176,7 +184,7 @@ def classify_webview_sample(
     if method in ("github_logout", "github_logged_out"):
         return ("logged_out", 0, meta)
 
-    if method in ("apple", "google", "github_login"):
+    if method in ("apple", "google", "github_login", "passkey"):
         return ("current", 0, meta)
 
     if not u and not title:
@@ -206,8 +214,12 @@ def classify_webview_sample(
         GitHubPageStage.TOKEN_FINE_LIST,
     ):
         return ("reached", 2, meta)
+    if st == GitHubPageStage.AUTH_PASSKEY_OS:
+        meta["method"] = "passkey"
+        return ("current", 0, meta)
     if st == GitHubPageStage.AUTH_2FA:
-        return ("reached", 1, meta)
+        meta["method"] = "github_2fa"
+        return ("current", 0, meta)
     if st == GitHubPageStage.LOGIN:
         return ("current", 0, meta)
 

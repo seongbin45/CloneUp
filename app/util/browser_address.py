@@ -327,11 +327,15 @@ def is_github_flow_family_url(
 
 def looks_like_passkey_os_prompt(window_title: str, ui_text: str = "") -> bool:
     """
-    True if foreground looks like Windows Security passkey sheet.
+    True if text looks like Windows Security passkey sheet.
 
     Screenshot (ko): title 「Windows 보안」, heading 「패스키로 로그인」,
     options 「iPhone, iPad 또는 Android…」(QR) / 「이 디바이스」.
     Also PIN confirm: 「이 디바이스에서 로그인하시겠습니까?」.
+
+    Title alone may be enough (``Windows 보안`` / ``Windows Security``) when
+    the sheet is behind an ApplicationModal Qt dialog and we only have HWND
+    titles from EnumWindows.
     """
     blob = f"{window_title or ''}\n{ui_text or ''}".lower()
     if not blob.strip():
@@ -354,7 +358,124 @@ def looks_like_passkey_os_prompt(window_title: str, ui_text: str = "") -> bool:
         or "로그인하시겠습니까" in blob
         or "sign in on this device" in blob
     )
-    return win_sec and passkey
+    if win_sec and passkey:
+        return True
+    # Title-only: Credential UI often only exposes 「Windows 보안」.
+    title_l = (window_title or "").strip().lower()
+    if title_l in ("windows 보안", "windows security", "windows hello"):
+        return True
+    return False
+
+
+def find_passkey_os_hwnd() -> tuple[int, str]:
+    """
+    Find a top-level Windows Security / passkey sheet HWND (may be behind us).
+
+    Returns ``(hwnd, title)`` or ``(0, "")``.
+    """
+    import sys
+
+    if sys.platform != "win32":
+        return 0, ""
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except Exception:
+        return 0, ""
+
+    user32 = ctypes.windll.user32
+    found: list[tuple[int, str]] = []
+
+    EnumWindowsProc = ctypes.WINFUNCTYPE(
+        ctypes.c_bool, wintypes.HWND, wintypes.LPARAM
+    )
+
+    def _cb(hwnd: int, _lp: int) -> bool:
+        try:
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            n = user32.GetWindowTextLengthW(hwnd)
+            if n <= 0 or n > 200:
+                return True
+            buf = ctypes.create_unicode_buffer(n + 1)
+            user32.GetWindowTextW(hwnd, buf, n + 1)
+            title = (buf.value or "").strip()
+            if not title:
+                return True
+            if looks_like_passkey_os_prompt(title, ""):
+                found.append((int(hwnd), title))
+                return False  # stop
+        except Exception:
+            pass
+        return True
+
+    try:
+        # Keep a strong ref — ctypes may GC a temporary callback mid-enum.
+        _enum_cb = EnumWindowsProc(_cb)
+        user32.EnumWindows(_enum_cb, 0)
+    except Exception:
+        return 0, ""
+    if not found:
+        return 0, ""
+    return found[0]
+
+
+def bring_passkey_os_prompt_forward() -> tuple[bool, str]:
+    """
+    Raise the Windows Security passkey sheet above our modal Qt dialog.
+
+    ApplicationModal CloneUp connect windows often sit *above* the OS
+    credential UI after WebAuthn — users cannot see/PIN the passkey sheet.
+    """
+    import sys
+
+    hwnd, title = find_passkey_os_hwnd()
+    if not hwnd:
+        return False, "passkey-os-not-found"
+    if sys.platform != "win32":
+        return False, "not-windows"
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        foreground = user32.GetForegroundWindow()
+        if foreground == hwnd:
+            return True, f"already-fg|{title[:40]}"
+        fg_tid = user32.GetWindowThreadProcessId(foreground, None)
+        our_tid = kernel32.GetCurrentThreadId()
+        attached = False
+        if fg_tid and our_tid and fg_tid != our_tid:
+            attached = bool(user32.AttachThreadInput(fg_tid, our_tid, True))
+        try:
+            # HWND_TOPMOST briefly, then HWND_NOTOPMOST — pierces Qt modal stack.
+            HWND_TOPMOST = -1
+            HWND_NOTOPMOST = -2
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_SHOWWINDOW = 0x0040
+            user32.SetWindowPos(
+                hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            )
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            user32.SetWindowPos(
+                hwnd,
+                HWND_NOTOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+            )
+        finally:
+            if attached:
+                user32.AttachThreadInput(fg_tid, our_tid, False)
+        return True, f"raised|{title[:40]}"
+    except Exception as e:
+        return False, f"raise-fail:{e}"
 
 
 # Logged-out GitHub marketing/home exposes these via UI Automation
