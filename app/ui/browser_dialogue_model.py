@@ -339,6 +339,10 @@ def advance_from_browser_kind(
             return DialogueScene.AUTH_WAIT
         return None
 
+    # Soft away (YouTube etc.) during AUTH_WAIT — do not drop auth scene.
+    if kind == "away" and scene == DialogueScene.AUTH_WAIT:
+        return None
+
     # Still on GitHub password / username login form
     if kind == "current" and m == "github_login":
         if past_key_steps:

@@ -151,6 +151,23 @@ def test_advance_login_and_auth() -> None:
     assert nxt4 is None
 
 
+def test_advance_away_keeps_auth_wait() -> None:
+    """YouTube tab during AUTH_WAIT must not clear the auth scene."""
+    assert (
+        advance_from_browser_kind(
+            DialogueScene.AUTH_WAIT, "away", None, method="away"
+        )
+        is None
+    )
+    # Passkey method still wins even if kind were wrong
+    assert (
+        advance_from_browser_kind(
+            DialogueScene.LOGIN_WAIT, "away", None, method="passkey"
+        )
+        == DialogueScene.AUTH_WAIT
+    )
+
+
 def test_advance_bounce_back_when_auth_incomplete() -> None:
     """Key page without finished auth → bounce; password → LOGIN, 2FA/passkey → AUTH."""
     nxt = advance_from_browser_kind(

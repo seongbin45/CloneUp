@@ -1808,10 +1808,9 @@ def read_browser_page_sample() -> BrowserPageSample | None:
     """
     Best-effort sample: omnibox URL + window title + accessible UI names.
 
-    Prefers foreground Chromium, then Apple/Google/GitHub tabs, then any
-    Chromium window. Also samples a foreground Windows Security sheet
-    (passkey). Does not use screenshots (DOM often hidden from a11y);
-    callers may combine with coordinate click if UIA Invoke fails.
+    Prefers **any** Windows Security passkey sheet (even behind YouTube /
+    StayOnTop guide), then foreground Chromium, then Apple/Google/GitHub
+    tabs. Does not use screenshots (DOM often hidden from a11y).
 
     Performance: first pass reads **URL + title only** (no deep a11y walk).
     Full UI harvest runs only on the chosen window — otherwise Path B polls
@@ -1859,6 +1858,18 @@ def read_browser_page_sample() -> BrowserPageSample | None:
             return None
 
     try:
+        # Passkey OS sheet first — user may have clicked YouTube while the
+        # Windows Security dialog is still open behind/beside the browser.
+        # Foreground-only checks miss that and Path B wrongly reports "away".
+        pk_hwnd, pk_title = find_passkey_os_hwnd()
+        if pk_hwnd:
+            return BrowserPageSample(
+                url="",
+                window_title=pk_title or "Windows 보안",
+                ui_text="passkey|os-enum",
+                source="os-passkey-enum",
+            )
+
         fg = auto.GetForegroundControl()
         win = fg
         top = None

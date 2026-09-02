@@ -251,6 +251,19 @@ def test_github_logged_out_via_sign_in_sign_up_ui() -> None:
     )
 
 
+def test_os_passkey_title_classifies_even_without_url() -> None:
+    """YouTube may be the Chromium tab; Windows 보안 still means passkey."""
+    from app.ui.external_pat_guide import classify_browser_sample
+
+    kind, idx, meta = classify_browser_sample(
+        "",
+        window_title="Windows 보안",
+        ui_text="passkey|os-enum",
+    )
+    assert kind == "current" and idx == 0
+    assert meta.get("method") == "passkey"
+
+
 def test_token_list_vs_new_classify_methods() -> None:
     """ASK_EXPIRY must see token_list vs token_new — not the same blob."""
     list_ui = (

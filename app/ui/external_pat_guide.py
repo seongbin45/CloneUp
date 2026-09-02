@@ -1892,6 +1892,24 @@ class ExternalBrowserPatGuide(QDialog):
         )
         method = str((meta or {}).get("method") or "")
 
+        # Passkey / Hello sheet can stay open while the user clicks YouTube.
+        # Prefer OS HWND over the "away" Chromium tab so AUTH_WAIT does not drop.
+        if method != "passkey" and kind in ("away", "unknown", "current"):
+            try:
+                from app.util.browser_address import find_passkey_os_hwnd
+
+                pk_hwnd, pk_title = find_passkey_os_hwnd()
+            except Exception:
+                pk_hwnd, pk_title = 0, ""
+            if pk_hwnd:
+                kind, idx = "current", 0
+                method = "passkey"
+                meta = dict(meta or {})
+                meta["method"] = "passkey"
+                meta["os_passkey"] = pk_title or "Windows 보안"
+                title = meta["os_passkey"]
+                ui = ui or "passkey|os-enum"
+
         # Wrong-tab recovery: StayOnTop guide often leaves a non-GitHub Chrome
         # window ranked first. Re-open once so the GitHub tab comes forward.
         # Also: /settings/tokens LIST is not the create form — reopen /new.
@@ -1899,9 +1917,42 @@ class ExternalBrowserPatGuide(QDialog):
             self._scene in (DialogueScene.ASK_SCOPE, DialogueScene.ASK_EXPIRY)
             and self._token_nav_opened
         )
+        # During login/auth, soft-away (YouTube) must not reopen login and
+        # kill an in-progress passkey / Apple sheet.
+        auth_sticky = self._scene in (
+            DialogueScene.LOGIN_WAIT,
+            DialogueScene.AUTH_WAIT,
+        ) and (
+            method in (
+                "passkey",
+                "apple",
+                "github_2fa",
+                "github_mobile",
+                "github_totp",
+                "github_recovery",
+                "google",
+            )
+            or bool(self._auth_method)
+        )
         if kind in ("away", "unknown") or (
             on_token_steps and method == "token_list"
         ):
+            if auth_sticky and kind in ("away", "unknown"):
+                # Keep AUTH_WAIT / passkey copy; nudge without resetting.
+                self._away_streak = 0
+                if self._scene == DialogueScene.AUTH_WAIT:
+                    self._sub.setText(
+                        "브라우저에서 다른 탭을 보고 계신 것 같아요. "
+                        "패스키·인증 창이 있으면 그 창에서 이어서 확인해 주세요."
+                    )
+                elif self._auth_method:
+                    # Had started auth — park on AUTH_WAIT instead of reopening.
+                    self._set_scene(DialogueScene.AUTH_WAIT)
+                    self._sub.setText(
+                        "인증이 아직 끝나지 않았어요. "
+                        "패스키·이메일 확인 창으로 돌아가 주세요."
+                    )
+                return
             if self._scene == DialogueScene.LOGIN_WAIT and kind in (
                 "away",
                 "unknown",
