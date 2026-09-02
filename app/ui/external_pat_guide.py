@@ -737,7 +737,8 @@ class ExternalBrowserPatGuide(QDialog):
         self._expiry_read_spin: QLabel | None = None
         self._expiry_read_value: QLabel | None = None
         self._expiry_confirm_btn: QPushButton | None = None
-
+        self._nudge_pending = False  # re-run 도와주세요 once if clicked while busy
+        self._assist_aside = False  # guide dimmed while CDP/UIA clicks
 
         # Tee Path B UIA helpers into main textLog while this guide is alive.
         set_path_b_log_sink(self._emit_log)
@@ -1049,7 +1050,13 @@ class ExternalBrowserPatGuide(QDialog):
         self._nudge.setVisible(nudge)
         if nudge:
             self._nudge_text.setText(sc.nudge_text)
-            self._nudge_btn.setText(sc.nudge_btn or "버튼이 안 보여요")
+            # Don't clobber busy label/enabled while assist is running.
+            if self._assist_busy():
+                self._nudge_btn.setText("찾는 중…")
+                self._nudge_btn.setEnabled(False)
+            else:
+                self._nudge_btn.setText(sc.nudge_btn or "도와주세요")
+                self._nudge_btn.setEnabled(True)
             try:
                 from app.util.browser_cdp import cdp_enabled, probe_cdp_endpoint
 
@@ -1472,6 +1479,32 @@ class ExternalBrowserPatGuide(QDialog):
         w = self._assist_worker
         return w is not None and w.isRunning()
 
+    def _set_nudge_busy(self, busy: bool, *, status: str = "") -> None:
+        """Disable 「도와주세요」 while assist runs — avoids fake 'need 2 clicks'."""
+        try:
+            self._nudge_btn.setEnabled(not busy)
+            if busy:
+                self._nudge_btn.setText("찾는 중…")
+            else:
+                self._nudge_btn.setText("도와주세요")
+        except Exception:
+            pass
+        if status:
+            self._sub.setText(status)
+
+    def _assist_guide_aside(self, aside: bool) -> None:
+        """Dim StayOnTop card so UIA/coordinate clicks hit the browser, not us."""
+        if aside == self._assist_aside:
+            return
+        self._assist_aside = aside
+        try:
+            if aside:
+                self.setWindowOpacity(0.25)
+            else:
+                self.setWindowOpacity(_GUIDE_OPACITY)
+        except Exception:
+            pass
+
     def _start_assist_worker(
         self,
         op: str,
@@ -1490,13 +1523,27 @@ class ExternalBrowserPatGuide(QDialog):
         )
         worker.finished_result.connect(self._on_assist_finished)
         self._assist_worker = worker
+        if op in ("nudge", "generate", "expiry"):
+            self._assist_guide_aside(True)
         worker.start()
         return True
 
     def _on_assist_finished(self, op: str, ok: bool, detail: str) -> None:
         """UI-thread slot: apply background assist result."""
+        self._assist_guide_aside(False)
+        self._set_nudge_busy(False)
         if self._done:
             return
+
+        # User pressed 「도와주세요」 again while the first run was still walking
+        # UIA — coalesce into one follow-up instead of a dead second click.
+        user_repress = bool(self._nudge_pending) and op in (
+            "nudge",
+            "generate",
+            "expiry",
+        )
+        self._nudge_pending = False
+
         if op == "wait_ready":
             if ok:
                 self._guide_log("[Path B][CDP] 포트 준비됨 — Expiration 재시도")
@@ -1510,7 +1557,7 @@ class ExternalBrowserPatGuide(QDialog):
                 self._guide_log("[Path B][CDP] 포트 미응답 — UIA/수동으로 진행")
                 self._sub.setText(
                     "제어용 브라우저 포트가 아직 안 열렸습니다. "
-                    "페이지가 뜬 뒤 「버튼이 안 보여요」를 누르거나 "
+                    "페이지가 뜬 뒤 「도와주세요」를 누르거나 "
                     "Expiration을 직접 맞춰 주세요."
                 )
             self._render()
@@ -1524,14 +1571,15 @@ class ExternalBrowserPatGuide(QDialog):
                     f"Expiration을 {exp}으로 맞춰 봤어요. "
                     "Generate token을 눌러 주세요."
                 )
-                return
-            if self._expiry_uia_tries >= 3:
+            elif self._expiry_uia_tries >= 3:
                 exp = self._expiry_label or "90일"
                 self._guide_log(f"[Path B] Expiration 자동 맞춤 포기: {detail}")
                 self._sub.setText(
                     f"자동으로 못 바꿨어요({detail}). "
                     f"Expiration을 {exp}으로 직접 고른 뒤 Generate token을 눌러 주세요."
                 )
+            if user_repress and self._scene == DialogueScene.PRESS_GENERATE:
+                QTimer.singleShot(200, self._on_nudge_generate)
             return
 
         if op == "nudge":
@@ -1554,15 +1602,18 @@ class ExternalBrowserPatGuide(QDialog):
             self._expiry_uia_ok = False
             self._schedule_expiry_invoke_tries()
             self._sub.setText(
-                "페이지를 다시 열었어요. Expiration을 확인한 뒤 "
-                "Generate token을 눌러 주세요."
+                "페이지를 다시 열었어요. 잠시 후 Generate를 다시 찾아볼게요…"
             )
+            # Auto-retry once after reload — user should not need a 2nd press.
+            QTimer.singleShot(1800, self._retry_nudge_after_reopen)
             return
 
         if op == "generate" and ok:
             self._sub.setText(
                 f"Generate를 눌러 봤어요 ({detail}). 키가 나오면 받아올게요."
             )
+        if user_repress and self._scene == DialogueScene.PRESS_GENERATE:
+            QTimer.singleShot(200, self._on_nudge_generate)
 
     def _schedule_expiry_invoke_tries(self) -> None:
         """Retry expiry assist a few times while the form loads (async)."""
@@ -1637,20 +1688,57 @@ class ExternalBrowserPatGuide(QDialog):
         if not self._start_assist_worker("wait_ready"):
             self._sub.setText("다른 자동 맞춤이 끝나길 기다린 뒤 다시 시도해 주세요.")
 
+    def _retry_nudge_after_reopen(self) -> None:
+        """Auto-retry Generate once after failure reopened tokens/new."""
+        if self._done or self._scene != DialogueScene.PRESS_GENERATE:
+            self._nudge_pending = False
+            return
+        if self._assist_busy():
+            self._nudge_pending = True
+            return
+        self._guide_log("[Path B] Generate 자동 재시도 (페이지 재오픈 후)")
+        self._on_nudge_generate()
+
     def _on_nudge_generate(self) -> None:
-        """도와주세요 — opt-in CDP/UIA help (Expiry + Generate). Off by default."""
+        """도와주세요 — opt-in CDP/UIA help (Expiry + Generate). Off by default.
+
+        Historically felt like "need two clicks": the first press started a slow
+        UIA walk (many Chromium PIDs) with no busy UI, so users pressed again;
+        the second press was ignored (``_assist_busy``) while the first worker
+        later succeeded. Fix: disable the button, show progress, dim StayOnTop
+        so clicks hit the browser, and skip expiry when already confirmed.
+        """
         self._guide_log("[Path B] Generate 도움 버튼(도와주세요)")
         if self._assist_busy():
-            self._sub.setText("잠시만요 — 브라우저 맞춤이 진행 중입니다…")
+            # Remember intent — finish handler will re-fire once.
+            self._nudge_pending = True
+            self._set_nudge_busy(
+                True,
+                status="이미 브라우저에서 Generate를 찾는 중이에요. 잠시만 기다려 주세요…",
+            )
             return
         want = self._wanted_expiry_days()
-        # Prefer skipping expiry mutate when we already read the user's choice.
-        skip = bool(self._expiry_uia_ok)
-        self._sub.setText("Generate를 찾아 보는 중…")
+        # Skip expiry mutate when user already confirmed on ASK_EXPIRY (or UIA ok).
+        skip = bool(
+            self._expiry_uia_ok
+            or self._last_expiry_days_read
+            or self._expires_at
+        )
+        self._nudge_pending = False
+        self._set_nudge_busy(
+            True,
+            status=(
+                "Generate token을 찾아 누르는 중… "
+                "(브라우저 창이 많으면 수 초 걸릴 수 있어요)"
+            ),
+        )
         if not self._start_assist_worker(
             "nudge", days=want, skip_expiry=skip
         ):
-            self._sub.setText("다른 작업이 끝나길 기다린 뒤 다시 눌러 주세요.")
+            self._set_nudge_busy(
+                False,
+                status="다른 작업이 끝나길 기다린 뒤 다시 눌러 주세요.",
+            )
 
     def _reopen_github_login(self) -> None:
         from PySide6.QtCore import QUrl

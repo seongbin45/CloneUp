@@ -1211,29 +1211,63 @@ def try_invoke_generate_token_button(*, allow_click: bool = True) -> tuple[bool,
             f"[Path B] Generate 시도 (click={'on' if allow_click else 'off'}, "
             f"browser_pids={len(pids)})"
         )
-        # Ranked: strong PAT title → foreground → Z-order proxy.
-        for w in _iter_chromium_windows(auto, pids=pids or None):
+
+        def _title_of(win) -> str:
+            try:
+                return (win.Name or "").strip()
+            except Exception:
+                return ""
+
+        def _is_create_form(title: str) -> bool:
+            tl = (title or "").lower()
+            return "new personal access token" in tl or "tokens/new" in tl
+
+        windows = list(_iter_chromium_windows(auto, pids=pids or None))
+        # Create-form first so we don't UIA-walk YouTube/etc. for seconds
+        # (that lag made 「도와주세요」 feel like it needed two presses).
+        create_wins = [w for w in windows if _is_create_form(_title_of(w))]
+        other_wins = [w for w in windows if w not in create_wins]
+
+        def _try_window(win) -> tuple[bool, str]:
+            title = _title_of(win)
             found: list = []
             try:
-                for ctrl in w.GetChildren():
+                for ctrl in win.GetChildren():
                     _collect_named_controls(ctrl, found, depth=0)
             except Exception:
-                continue
+                return False, "walk-fail"
             for name, _ctype, ctrl in found:
                 if not _match_generate(name):
                     continue
                 ok, detail = _uia_activate(
-                    ctrl, allow_click=allow_click, owner_window=w
+                    ctrl, allow_click=allow_click, owner_window=win
                 )
                 if ok:
-                    title = ""
-                    try:
-                        title = (w.Name or "")[:48]
-                    except Exception:
-                        pass
-                    msg = f"{detail}|win={title}"
+                    msg = f"{detail}|win={title[:48]}"
                     path_b_log(f"[Path B] Generate 성공: {msg}")
                     return True, msg
+            return False, title[:40]
+
+        for w in create_wins:
+            ok, detail = _try_window(w)
+            if ok:
+                return True, detail
+            # Form is open but Generate missing — don't scan the rest.
+            fail = f"generate-not-on-create-form|win={detail}"
+            path_b_log(f"[Path B] Generate 실패: {fail}")
+            return False, fail
+
+        for w in other_wins:
+            title = _title_of(w).lower()
+            if (
+                "personal access token" not in title
+                and "github" not in title
+            ):
+                continue
+            ok, detail = _try_window(w)
+            if ok:
+                return True, detail
+
         fail = f"generate-not-found|pids={len(pids)}"
         path_b_log(f"[Path B] Generate 실패: {fail}")
         return False, fail
