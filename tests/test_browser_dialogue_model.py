@@ -53,7 +53,12 @@ def test_scene_copy_browser_first() -> None:
     assert "나머지는 제가" not in login.sub
 
     auth = scene_copy(DialogueScene.AUTH_WAIT)
-    assert "이메일" in auth.say or "패스키" in auth.say
+    assert (
+        "이메일" in auth.say
+        or "패스키" in auth.say
+        or "인증" in auth.say
+        or "패스키" in auth.sub
+    )
 
     pk = scene_copy(DialogueScene.AUTH_WAIT, auth_method="passkey")
     assert "패스키" in pk.say
@@ -62,6 +67,16 @@ def test_scene_copy_browser_first() -> None:
     em = scene_copy(DialogueScene.AUTH_WAIT, auth_method="github_2fa")
     assert "이메일" in em.say
     assert "Verify your device" in em.sub
+
+    mob = scene_copy(DialogueScene.AUTH_WAIT, auth_method="github_mobile")
+    assert "Mobile" in mob.say or "모바일" in mob.say.lower() or "GitHub Mobile" in mob.sub
+
+    totp = scene_copy(DialogueScene.AUTH_WAIT, auth_method="github_totp")
+    assert "인증 앱" in totp.say or "Authenticator" in totp.sub
+
+    rec = scene_copy(DialogueScene.AUTH_WAIT, auth_method="github_recovery")
+    assert "복구" in rec.say
+    assert "recovery" in rec.sub.lower()
 
     exp = scene_copy(DialogueScene.ASK_EXPIRY)
     assert "만료" in exp.say or "Expiration" in exp.sub
@@ -108,6 +123,14 @@ def test_advance_login_and_auth() -> None:
         DialogueScene.LOGIN_WAIT, "current", 0, method="github_2fa"
     )
     assert nxt_2fa == DialogueScene.AUTH_WAIT
+
+    for m in ("github_mobile", "github_totp", "github_recovery"):
+        assert (
+            advance_from_browser_kind(
+                DialogueScene.LOGIN_WAIT, "current", 0, method=m
+            )
+            == DialogueScene.AUTH_WAIT
+        )
 
     nxt2 = advance_from_browser_kind(
         DialogueScene.AUTH_WAIT, "reached", 1, method="token_list"

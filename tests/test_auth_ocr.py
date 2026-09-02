@@ -183,6 +183,81 @@ def test_webauthn_wins_over_guide_verify_your_device_leak() -> None:
     assert classify_auth_ocr_text(noisy) == "passkey"
 
 
+_MOBILE_OCR = """
+Two-factor authentication
+We sent you a sign-in request on your GitHub Mobile app.
+Approve the request to verify your identity.
+More options
+Passkey
+Authenticator app
+2FA recovery code
+"""
+
+_TOTP_OCR = """
+Two-factor authentication
+Enter the code from your two-factor authentication app
+or browser extension below.
+Verify
+More options
+"""
+
+_RECOVERY_OCR = """
+Two-factor recovery
+If you are unable to access your device or cannot receive
+a two-factor authentication code, enter one of your
+recovery codes to verify your identity.
+XXXX-XXXXXX
+Verify
+More options
+"""
+
+
+def test_classify_github_mobile_totp_recovery() -> None:
+    from app.util.auth_ocr import (
+        looks_like_github_mobile_2fa,
+        looks_like_github_recovery_2fa,
+        looks_like_github_totp_2fa,
+    )
+
+    assert looks_like_github_mobile_2fa("", _MOBILE_OCR)
+    assert classify_auth_ocr_text(_MOBILE_OCR) == "github_mobile"
+    assert detect_signin_method(
+        "https://github.com/sessions/two-factor",
+        ui_text=_MOBILE_OCR,
+    ) == "github_mobile"
+
+    assert looks_like_github_totp_2fa("", _TOTP_OCR)
+    assert classify_auth_ocr_text(_TOTP_OCR) == "github_totp"
+    assert detect_signin_method(
+        "https://github.com/sessions/two-factor",
+        ui_text=_TOTP_OCR,
+    ) == "github_totp"
+
+    assert looks_like_github_recovery_2fa("", _RECOVERY_OCR)
+    assert classify_auth_ocr_text(_RECOVERY_OCR) == "github_recovery"
+    assert detect_signin_method(
+        "https://github.com/sessions/two-factor",
+        ui_text=_RECOVERY_OCR,
+    ) == "github_recovery"
+
+    # Mobile More-options links must not steal totp/recovery classification.
+    assert not looks_like_github_totp_2fa("", _MOBILE_OCR)
+    assert not looks_like_github_recovery_2fa("", _MOBILE_OCR)
+
+    for text, method in (
+        (_MOBILE_OCR, "github_mobile"),
+        (_TOTP_OCR, "github_totp"),
+        (_RECOVERY_OCR, "github_recovery"),
+    ):
+        kind, idx, meta = classify_browser_sample(
+            "https://github.com/sessions/two-factor",
+            window_title="Two-factor authentication",
+            ui_text=text,
+        )
+        assert kind == "current" and idx == 0
+        assert meta.get("method") == method
+
+
 def test_live_screenshot_ocr_if_present() -> None:
     """Optional: run real OCR on user screenshots when files exist."""
     from PIL import Image
@@ -223,3 +298,17 @@ def test_live_screenshot_ocr_if_present() -> None:
         crop = img.crop((int(w * 0.15), int(h * 0.08), int(w * 0.85), int(h * 0.92)))
         text, _ = ocr_image_windows(crop)
         assert classify_auth_ocr_text(text) == "passkey", (name, text[:240])
+
+    for name, expect in (
+        ("스크린샷 2026-09-02 085449.png", "github_mobile"),
+        ("스크린샷 2026-09-02 085551.png", "github_totp"),
+        ("스크린샷 2026-09-02 085652.png", "github_recovery"),
+    ):
+        p = Path(r"C:\Users\seong\Pictures\Screenshots") / name
+        if not p.is_file():
+            continue
+        img = Image.open(p).convert("RGB")
+        w, h = img.size
+        crop = img.crop((int(w * 0.12), int(h * 0.08), int(w * 0.88), int(h * 0.92)))
+        text, _ = ocr_image_windows(crop)
+        assert classify_auth_ocr_text(text) == expect, (name, text[:240])

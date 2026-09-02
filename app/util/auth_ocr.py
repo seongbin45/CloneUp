@@ -99,6 +99,101 @@ def looks_like_github_webauthn_passkey(
     return False
 
 
+def looks_like_github_mobile_2fa(
+    window_title: str = "",
+    ui_text: str = "",
+) -> bool:
+    """
+    GitHub Mobile approve-request 2FA (screenshot 2026-09-02 085449).
+
+    「We sent you a sign-in request on your GitHub Mobile app.
+    Approve the request to verify your identity.」
+    """
+    if looks_like_github_webauthn_passkey(window_title, ui_text):
+        return False
+    blob = _norm_blob(window_title, ui_text)
+    if not blob.strip():
+        return False
+    mobile = "github mobile" in blob
+    sent = (
+        "sign-in request" in blob
+        or "signin request" in blob
+        or "we sent you" in blob
+        or "we sent y0u" in blob  # OCR O→0
+        or "sent you a sign" in blob
+    )
+    approve = "approve the request" in blob or (
+        "approve" in blob and "identity" in blob
+    )
+    if mobile and (sent or approve):
+        return True
+    if mobile and "two-factor authentication" in blob and approve:
+        return True
+    return False
+
+
+def looks_like_github_recovery_2fa(
+    window_title: str = "",
+    ui_text: str = "",
+) -> bool:
+    """
+    2FA recovery-code page (screenshot 2026-09-02 085652).
+
+    Heading 「Two-factor recovery」 + enter one of your recovery codes.
+    """
+    if looks_like_github_webauthn_passkey(window_title, ui_text):
+        return False
+    blob = _norm_blob(window_title, ui_text)
+    if not blob.strip():
+        return False
+    if "two-factor recovery" in blob:
+        return True
+    if "enter one of your" in blob and "recovery" in blob:
+        return True
+    if "recovery codes" in blob and (
+        "verify your identity" in blob
+        or "unable to access" in blob
+        or "cannot receive" in blob
+        or "enter one" in blob
+    ):
+        return True
+    return False
+
+
+def looks_like_github_totp_2fa(
+    window_title: str = "",
+    ui_text: str = "",
+) -> bool:
+    """
+    Authenticator app / browser-extension TOTP (screenshot 2026-09-02 085551).
+
+    「Enter the code from your two-factor authentication app
+    or browser extension below.」
+    """
+    if looks_like_github_webauthn_passkey(window_title, ui_text):
+        return False
+    if looks_like_github_mobile_2fa(window_title, ui_text):
+        return False
+    if looks_like_github_recovery_2fa(window_title, ui_text):
+        return False
+    blob = _norm_blob(window_title, ui_text)
+    if not blob.strip():
+        return False
+    if "enter the code from your two-factor" in blob:
+        return True
+    if "authentication app" in blob and (
+        "enter the code" in blob or "browser extension" in blob
+    ):
+        return True
+    if (
+        "two-factor authentication" in blob
+        and "browser extension" in blob
+        and ("enter" in blob and "code" in blob)
+    ):
+        return True
+    return False
+
+
 def looks_like_device_email_verify(
     window_title: str = "",
     ui_text: str = "",
@@ -113,9 +208,14 @@ def looks_like_device_email_verify(
     Does **not** match the 2FA WebAuthn passkey page — that is
     :func:`looks_like_github_webauthn_passkey` (checked first).
     """
-    # Passkey-primary 2FA must not be treated as email OTP (also avoids
-    # CloneUp AUTH_WAIT 「Verify your device」 copy leaking into desktop OCR).
+    # Other 2FA cards must not be treated as email OTP.
     if looks_like_github_webauthn_passkey(window_title, ui_text):
+        return False
+    if looks_like_github_mobile_2fa(window_title, ui_text):
+        return False
+    if looks_like_github_recovery_2fa(window_title, ui_text):
+        return False
+    if looks_like_github_totp_2fa(window_title, ui_text):
         return False
     blob = _norm_blob(window_title, ui_text)
     if not blob.strip():
@@ -152,6 +252,21 @@ def looks_like_device_email_verify(
     return False
 
 
+# Methods that mean "user is mid-auth" (Path B AUTH_WAIT).
+AUTH_IN_PROGRESS_METHODS = frozenset(
+    {
+        "passkey",
+        "github_2fa",
+        "github_mobile",
+        "github_totp",
+        "github_recovery",
+        "apple",
+        "google",
+        "google_blocked",
+    }
+)
+
+
 def classify_auth_ocr_text(
     text: str,
     *,
@@ -161,8 +276,9 @@ def classify_auth_ocr_text(
     """
     Classify OCR / UIA blob into a sign-in method.
 
-    Returns ``passkey`` | ``github_2fa`` | ``None``.
-    Prefer OS / GitHub passkey pages over email OTP (guide overlay can
+    Returns ``passkey`` | ``github_mobile`` | ``github_totp`` |
+    ``github_recovery`` | ``github_2fa`` | ``None``.
+    Prefer OS / GitHub passkey pages over other 2FA (guide overlay can
     leak 「Verify your device」 into a full-desktop OCR of a passkey tab).
     """
     from app.util.browser_address import looks_like_passkey_os_prompt
@@ -175,6 +291,12 @@ def classify_auth_ocr_text(
         return "passkey"
     if looks_like_github_webauthn_passkey(title, body, url=url):
         return "passkey"
+    if looks_like_github_mobile_2fa(title, body):
+        return "github_mobile"
+    if looks_like_github_recovery_2fa(title, body):
+        return "github_recovery"
+    if looks_like_github_totp_2fa(title, body):
+        return "github_totp"
     if looks_like_device_email_verify(title, body):
         return "github_2fa"
     return None
@@ -385,13 +507,19 @@ def enrich_sample_with_auth_ocr(sample: Any) -> tuple[Any, str]:
     title = getattr(sample, "window_title", "") if sample is not None else ""
     ui = getattr(sample, "ui_text", "") if sample is not None else ""
     method = detect_signin_method(url or "", window_title=title or "", ui_text=ui or "")
-    if method in ("passkey", "github_2fa", "apple", "google", "google_blocked"):
+    if method in AUTH_IN_PROGRESS_METHODS:
         return sample, ""
     if looks_like_passkey_os_prompt(title or "", ui or ""):
         return sample, ""
     if looks_like_github_sudo_passkey(title or "", ui or ""):
         return sample, ""
     if looks_like_github_webauthn_passkey(title or "", ui or "", url=url or ""):
+        return sample, ""
+    if looks_like_github_mobile_2fa(title or "", ui or ""):
+        return sample, ""
+    if looks_like_github_recovery_2fa(title or "", ui or ""):
+        return sample, ""
+    if looks_like_github_totp_2fa(title or "", ui or ""):
         return sample, ""
     if looks_like_device_email_verify(title or "", ui or ""):
         return sample, ""

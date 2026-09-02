@@ -517,7 +517,10 @@ def detect_signin_method(
     try:
         from app.util.auth_ocr import (
             looks_like_device_email_verify,
+            looks_like_github_mobile_2fa,
+            looks_like_github_recovery_2fa,
             looks_like_github_sudo_passkey,
+            looks_like_github_totp_2fa,
             looks_like_github_webauthn_passkey,
         )
 
@@ -527,6 +530,12 @@ def detect_signin_method(
             window_title, ui_text, url=url
         ):
             return "passkey"
+        if looks_like_github_mobile_2fa(window_title, ui_text):
+            return "github_mobile"
+        if looks_like_github_recovery_2fa(window_title, ui_text):
+            return "github_recovery"
+        if looks_like_github_totp_2fa(window_title, ui_text):
+            return "github_totp"
         if looks_like_device_email_verify(window_title, ui_text):
             return "github_2fa"
     except Exception:

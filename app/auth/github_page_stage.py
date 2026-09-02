@@ -141,13 +141,30 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
     if "sign in to github" in title_l:
         return GitHubPageStage.LOGIN
 
+    if _looks_like_webauthn_passkey(title_l, html_l):
+        return GitHubPageStage.AUTH_PASSKEY_OS
+    try:
+        from app.util.auth_ocr import (
+            looks_like_github_mobile_2fa,
+            looks_like_github_recovery_2fa,
+            looks_like_github_totp_2fa,
+        )
+
+        if (
+            looks_like_github_mobile_2fa(title_l, html_l)
+            or looks_like_github_recovery_2fa(title_l, html_l)
+            or looks_like_github_totp_2fa(title_l, html_l)
+        ):
+            return GitHubPageStage.AUTH_2FA
+    except Exception:
+        pass
     if "two-factor authentication" in title_l or "two-factor authentication" in html_l:
-        if _looks_like_webauthn_passkey(title_l, html_l):
-            return GitHubPageStage.AUTH_PASSKEY_OS
         if "authentication code" in html_l or "authenticator" in html_l or "otp" in html_l:
             return GitHubPageStage.AUTH_2FA
         if "two-factor authentication" in title_l:
             return GitHubPageStage.AUTH_2FA
+    if "two-factor recovery" in title_l or "two-factor recovery" in html_l:
+        return GitHubPageStage.AUTH_2FA
 
     if "new personal access token (classic)" in title_l:
         return GitHubPageStage.TOKEN_CLASSIC_NEW

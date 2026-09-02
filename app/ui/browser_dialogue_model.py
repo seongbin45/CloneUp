@@ -104,9 +104,11 @@ def _auth_wait_copy(auth_method: str = "") -> SceneCopy:
     """
     AUTH_WAIT copy tailored to the live browser/OS prompt.
 
-    - ``passkey``: Windows 보안 「패스키로 로그인」 (QR / 이 디바이스)
-    - ``github_2fa``: GitHub 「Verify your device」 email code
-    - else: short combined hint
+    - ``passkey``: Windows 보안 / GitHub Use passkey
+    - ``github_mobile``: GitHub Mobile 앱에서 승인
+    - ``github_totp``: Authenticator 앱 OTP
+    - ``github_recovery``: 2FA recovery code
+    - ``github_2fa``: Verify your device 이메일 코드
     """
     m = (auth_method or "").strip().lower()
     if m == "passkey":
@@ -121,6 +123,41 @@ def _auth_wait_copy(auth_method: str = "") -> SceneCopy:
             ),
             foot_note="확인이 끝나면 키 만들기로 이어져요",
             wait_text="패스키 확인이 끝나는 것을 지켜보고 있어요.",
+        )
+    if m == "github_mobile":
+        return SceneCopy(
+            right_tag="2 / 4",
+            say="GitHub Mobile에서 승인해 주세요",
+            sub=(
+                "휴대폰 GitHub 앱으로 로그인 요청을 보냈습니다. "
+                "앱에서 요청을 승인한 뒤 돌아오세요. "
+                "「More options」에서 패스키·인증앱·복구 코드로 바꿀 수도 있어요."
+            ),
+            foot_note="확인이 끝나면 키 만들기로 이어져요",
+            wait_text="GitHub Mobile 승인을 지켜보고 있어요.",
+        )
+    if m == "github_totp":
+        return SceneCopy(
+            right_tag="2 / 4",
+            say="인증 앱 코드를 입력해 주세요",
+            sub=(
+                "Authenticator 앱(또는 브라우저 확장)에 보이는 "
+                "6자리 코드를 입력한 뒤 Verify를 누르세요. "
+                "이 단계는 제가 대신 입력할 수 없어요."
+            ),
+            foot_note="확인이 끝나면 키 만들기로 이어져요",
+            wait_text="인증 앱 코드 입력을 지켜보고 있어요.",
+        )
+    if m == "github_recovery":
+        return SceneCopy(
+            right_tag="2 / 4",
+            say="복구 코드를 입력해 주세요",
+            sub=(
+                "GitHub 「Two-factor recovery」화면입니다. "
+                "미리 받아 둔 recovery code 하나를 입력한 뒤 Verify를 누르세요."
+            ),
+            foot_note="확인이 끝나면 키 만들기로 이어져요",
+            wait_text="복구 코드 입력을 지켜보고 있어요.",
         )
     if m in ("github_2fa", "email", "device"):
         return SceneCopy(
@@ -153,11 +190,11 @@ def _auth_wait_copy(auth_method: str = "") -> SceneCopy:
         )
     return SceneCopy(
         right_tag="2 / 4",
-        say="이메일·패스키 인증을 끝내 주세요",
+        say="추가 인증을 끝내 주세요",
         sub=(
             "거의 항상 한 번 더 확인합니다. "
-            "이메일 코드(Verify your device) 또는 "
-            "Windows 패스키(QR·이 디바이스)로 확인해 주세요. "
+            "패스키·GitHub Mobile·인증 앱·이메일 코드·복구 코드 중 "
+            "편한 방법으로 확인해 주세요. "
             "끝나기 전에 키 만들기 화면으로 가면 다시 로그인으로 돌아옵니다."
         ),
         foot_note="확인이 끝나면 키 만들기로 이어져요",
@@ -291,7 +328,15 @@ def advance_from_browser_kind(
         return DialogueScene.LOGIN_WAIT if scene != DialogueScene.LOGIN_WAIT else None
 
     # Auth in progress — always park on AUTH_WAIT (even if we had jumped ahead).
-    if m in ("passkey", "apple", "github_2fa", "google"):
+    if m in (
+        "passkey",
+        "apple",
+        "github_2fa",
+        "github_mobile",
+        "github_totp",
+        "github_recovery",
+        "google",
+    ):
         if scene != DialogueScene.AUTH_WAIT:
             return DialogueScene.AUTH_WAIT
         return None

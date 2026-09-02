@@ -225,8 +225,17 @@ def classify_browser_sample(
         else:
             return ("logged_out", 0, meta)
 
-    # Passkey OS sheet, device/email verify, or login form → still signing in
-    if method in ("passkey", "apple", "google", "github_login", "github_2fa"):
+    # Passkey / 2FA options / login form → still signing in
+    if method in (
+        "passkey",
+        "apple",
+        "google",
+        "github_login",
+        "github_2fa",
+        "github_mobile",
+        "github_totp",
+        "github_recovery",
+    ):
         return ("current", 0, meta)
 
     if not u and not window_title:
@@ -271,8 +280,25 @@ def classify_browser_sample(
     ):
         return ("reached", 2, meta)
     if st == GitHubPageStage.AUTH_2FA:
-        # Not "reached" for dialogue — user must finish email code / passkey first.
-        meta["method"] = "github_2fa"
+        # Not "reached" for dialogue — refine Mobile / TOTP / recovery / email.
+        refined = None
+        try:
+            from app.util.auth_ocr import classify_auth_ocr_text
+
+            refined = classify_auth_ocr_text(
+                ui_text or "", window_title=window_title or "", url=u
+            )
+        except Exception:
+            refined = None
+        if refined in (
+            "github_mobile",
+            "github_totp",
+            "github_recovery",
+            "github_2fa",
+        ):
+            meta["method"] = refined
+        else:
+            meta["method"] = "github_2fa"
         return ("current", 0, meta)
     if st == GitHubPageStage.AUTH_PASSKEY_OS:
         # Windows Security sheet *or* GitHub Confirm access + Use passkey
@@ -415,6 +441,24 @@ def _method_guide_copy(method: str) -> tuple[str, str, str]:
             "Windows 「패스키로 로그인」또는 GitHub 「Confirm access → Use passkey」"
             "에서 확인하세요.",
             "검증: 패스키(OS·Confirm access) — 진행 중",
+        )
+    if method == "github_mobile":
+        return (
+            "GitHub Mobile 승인 중",
+            "휴대폰 GitHub 앱에서 로그인 요청을 승인해 주세요.",
+            "검증: GitHub Mobile 승인 요청 — 진행 중",
+        )
+    if method == "github_totp":
+        return (
+            "인증 앱 코드 입력 중",
+            "Authenticator 앱(또는 확장)의 6자리 코드를 입력한 뒤 Verify를 누르세요.",
+            "검증: Authenticator OTP — 진행 중",
+        )
+    if method == "github_recovery":
+        return (
+            "복구 코드 입력 중",
+            "미리 받아 둔 2FA recovery code를 입력한 뒤 Verify를 누르세요.",
+            "검증: Two-factor recovery — 진행 중",
         )
     if method == "github_2fa":
         return (
@@ -1801,12 +1845,23 @@ class ExternalBrowserPatGuide(QDialog):
         )
 
         # Update AUTH_WAIT copy even when the scene does not change.
-        if method in ("passkey", "github_2fa", "apple", "google"):
+        if method in (
+            "passkey",
+            "github_2fa",
+            "github_mobile",
+            "github_totp",
+            "github_recovery",
+            "apple",
+            "google",
+        ):
             if method != self._auth_method:
                 self._auth_method = method
                 label = {
-                    "passkey": "패스키(Windows 보안)",
+                    "passkey": "패스키(Windows 보안·Use passkey)",
                     "github_2fa": "이메일 인증(Verify your device)",
+                    "github_mobile": "GitHub Mobile 승인",
+                    "github_totp": "인증 앱(OTP)",
+                    "github_recovery": "복구 코드(2FA recovery)",
                     "apple": "Apple",
                     "google": "Google",
                 }.get(method, method)
@@ -1840,7 +1895,15 @@ class ExternalBrowserPatGuide(QDialog):
             self._logged_in = True
             self._auth_done = False
             self._google_blocked = False
-            if method in ("passkey", "github_2fa", "apple", "google"):
+            if method in (
+                "passkey",
+                "github_2fa",
+                "github_mobile",
+                "github_totp",
+                "github_recovery",
+                "apple",
+                "google",
+            ):
                 self._auth_method = method
             # Do NOT open tokens/new here — unfinished email/passkey bounces back.
             if self._token_nav_opened or int(prev) >= int(DialogueScene.ASK_SCOPE):
