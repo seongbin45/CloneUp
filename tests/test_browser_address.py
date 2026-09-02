@@ -98,7 +98,7 @@ def test_apple_and_passkey_detection() -> None:
         "Windows 보안",
         "패스키로 로그인\niPhone, iPad 또는 Android 디바이스\n이 디바이스",
     )
-    # Title-only (sheet behind ApplicationModal — EnumWindows sees title only)
+    # Title-only (EnumWindows may only see 「Windows 보안」)
     assert looks_like_passkey_os_prompt("Windows 보안", "")
     assert looks_like_passkey_os_prompt("Windows Security", "")
     assert (
