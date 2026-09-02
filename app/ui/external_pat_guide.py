@@ -238,15 +238,8 @@ def classify_browser_sample(
     ):
         return ("current", 0, meta)
 
-    if not u and not window_title:
+    if not u and not window_title and not (ui_text or "").strip():
         return ("unknown", None, meta)
-
-    # Title-only GitHub window (omnibox often empty while guide is StayOnTop)
-    if not u and "github" in (window_title or "").lower():
-        if looks_like_github_logged_out_ui(window_title, ui_text, url=""):
-            return ("logged_out", 0, meta)
-        meta["method"] = "github_title"
-        return ("reached", 1, meta)
 
     # PAT Note collision flash — must win over generic token-page "reached"
     if looks_like_token_note_taken(window_title, ui_text, url=u):
@@ -266,18 +259,20 @@ def classify_browser_sample(
         meta["method"] = "token_issued_banner"
         return ("reached", 3, meta)
 
-    # Pass title + accessible text — omnibox alone misses 「Verify your device」.
+    # Pass title + accessible text — omnibox alone misses list vs /new and 2FA.
     st = detect_github_page_stage(
         PageSnapshot(url=u, title=window_title or "", html=ui_text or "")
     )
     if st == GitHubPageStage.TOKEN_ISSUED:
         return ("reached", 3, meta)
-    if st in (
-        GitHubPageStage.TOKEN_CLASSIC_NEW,
-        GitHubPageStage.TOKEN_FINE_NEW,
-        GitHubPageStage.TOKEN_CLASSIC_LIST,
-        GitHubPageStage.TOKEN_FINE_LIST,
-    ):
+    if st in (GitHubPageStage.TOKEN_CLASSIC_NEW, GitHubPageStage.TOKEN_FINE_NEW):
+        meta["method"] = "token_new"
+        meta["page_stage"] = st.value
+        return ("reached", 2, meta)
+    if st in (GitHubPageStage.TOKEN_CLASSIC_LIST, GitHubPageStage.TOKEN_FINE_LIST):
+        # List is NOT the create form — Path B must reopen tokens/new.
+        meta["method"] = "token_list"
+        meta["page_stage"] = st.value
         return ("reached", 2, meta)
     if st == GitHubPageStage.AUTH_2FA:
         # Not "reached" for dialogue — refine Mobile / TOTP / recovery / email.
@@ -312,6 +307,13 @@ def classify_browser_sample(
         return ("current", 0, meta)
     if st == GitHubPageStage.LOGIN:
         return ("current", 0, meta)
+
+    # Title-only GitHub window (omnibox empty) — after stage body checks miss.
+    if not u and "github" in (window_title or "").lower():
+        if looks_like_github_logged_out_ui(window_title, ui_text, url=""):
+            return ("logged_out", 0, meta)
+        meta["method"] = "github_title"
+        return ("reached", 1, meta)
 
     try:
         from urllib.parse import urlparse
@@ -1726,11 +1728,26 @@ class ExternalBrowserPatGuide(QDialog):
                 sample = payload.get("sample")
                 expiry_days = payload.get("expiry_days")
                 expiry_detail = str(payload.get("expiry_detail") or "")
+            # Peek page kind: token *list* OCR must not fill Expiration chip.
+            on_token_list = False
+            if sample is not None:
+                try:
+                    _k, _i, _m = classify_browser_sample(
+                        getattr(sample, "url", "") or "",
+                        window_title=getattr(sample, "window_title", "") or "",
+                        ui_text=getattr(sample, "ui_text", "") or "",
+                    )
+                    on_token_list = str((_m or {}).get("method") or "") == "token_list"
+                except Exception:
+                    on_token_list = False
             # Apply Expiration detection before scene classify so ASK_EXPIRY
             # can store/reflect even when the tab sample is briefly away.
             if self._scene == DialogueScene.ASK_EXPIRY and self._token_nav_opened:
                 self._expiry_scanning = False
-                if expiry_days:
+                if on_token_list:
+                    # List rows say "no expiration" / "Expires on…" — ignore.
+                    self._refresh_expiry_readout()
+                elif expiry_days:
                     # Reflect only — user confirms with 「골랐어요」.
                     self._store_expiry_detection(
                         str(expiry_days),
@@ -1774,8 +1791,18 @@ class ExternalBrowserPatGuide(QDialog):
 
         # Wrong-tab recovery: StayOnTop guide often leaves a non-GitHub Chrome
         # window ranked first. Re-open once so the GitHub tab comes forward.
-        if kind in ("away", "unknown"):
-            if self._scene == DialogueScene.LOGIN_WAIT:
+        # Also: /settings/tokens LIST is not the create form — reopen /new.
+        on_token_steps = (
+            self._scene in (DialogueScene.ASK_SCOPE, DialogueScene.ASK_EXPIRY)
+            and self._token_nav_opened
+        )
+        if kind in ("away", "unknown") or (
+            on_token_steps and method == "token_list"
+        ):
+            if self._scene == DialogueScene.LOGIN_WAIT and kind in (
+                "away",
+                "unknown",
+            ):
                 self._away_streak += 1
                 if self._away_streak >= 2 and not self._login_rescue_done:
                     self._login_rescue_done = True
@@ -1789,28 +1816,46 @@ class ExternalBrowserPatGuide(QDialog):
                         "브라우저에서 로그인해 주세요."
                     )
                 return
-            if (
-                self._scene
-                in (DialogueScene.ASK_SCOPE, DialogueScene.ASK_EXPIRY)
-                and self._token_nav_opened
-            ):
+            if on_token_steps:
                 self._away_streak += 1
-                if self._away_streak >= 2:
+                # List page is a clear miss — reopen sooner than vague away.
+                need = 1 if method == "token_list" else 2
+                if self._away_streak >= need:
                     self._away_streak = 0
-                    self._guide_log(
-                        f"[Path B] 키 만들기 탭 미검출({kind}) → 페이지 재오픈"
+                    why = (
+                        "키 목록(/settings/tokens)"
+                        if method == "token_list"
+                        else f"키 만들기 탭 미검출({kind})"
                     )
+                    self._guide_log(f"[Path B] {why} → 만들기 페이지 재오픈")
                     self._open_token_create_page()
                     if self._scene == DialogueScene.ASK_SCOPE:
                         self._sub.setText(
+                            "지금은 키 목록 화면이에요. "
                             "키 만들기 페이지를 다시 열었어요. "
                             "Select scopes를 확인해 주세요."
+                            if method == "token_list"
+                            else (
+                                "키 만들기 페이지를 다시 열었어요. "
+                                "Select scopes를 확인해 주세요."
+                            )
                         )
                     else:
                         self._expiry_scanning = True
+                        # Clear stale OCR from list rows (e.g. "no expiration").
+                        if method == "token_list":
+                            self._last_expiry_days_read = None
+                            self._expiry_label = None
+                            self._expires_at = None
                         self._sub.setText(
+                            "지금은 키 목록 화면이에요. "
                             "키 만들기 페이지를 다시 열었어요. "
                             "브라우저에서 Expiration을 골라 주세요."
+                            if method == "token_list"
+                            else (
+                                "키 만들기 페이지를 다시 열었어요. "
+                                "브라우저에서 Expiration을 골라 주세요."
+                            )
                         )
                         self._refresh_expiry_readout()
                 return

@@ -516,12 +516,19 @@ def _pick_token_hwnd(*, force: bool = False) -> tuple[int, str]:
                 title = (w.Name or "").strip()
                 tl = title.lower()
                 score = window_title_connect_score(title)
-                if "personal access token" in tl or "new personal access" in tl:
-                    score += 40
-                if "/settings/tokens" in tl or "tokens/new" in tl:
+                # Prefer create form; list page OCR reads row "no expiration".
+                if "new personal access token" in tl:
+                    score += 60
+                elif "personal access tokens (classic)" in tl and "new " not in tl:
+                    score -= 25
+                elif "personal access token" in tl:
                     score += 20
+                if "tokens/new" in tl or "/settings/tokens/new" in tl:
+                    score += 40
+                elif "/settings/tokens" in tl:
+                    score -= 15
                 if "token" in tl and ("github" in tl or "classic" in tl):
-                    score += 15
+                    score += 10
                 hwnd = _window_hwnd(w)
                 if not hwnd:
                     continue

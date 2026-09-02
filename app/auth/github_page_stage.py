@@ -180,6 +180,12 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
     ):
         return GitHubPageStage.TOKEN_CLASSIC_LIST
 
+    # Body/OCR when omnibox empty (Path B StayOnTop often blanks URL).
+    if _looks_like_token_classic_new(title_l, html_l):
+        return GitHubPageStage.TOKEN_CLASSIC_NEW
+    if _looks_like_token_classic_list(title_l, html_l):
+        return GitHubPageStage.TOKEN_CLASSIC_LIST
+
     # --- HTML markers (temp dumps) ---
     if 'id="login_field"' in html or "id='login_field'" in html:
         if 'id="password"' in html or "name=\"password\"" in html:
@@ -196,6 +202,61 @@ def detect_github_page_stage(snap: PageSnapshot) -> GitHubPageStage:
             return GitHubPageStage.SUDO_OR_OTHER
 
     return GitHubPageStage.UNKNOWN
+
+
+def _looks_like_token_classic_new(title_l: str, body_l: str) -> bool:
+    """Create form: Note + Expiration + Select scopes (screenshot 2026-09-02)."""
+    blob = f"{title_l}\n{body_l}"
+    if "new personal access token (classic)" in blob:
+        return True
+    if "new personal access token" in blob and "classic" in blob:
+        return True
+    formish = (
+        ("select scopes" in blob or "what's this token for" in blob or "whats this token for" in blob)
+        and ("expiration" in blob or "note" in blob)
+    )
+    if formish and (
+        "generate token" in blob
+        or "repo:status" in blob
+        or "public_repo" in blob
+    ):
+        return True
+    return False
+
+
+def _looks_like_token_classic_list(title_l: str, body_l: str) -> bool:
+    """
+    Token list (not /new): Generate new token + existing rows.
+
+    Screenshot 2026-09-02: ``/settings/tokens`` with
+    「Tokens you have generated…」, Last used / Never used / Expires on.
+    Must not match the create form (Select scopes + Note).
+    """
+    if _looks_like_token_classic_new(title_l, body_l):
+        return False
+    blob = f"{title_l}\n{body_l}"
+    list_heading = (
+        "tokens you have generated" in blob
+        or "generate new token" in blob
+        or (
+            "personal access tokens (classic)" in blob
+            and "new personal access token" not in blob
+        )
+    )
+    list_rows = (
+        "last used" in blob
+        or "never used" in blob
+        or "this token has no expiration" in blob
+        or "expires on" in blob
+        or "no expiration date" in blob
+    )
+    if list_heading and list_rows:
+        return True
+    if "generate new token" in blob and (
+        "tokens you have generated" in blob or "last used" in blob
+    ):
+        return True
+    return False
 
 
 def _looks_like_sudo_passkey_confirm(title_l: str, body_l: str) -> bool:

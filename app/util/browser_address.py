@@ -853,9 +853,12 @@ def window_title_connect_score(title: str) -> int:
     if not name:
         return 0
     score = 0
-    # Strongest: classic PAT create page title observed on Chrome/Edge.
+    # Strongest: classic PAT *create* page (not the token list).
     if "new personal access token" in name:
         score += 50
+    elif "personal access tokens (classic)" in name:
+        # List page title — still GitHub settings, weaker than /new.
+        score += 18
     elif "personal access token" in name:
         score += 28
     if "github" in name:

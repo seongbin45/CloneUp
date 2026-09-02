@@ -248,6 +248,43 @@ def test_github_logged_out_via_sign_in_sign_up_ui() -> None:
     )
 
 
+def test_token_list_vs_new_classify_methods() -> None:
+    """ASK_EXPIRY must see token_list vs token_new — not the same blob."""
+    list_ui = (
+        "Generate new token\n"
+        "personal access tokens (classic)\n"
+        "Tokens you have generated that can be used to access the GitHub API.\n"
+        "This token has no expiration date.\n"
+        "Last used within the last week\n"
+    )
+    new_ui = (
+        "New personal access token (classic)\n"
+        "Note\nWhat's this token for?\nExpiration\n30 days\n"
+        "Select scopes\nrepo\nGenerate token\n"
+    )
+    kind_l, idx_l, meta_l = classify_browser_sample(
+        "https://github.com/settings/tokens",
+        window_title="Personal access tokens (classic)",
+        ui_text=list_ui,
+    )
+    assert kind_l == "reached" and idx_l == 2
+    assert meta_l.get("method") == "token_list"
+
+    kind_n, idx_n, meta_n = classify_browser_sample(
+        "https://github.com/settings/tokens/new?scopes=repo",
+        window_title="New personal access token (classic)",
+        ui_text=new_ui,
+    )
+    assert kind_n == "reached" and idx_n == 2
+    assert meta_n.get("method") == "token_new"
+
+    # No URL — body only
+    kind_b, _i, meta_b = classify_browser_sample(
+        "", window_title="GitHub", ui_text=list_ui
+    )
+    assert kind_b == "reached" and meta_b.get("method") == "token_list"
+
+
 def test_away_from_github_flow_family() -> None:
     """Off-family URLs get soft away copy — never treated as progress."""
     assert is_github_flow_family_url("https://github.com/settings/tokens")

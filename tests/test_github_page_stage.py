@@ -133,6 +133,62 @@ def test_list_vs_issued() -> None:
     )
 
 
+def test_list_vs_new_from_body_ocr() -> None:
+    """Omnibox empty: body must separate /settings/tokens list from /new form."""
+    list_body = """
+    Settings / Developer Settings
+    Generate new token
+    personal access tokens (classic)
+    Tokens you have generated that can be used to access the GitHub API.
+    CloneUp-20260902-081127 - repo, workflow
+    This token has no expiration date.
+    Never used
+    Last used within the last week
+    Expires on Tue, Sep 8 2026.
+    """
+    new_body = """
+    New personal access token (classic)
+    Note
+    CloneUp-20260902-084948
+    What's this token for?
+    Expiration
+    30 days (Oct 02, 2026)
+    Select scopes
+    repo
+    repo:status
+    public_repo
+    workflow
+    Generate token
+    """
+    assert (
+        detect_github_page_stage(PageSnapshot(title="", html=list_body))
+        == GitHubPageStage.TOKEN_CLASSIC_LIST
+    )
+    assert (
+        detect_github_page_stage(PageSnapshot(title="", html=new_body))
+        == GitHubPageStage.TOKEN_CLASSIC_NEW
+    )
+    # URL still wins when present
+    assert (
+        detect_github_page_stage(
+            PageSnapshot(
+                url="https://github.com/settings/tokens",
+                html=new_body,  # noisy; path is authoritative
+            )
+        )
+        == GitHubPageStage.TOKEN_CLASSIC_LIST
+    )
+    assert (
+        detect_github_page_stage(
+            PageSnapshot(
+                url="https://github.com/settings/tokens/new?scopes=repo",
+                html=list_body,
+            )
+        )
+        == GitHubPageStage.TOKEN_CLASSIC_NEW
+    )
+
+
 def test_stage_label_ko() -> None:
     assert "로그인" in stage_label_ko(GitHubPageStage.LOGIN)
     assert "복사" in stage_label_ko(GitHubPageStage.TOKEN_ISSUED)
