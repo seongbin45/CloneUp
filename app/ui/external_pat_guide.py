@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -542,8 +544,6 @@ def should_auto_open_token_page(
 
 # --- conversational Path B panel (concatenated after helpers) ---
 
-from PySide6.QtWidgets import QFrame, QSizePolicy
-
 from app.ui.browser_dialogue_model import (
     DialogueScene,
     SCOPE_OPTIONS,
@@ -645,6 +645,13 @@ def _dialogue_qss() -> str:
     }}
     QFrame#dlgWait {{
         background: {p.bg_muted}; border: none; border-radius: 12px;
+    }}
+    QScrollArea#dlgScroll {{
+        background: transparent;
+        border: none;
+    }}
+    QScrollArea#dlgScroll > QWidget > QWidget {{
+        background: transparent;
     }}
     QFrame#dlgNudge {{
         background: {_warn_soft()}; border: 1px solid {p.warn_border};
@@ -765,6 +772,8 @@ class ExternalBrowserPatGuide(QDialog):
         self.setWindowOpacity(_GUIDE_OPACITY)
         self.setMinimumWidth(360)
         self.setMaximumWidth(440)
+        # Height capped in _place_bottom_left to the work area; content scrolls.
+        self.setMinimumHeight(220)
         self.setStyleSheet(_dialogue_qss())
         self._drag_offset: QPoint | None = None
 
@@ -793,6 +802,13 @@ class ExternalBrowserPatGuide(QDialog):
         hl.addStretch(1)
         hl.addWidget(self._right_tag)
         hl.addWidget(btn_x, 0)
+
+        # Scrollable middle: history grows with steps and used to clip the
+        # bottom of the StayOnTop card off-screen (no scroll = cut buttons).
+        mid = QWidget()
+        mid_lay = QVBoxLayout(mid)
+        mid_lay.setContentsMargins(16, 15, 16, 12)
+        mid_lay.setSpacing(12)
 
         self._hist_host = QVBoxLayout()
         self._hist_host.setContentsMargins(0, 0, 0, 0)
@@ -875,8 +891,37 @@ class ExternalBrowserPatGuide(QDialog):
         self._edit.hide()
         self._edit.textChanged.connect(self._on_edit_text)
 
-        foot = QHBoxLayout()
-        foot.setContentsMargins(0, 0, 0, 0)
+        mid_lay.addLayout(self._hist_host)
+        mid_lay.addWidget(self._say)
+        mid_lay.addWidget(self._sub)
+        mid_lay.addWidget(self._chips_host)
+        mid_lay.addWidget(self._wait)
+        mid_lay.addWidget(self._nudge)
+        mid_lay.addWidget(self._done_host)
+        mid_lay.addWidget(self._btn_reopen)
+        mid_lay.addWidget(self._edit)
+        mid_lay.addStretch(0)
+
+        self._scroll = QScrollArea()
+        self._scroll.setObjectName("dlgScroll")
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._scroll.setWidget(mid)
+        self._scroll.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+
+        # Footer always visible below the scroll (그만하기 / 안내).
+        foot_w = QWidget()
+        foot = QHBoxLayout(foot_w)
+        foot.setContentsMargins(16, 4, 16, 16)
+        foot.setSpacing(8)
         self._btn_quit = QPushButton("그만하기")
         self._btn_quit.setObjectName("dlgQuit")
         self._btn_quit.clicked.connect(self._on_cancel)
@@ -889,26 +934,9 @@ class ExternalBrowserPatGuide(QDialog):
         foot.addStretch(1)
         foot.addWidget(self._foot_note)
 
-        body_w = QWidget()
-        body = QVBoxLayout(body_w)
-        # Extra bottom padding so 「골랐어요」 is not clipped by the card's
-        # 16px rounded corner / translucent HWND edge.
-        body.setContentsMargins(16, 15, 16, 22)
-        body.setSpacing(12)
-        body.addLayout(self._hist_host)
-        body.addWidget(self._say)
-        body.addWidget(self._sub)
-        body.addWidget(self._chips_host)
-        body.addWidget(self._wait)
-        body.addWidget(self._nudge)
-        body.addWidget(self._done_host)
-        body.addWidget(self._btn_reopen)
-        body.addWidget(self._edit)
-        body.addSpacing(4)
-        body.addLayout(foot)
-
         card_lay.addWidget(head)
-        card_lay.addWidget(body_w)
+        card_lay.addWidget(self._scroll, 1)
+        card_lay.addWidget(foot_w, 0)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -958,19 +986,39 @@ class ExternalBrowserPatGuide(QDialog):
         """Scene / chip events — print + textLog via Path B sink."""
         path_b_log(message)
 
-    def _place_bottom_left(self) -> None:
-        """Default: lower-left of the work area (taskbar-safe).
+    def _set_user_status(self, friendly: str, *, detail: str = "") -> None:
+        """Show plain-language copy in the card; keep tech detail in the log."""
+        text = (friendly or "").strip()
+        if text:
+            self._sub.setText(text)
+        if detail:
+            self._guide_log(detail)
 
-        Prefer sizeHint so newly shown chips/buttons are not clipped; clamp
-        only when the card would exceed the work area.
+    @staticmethod
+    def _friendly_generate_miss(*, detected: str = "", detail: str = "") -> str:
+        """User-facing copy when auto Generate click fails."""
+        base = (
+            "초록 Generate token 버튼을 아직 찾지 못했어요. "
+            "키 만들기 페이지가 앞에 보이는지 확인해 주세요."
+        )
+        if detected:
+            return (
+                f"{base} "
+                f"만료일이 「{detected}」로 보이면 「골랐어요」를 다시 눌러 주세요. "
+                "페이지를 조금 아래로 내려도 도움이 됩니다."
+            )
+        return (
+            f"{base} "
+            "브라우저에서 Expiration을 다시 고른 뒤 「골랐어요」를 눌러 주세요."
+        )
+
+    def _place_bottom_left(self) -> None:
+        """Lower-left of the work area; never taller than the screen.
+
+        Long history used to grow the StayOnTop card past the bottom edge
+        (buttons clipped). Cap height and scroll the middle instead.
         """
         margin = 24
-        self.updateGeometry()
-        hint = self.sizeHint()
-        if hint.isValid() and hint.height() > 0:
-            self.resize(max(self.width(), hint.width()), hint.height())
-        else:
-            self.adjustSize()
         try:
             screen = None
             if self._anchor is not None:
@@ -978,21 +1026,35 @@ class ExternalBrowserPatGuide(QDialog):
             if screen is None:
                 screen = QGuiApplication.primaryScreen()
             if screen is None:
+                self.adjustSize()
                 return
             avail = screen.availableGeometry()
             max_h = max(280, avail.height() - 2 * margin)
-            if self.height() > max_h:
-                self.resize(self.width(), max_h)
+            max_w = min(440, max(360, avail.width() - 2 * margin))
+            self.setMaximumHeight(max_h)
+            self.setMaximumWidth(max_w)
+
+            self.updateGeometry()
+            hint = self.sizeHint()
+            want_w = max(360, min(max_w, hint.width() if hint.isValid() else 400))
+            # Prefer content height but never exceed the work area.
+            want_h = hint.height() if hint.isValid() and hint.height() > 0 else 420
+            want_h = max(220, min(want_h, max_h))
+            self.resize(want_w, want_h)
+
             fg = self.frameGeometry()
             x = avail.left() + margin
             y = avail.top() + avail.height() - fg.height() - margin
             y = max(avail.top() + margin, y)
-            # Keep bottom edge inside the work area
             if y + fg.height() > avail.top() + avail.height() - margin:
                 y = avail.top() + avail.height() - fg.height() - margin
-            self.move(x, max(avail.top() + margin, y))
+                y = max(avail.top() + margin, y)
+            self.move(x, y)
         except Exception:
-            pass
+            try:
+                self.adjustSize()
+            except Exception:
+                pass
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1017,7 +1079,6 @@ class ExternalBrowserPatGuide(QDialog):
         if scene == self._scene:
             # Still refresh chips/visibility (e.g. after reopen)
             self._render()
-            self.adjustSize()
             self._place_bottom_left()
             return
         prev = self._scene
@@ -1027,7 +1088,6 @@ class ExternalBrowserPatGuide(QDialog):
             self._generate_auto_started = False
         self._render()
         self._sync_poll_interval()
-        self.adjustSize()
         self._place_bottom_left()
         # Entering Generate step → auto-find/click (no 「도와주세요」).
         if (
@@ -1593,10 +1653,11 @@ class ExternalBrowserPatGuide(QDialog):
                 )
             elif self._expiry_uia_tries >= 3:
                 exp = self._expiry_label or "90일"
-                self._guide_log(f"[Path B] Expiration 자동 맞춤 포기: {detail}")
-                self._sub.setText(
-                    f"자동으로 못 바꿨어요({detail}). "
-                    f"Expiration을 {exp}으로 직접 고른 뒤 Generate token을 눌러 주세요."
+                self._set_user_status(
+                    f"만료일을 자동으로 바꾸지 못했어요. "
+                    f"브라우저에서 Expiration을 「{exp}」으로 직접 고른 뒤 "
+                    "Generate token을 눌러 주세요.",
+                    detail=f"[Path B] Expiration 자동 맞춤 포기: {detail}",
                 )
             return
 
@@ -1620,26 +1681,19 @@ class ExternalBrowserPatGuide(QDialog):
             self._expiry_uia_ok = False
             self._expiry_scanning = True
             # Keep _last_expiry_days_read / _expires_at / _expiry_label.
-            self._set_scene(DialogueScene.ASK_EXPIRY)
             detected = (self._expiry_label or "").strip()
-            if detected:
-                self._sub.setText(
-                    f"Generate를 찾지 못했어요. "
-                    f"브라우저 Expiration이 「{detected}」인지 확인한 뒤 "
-                    "「골랐어요」를 다시 눌러 주세요."
-                )
-            else:
-                self._sub.setText(
-                    "Generate를 찾지 못했어요. "
-                    "브라우저에서 Expiration을 다시 고른 뒤 "
-                    "「골랐어요」를 눌러 주세요."
-                )
+            self._set_scene(DialogueScene.ASK_EXPIRY)
+            self._set_user_status(
+                self._friendly_generate_miss(detected=detected, detail=detail),
+                detail="",  # already logged above
+            )
             return
 
         if op == "generate" and ok:
             self._generate_auto_started = False
-            self._sub.setText(
-                f"Generate를 눌러 봤어요 ({detail}). 키가 나오면 받아올게요."
+            self._set_user_status(
+                "Generate token을 눌렀어요. 키가 화면에 나오면 받아올게요.",
+                detail=f"[Path B] Generate 성공: {detail}",
             )
 
     def _schedule_expiry_invoke_tries(self) -> None:
@@ -1701,10 +1755,10 @@ class ExternalBrowserPatGuide(QDialog):
             )
             QTimer.singleShot(300, self._after_cdp_launch_wait)
         else:
-            self._guide_log(f"[Path B][CDP] 기동 실패: {detail}")
-            self._sub.setText(
-                f"제어용 브라우저를 못 열었습니다 ({detail}). "
-                "수동으로 Expiration을 맞춘 뒤 Generate를 눌러 주세요."
+            self._set_user_status(
+                "제어용 브라우저를 열지 못했어요. "
+                "브라우저에서 Expiration을 직접 맞춘 뒤 Generate token을 눌러 주세요.",
+                detail=f"[Path B][CDP] 기동 실패: {detail}",
             )
         self._render()
 
