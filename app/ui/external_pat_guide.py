@@ -1589,23 +1589,28 @@ class ExternalBrowserPatGuide(QDialog):
                     f"Generate를 눌러 봤어요 ({detail}). 키가 나오면 받아올게요."
                 )
                 return
-            # Fallback: reopen create URL so Generate is on screen
-            from PySide6.QtCore import QUrl
-            from PySide6.QtGui import QDesktopServices
-
-            self._guide_log(f"[Path B] Generate 실패 → URL 다시 염 ({detail})")
-            url = self._create_url or ""
-            if not url:
-                self._open_token_create_page()
-            else:
-                QDesktopServices.openUrl(QUrl(url))
-            self._expiry_uia_ok = False
-            self._schedule_expiry_invoke_tries()
-            self._sub.setText(
-                "페이지를 다시 열었어요. 잠시 후 Generate를 다시 찾아볼게요…"
+            # Do NOT reopen tokens/new — that wipes the user's Expiration.
+            # Send them back to ASK_EXPIRY so they can re-confirm the same value.
+            self._guide_log(
+                f"[Path B] Generate 실패 → 만료일 단계로 복귀 ({detail})"
             )
-            # Auto-retry once after reload — user should not need a 2nd press.
-            QTimer.singleShot(1800, self._retry_nudge_after_reopen)
+            self._expiry_uia_ok = False
+            self._expiry_scanning = True
+            # Keep _last_expiry_days_read / _expires_at / _expiry_label.
+            self._set_scene(DialogueScene.ASK_EXPIRY)
+            detected = (self._expiry_label or "").strip()
+            if detected:
+                self._sub.setText(
+                    f"Generate를 찾지 못했어요. "
+                    f"브라우저 Expiration이 「{detected}」인지 확인한 뒤 "
+                    "「골랐어요」를 다시 눌러 주세요."
+                )
+            else:
+                self._sub.setText(
+                    "Generate를 찾지 못했어요. "
+                    "브라우저에서 Expiration을 다시 고른 뒤 "
+                    "「골랐어요」를 눌러 주세요."
+                )
             return
 
         if op == "generate" and ok:
@@ -1687,17 +1692,6 @@ class ExternalBrowserPatGuide(QDialog):
             return
         if not self._start_assist_worker("wait_ready"):
             self._sub.setText("다른 자동 맞춤이 끝나길 기다린 뒤 다시 시도해 주세요.")
-
-    def _retry_nudge_after_reopen(self) -> None:
-        """Auto-retry Generate once after failure reopened tokens/new."""
-        if self._done or self._scene != DialogueScene.PRESS_GENERATE:
-            self._nudge_pending = False
-            return
-        if self._assist_busy():
-            self._nudge_pending = True
-            return
-        self._guide_log("[Path B] Generate 자동 재시도 (페이지 재오픈 후)")
-        self._on_nudge_generate()
 
     def _on_nudge_generate(self) -> None:
         """도와주세요 — opt-in CDP/UIA help (Expiry + Generate). Off by default.
