@@ -1188,8 +1188,7 @@ class ConnectGitHubWizard(QDialog):
         self._fitting_choice = False
         self._auto_finish_pending = False
         self._choice_size: tuple[int, int] | None = None
-        self._clamping_choice = False
-        self._choice_clamp_fails = 0
+        self._choice_geometry_locked = False
         self._choice_fit_gen = 0
         self._normal_fit_gen = 0
         self._normal_fit_expected = 0
@@ -1207,55 +1206,17 @@ class ConnectGitHubWizard(QDialog):
         # Intro/choice must always re-fit: a remembered Maximized / tall-thin
         # "normal" geometry on 1920×1080 broke the first-guidance card.
         if self._use_web and self._on_flow_narrow_page():
-            # 0ms + delayed: first paint, then after restore chrome settles.
-            self._schedule_fit_choice_dialog(0)
-            self._schedule_fit_choice_dialog(50)
+            # One delayed settle pass only — dual 0+50 timers + resize clamps
+            # flooded the queue on dpr=2 (white / Not Responding).
+            if not self._choice_geometry_locked:
+                self._schedule_fit_choice_dialog(0)
         self._place_away_banner()
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        # Choice pages: soft clamp without setFixedSize. Exact equality fought
-        # Windows high-DPI (dpr≈2): want 500×527 → platform yields ~500×593 →
-        # resize again forever → white / Not Responding.
-        if (
-            self._use_web
-            and self._on_flow_narrow_page()
-            and self._choice_size is not None
-            and not self._clamping_choice
-            and not getattr(self, "_fitting_choice", False)
-        ):
-            from app.util.screen_fit import (
-                accept_choice_client_size,
-                choice_size_near,
-            )
-
-            cw, ch = self._choice_size
-            aw, ah = int(self.width()), int(self.height())
-            if not choice_size_near(aw, ah, cw, ch, tol=16):
-                # Give up after a few platform refusals — lock actual size.
-                if int(getattr(self, "_choice_clamp_fails", 0)) >= 3:
-                    self._choice_size = (max(1, aw), max(1, ah))
-                    self._choice_clamp_fails = 0
-                else:
-                    self._clamping_choice = True
-                    try:
-                        self.resize(cw, ch)
-                        nw, nh = int(self.width()), int(self.height())
-                        if not choice_size_near(nw, nh, cw, ch, tol=16):
-                            self._choice_clamp_fails = (
-                                int(getattr(self, "_choice_clamp_fails", 0))
-                                + 1
-                            )
-                            # Prefer capped accept so a one-off DPI delta
-                            # (e.g. 527→593) stops the loop without locking
-                            # a maximize-sized shell from a flicker.
-                            self._choice_size = accept_choice_client_size(
-                                cw, ch, nw, nh, tol=16
-                            )
-                        else:
-                            self._choice_clamp_fails = 0
-                    finally:
-                        self._clamping_choice = False
+        # Do NOT clamp choice size here. On Windows high-DPI, setGeometry/
+        # resize often land off the requested client size; clamping re-posted
+        # resize events forever → white dialog + Not Responding (Ctrl+C).
         self._place_away_banner()
 
     def _screen_for_dialog(self):
@@ -1318,6 +1279,8 @@ class ConnectGitHubWizard(QDialog):
 
     def _schedule_fit_choice_dialog(self, delay_ms: int = 0) -> None:
         """Coalesce stacked showEvent/_go timers into one fit generation."""
+        if getattr(self, "_choice_geometry_locked", False):
+            return
         gen = int(getattr(self, "_choice_fit_gen", 0)) + 1
         self._choice_fit_gen = gen
 
@@ -1328,6 +1291,11 @@ class ConnectGitHubWizard(QDialog):
 
         QTimer.singleShot(max(0, int(delay_ms)), _run)
 
+    def _unlock_choice_geometry(self) -> None:
+        """Allow one new fit after intro↔choice navigation."""
+        self._choice_geometry_locked = False
+        self._choice_size = None
+
     def _fit_choice_dialog(self) -> None:
         """Compact window sized to intro/choice card (stable — no resize loop).
 
@@ -1335,9 +1303,11 @@ class ConnectGitHubWizard(QDialog):
         "normal" geometry + ``resize()`` left a vertical strip on the right.
         Fix: leave Maximized, then ``setGeometry`` to an explicit centered
         client rect in ``availableGeometry`` (not move-after-resize).
+
+        After one successful fit, ``_choice_geometry_locked`` prevents further
+        setGeometry / clamp storms on high-DPI Windows.
         """
         from app.util.screen_fit import (
-            accept_choice_client_size,
             center_client_in_available,
             clear_size_locks,
             compute_choice_dialog_size,
@@ -1350,10 +1320,11 @@ class ConnectGitHubWizard(QDialog):
 
         if getattr(self, "_fitting_choice", False):
             return
+        if getattr(self, "_choice_geometry_locked", False):
+            return
         if not self._use_web or not self._on_flow_narrow_page():
             return
         self._fitting_choice = True
-        self._choice_clamp_fails = 0
         try:
             # Suppress changeEvent → _place_normal_web_size (fought this fit).
             self._suppress_state_fit = True
@@ -1365,19 +1336,22 @@ class ConnectGitHubWizard(QDialog):
                 self.setWindowState(Qt.WindowState.WindowNoState)
             self.showNormal()
             clear_size_locks(self)
-            # Size from the flow *card* (not the Expanding stack sizeHint).
+            # Size from the flow *card* sizeHint only — do NOT adjustSize()
+            # (Expanding stack + adjustSize cascaded layouts on dpr=2).
             idx = self._stack.currentIndex()
             page = self._stack.widget(idx)
             card = None
             if page is not None:
-                page.adjustSize()
                 card = page.findChild(QFrame, "connGuideCard")
-                if card is not None:
-                    card.adjustSize()
             src = card if card is not None else page
             ph = src.sizeHint() if src is not None else None
             pw = int(ph.width()) if ph is not None and ph.width() > 0 else 500
             phh = int(ph.height()) if ph is not None and ph.height() > 0 else 480
+            # Stable shell: choice cards are roughly fixed; chasing a tall
+            # sizeHint (→600) fought Windows mintrack and starved paint.
+            if idx == getattr(self, "_choice_index", -1):
+                pw = max(pw, 500)
+                phh = min(max(phh, 520), 560)
             info = read_screen_info(screen_for_widget(self, anchor=self._anchor))
             if info is None:
                 w, h = compute_choice_dialog_size(1920, 1040, hint_w=pw, hint_h=phh)
@@ -1413,18 +1387,16 @@ class ConnectGitHubWizard(QDialog):
                 chrome_h=chrome_h,
             )
             w, h = guard_choice_client_size(w, h)
-            # Soft minimum only — do NOT setMaximumSize(w,h) (DPI Fixed fight).
-            # resizeEvent + _choice_size keep the compact shell; changeEvent
-            # still rejects Maximize on narrow pages.
+            # Soft minimum only — never setMaximumSize on choice (DPI fight).
             self.setMinimumSize(min(w, 440), min(h, 280))
             self.setGeometry(cx, cy, w, h)
-            # Windows high-DPI often applies a different client height than
-            # requested — lock the *actual* size so resizeEvent stops fighting.
             try:
                 nw, nh = int(self.width()), int(self.height())
             except Exception:
                 nw, nh = w, h
-            self._choice_size = accept_choice_client_size(w, h, nw, nh, tol=16)
+            # Record whatever Windows applied; do not keep resizing toward `w,h`.
+            self._choice_size = (max(1, nw), max(1, nh))
+            self._choice_geometry_locked = True
             try:
                 lw, lh = self._choice_size
                 self._wiz_log(
@@ -1437,12 +1409,14 @@ class ConnectGitHubWizard(QDialog):
                 pass
         except Exception:
             self._choice_size = (520, 500)
+            self._choice_geometry_locked = True
             clear_size_locks(self)
             self.setMinimumSize(440, 280)
             self.resize(520, 500)
             try:
-                self._choice_size = accept_choice_client_size(
-                    520, 500, int(self.width()), int(self.height()), tol=16
+                self._choice_size = (
+                    max(1, int(self.width())),
+                    max(1, int(self.height())),
                 )
             except Exception:
                 pass
@@ -1450,23 +1424,6 @@ class ConnectGitHubWizard(QDialog):
         finally:
             self._fitting_choice = False
             QTimer.singleShot(300, self._clear_suppress_state_fit)
-            # Second pass after Maximized→Normal chrome settles (high DPI).
-            QTimer.singleShot(100, self._refit_choice_if_collapsed)
-
-    def _refit_choice_if_collapsed(self) -> None:
-        """If chrome race locked a strip, run fit again once settled."""
-        if not self._use_web or not self._on_flow_narrow_page():
-            return
-        if getattr(self, "_fitting_choice", False):
-            return
-        try:
-            w = int(self.width())
-            h = max(1, int(self.height()))
-        except Exception:
-            return
-        if w >= 450 and (w / h) >= 0.75:
-            return
-        self._schedule_fit_choice_dialog(0)
 
     def _clear_suppress_state_fit(self) -> None:
         self._suppress_state_fit = False
@@ -1487,7 +1444,7 @@ class ConnectGitHubWizard(QDialog):
         try:
             self._suppress_state_fit = True
             self._bump_normal_fit_gen()
-            self._choice_size = None
+            self._unlock_choice_geometry()
             # Unlock choice min size before maximizing.
             clear_size_locks(self)
             self.setMinimumSize(640, 360)
@@ -1532,8 +1489,10 @@ class ConnectGitHubWizard(QDialog):
             if became_max or became_fs:
                 self._suppress_state_fit = True
                 self.setWindowState(Qt.WindowState.WindowNoState)
-                self._schedule_fit_choice_dialog(0)
-                self._schedule_fit_choice_dialog(50)
+                # If geometry already settled, only un-maximize — re-fitting
+                # here re-entered setGeometry storms on high-DPI displays.
+                if not getattr(self, "_choice_geometry_locked", False):
+                    self._schedule_fit_choice_dialog(0)
             return
 
         # Leaving maximized (or legacy FullScreen) on WebView → 16:9 restore
@@ -1830,13 +1789,17 @@ class ConnectGitHubWizard(QDialog):
                 from app.util.screen_fit import clear_size_locks
 
                 self._suppress_state_fit = True
+                self._unlock_choice_geometry()
                 clear_size_locks(self)
                 self.setMinimumSize(640, 360)
+            prev_i = self._stack.currentIndex()
             self._stack.setCurrentIndex(index)
             self.setWindowOpacity(1.0)
             if index in (intro_i, choice_i):
-                self._schedule_fit_choice_dialog(0)
-                self._schedule_fit_choice_dialog(50)
+                # New narrow page (or first show) → one fit; stay locked after.
+                if prev_i != index or not self._choice_geometry_locked:
+                    self._unlock_choice_geometry()
+                    self._schedule_fit_choice_dialog(0)
             else:
                 self._paint_web_guide(self._ui_now)
                 QTimer.singleShot(0, self._fit_web_dialog)
