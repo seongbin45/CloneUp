@@ -246,18 +246,16 @@ def scene_copy(
         exp = expiry_label or "직접 선택"
         return SceneCopy(
             right_tag="4 / 4",
-            say="초록 Generate token만 눌러 주세요",
+            say="Generate token을 누르고 있어요",
             sub=(
                 "이름(Note)은 채워 두었습니다. "
                 f"만료일은 브라우저에서 고른 값({exp}) 그대로 둡니다. "
-                "초록 버튼만 누르면 키를 받아올게요."
+                "초록 Generate token 버튼을 찾아 자동으로 누를게요."
             ),
-            foot_note="누르면 키를 알아서 받아옵니다",
-            nudge_text=(
-                "Generate token이 안 보이면 페이지를 아래로 내린 뒤 눌러 주세요. "
-                "도움이 필요하면 「도와주세요」를 눌러 주세요."
-            ),
-            nudge_btn="도와주세요",
+            foot_note="키가 나오면 알아서 받아옵니다",
+            # Yellow status strip (no action button — auto-assist runs).
+            nudge_text="Generate token 버튼을 찾고 있어요",
+            nudge_btn="",
         )
     return SceneCopy(
         right_tag="끝",

@@ -4,9 +4,9 @@ Design: ``desin/CloneUp 브라우저 안내 대화형.dc.html``
 
 User signs in (and confirms passkey/email) in the OS browser, then sets
 Expiration and scopes **on the GitHub page**. Hint chips + 「골랐어요」/
-「확인했어요」 guide the steps; the app reads Expiration via UIA and collects
-the issued PAT (clipboard / UIA). Auto CDP/UIA mutation is opt-in only
-(「도와주세요」 / CDP).
+「확인했어요」 guide the steps; the app reads Expiration via UIA/OCR and
+collects the issued PAT (clipboard / UIA). On the Generate step the guide
+auto-finds and clicks 「Generate token」 (spinner status; no 「도와주세요」).
 """
 
 from __future__ import annotations
@@ -650,6 +650,12 @@ def _dialogue_qss() -> str:
         background: {_warn_soft()}; border: 1px solid {p.warn_border};
         border-radius: 12px;
     }}
+    QLabel#dlgNudgeSpin {{
+        font-size: 11px;
+        font-weight: 600;
+        color: {p.warn_border};
+        min-width: 28px;
+    }}
     QPushButton#dlgNudgeBtn {{
         background: {p.bg_window}; border: 1px solid {p.warn_border};
         border-radius: 9px; padding: 4px 13px; font-size: 12px;
@@ -737,7 +743,7 @@ class ExternalBrowserPatGuide(QDialog):
         self._expiry_read_spin: QLabel | None = None
         self._expiry_read_value: QLabel | None = None
         self._expiry_confirm_btn: QPushButton | None = None
-        self._nudge_pending = False  # re-run 도와주세요 once if clicked while busy
+        self._nudge_pending = False  # reserved; auto-assist coalescing
         self._assist_aside = False  # guide dimmed while CDP/UIA clicks
 
         # Tee Path B UIA helpers into main textLog while this guide is alive.
@@ -824,28 +830,34 @@ class ExternalBrowserPatGuide(QDialog):
         wl.addWidget(self._wait_text, 1)
         self._wait.hide()
 
+        # PRESS_GENERATE status: spinner + “찾고 있어요” (no 도와주세요 button).
         self._nudge = QFrame()
         self._nudge.setObjectName("dlgNudge")
-        nl = QVBoxLayout(self._nudge)
-        nl.setContentsMargins(13, 13, 13, 13)
-        nl.setSpacing(9)
+        nl = QHBoxLayout(self._nudge)
+        nl.setContentsMargins(13, 12, 13, 12)
+        nl.setSpacing(10)
+        self._nudge_spin = QLabel("●○○")
+        self._nudge_spin.setObjectName("dlgNudgeSpin")
+        self._nudge_spin.setAlignment(
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        )
         self._nudge_text = QLabel("")
         self._nudge_text.setObjectName("dlgSub")
         self._nudge_text.setWordWrap(True)
-        self._nudge_btn = QPushButton("버튼이 안 보여요")
-        self._nudge_btn.setObjectName("dlgNudgeBtn")
-        self._nudge_btn.clicked.connect(self._on_nudge_generate)
+        nl.addWidget(self._nudge_spin, 0)
+        nl.addWidget(self._nudge_text, 1)
+        # Kept for CDP opt-in (CLONEUP_CDP=1); hidden unless enabled.
+        self._nudge_btn = QPushButton("")  # unused — auto-assist replaces 도와주세요
+        self._nudge_btn.hide()
         self._nudge_cdp_btn = QPushButton("제어용 브라우저 열기")
         self._nudge_cdp_btn.setObjectName("dlgNudgeBtn")
         self._nudge_cdp_btn.setToolTip(
-            "CLONEUP_CDP=1 일 때, 디버깅 포트로 Chrome/Edge를 전용 프로필로 엽니다. "
-            "Expiration을 DOM으로 맞출 수 있습니다."
+            "CLONEUP_CDP=1 일 때, 디버깅 포트로 Chrome/Edge를 전용 프로필로 엽니다."
         )
         self._nudge_cdp_btn.clicked.connect(self._on_launch_cdp_browser)
-        nl.addWidget(self._nudge_text)
-        nl.addWidget(self._nudge_btn, 0, Qt.AlignmentFlag.AlignLeft)
-        nl.addWidget(self._nudge_cdp_btn, 0, Qt.AlignmentFlag.AlignLeft)
+        self._nudge_cdp_btn.hide()
         self._nudge.hide()
+        self._generate_auto_started = False
 
         self._done_host = QWidget()
         self._done_lay = QVBoxLayout(self._done_host)
@@ -1011,10 +1023,18 @@ class ExternalBrowserPatGuide(QDialog):
         prev = self._scene
         self._scene = scene
         self._guide_log(f"[Path B] 장면 {prev.name} → {scene.name}")
+        if scene != DialogueScene.PRESS_GENERATE:
+            self._generate_auto_started = False
         self._render()
         self._sync_poll_interval()
         self.adjustSize()
         self._place_bottom_left()
+        # Entering Generate step → auto-find/click (no 「도와주세요」).
+        if (
+            scene == DialogueScene.PRESS_GENERATE
+            and prev != DialogueScene.PRESS_GENERATE
+        ):
+            QTimer.singleShot(350, self._auto_generate_assist)
 
     def _render(self) -> None:
         sc = scene_copy(
@@ -1040,36 +1060,28 @@ class ExternalBrowserPatGuide(QDialog):
             self._wait_text.setText(sc.wait_text)
             if not self._dot_timer.isActive():
                 self._dot_timer.start()
-        elif self._expiry_scanning:
+        elif self._expiry_scanning or (
+            self._scene == DialogueScene.PRESS_GENERATE and self._assist_busy()
+        ):
             if not self._dot_timer.isActive():
                 self._dot_timer.start()
-        else:
+        elif self._scene != DialogueScene.PRESS_GENERATE:
             self._dot_timer.stop()
 
         nudge = self._scene == DialogueScene.PRESS_GENERATE
         self._nudge.setVisible(nudge)
         if nudge:
-            self._nudge_text.setText(sc.nudge_text)
-            # Don't clobber busy label/enabled while assist is running.
-            if self._assist_busy():
-                self._nudge_btn.setText("찾는 중…")
-                self._nudge_btn.setEnabled(False)
-            else:
-                self._nudge_btn.setText(sc.nudge_btn or "도와주세요")
-                self._nudge_btn.setEnabled(True)
-            try:
-                from app.util.browser_cdp import cdp_enabled, probe_cdp_endpoint
-
-                show_cdp = cdp_enabled()
-                self._nudge_cdp_btn.setVisible(show_cdp)
-                if show_cdp and probe_cdp_endpoint() is not None:
-                    self._nudge_cdp_btn.setText("제어용 브라우저 연결됨")
-                    self._nudge_cdp_btn.setEnabled(False)
-                elif show_cdp:
-                    self._nudge_cdp_btn.setText("제어용 브라우저 열기")
-                    self._nudge_cdp_btn.setEnabled(True)
-            except Exception:
-                self._nudge_cdp_btn.hide()
+            # Yellow status: spinner + “찾고 있어요” (no 도와주세요 button).
+            busy = self._assist_busy() or self._generate_auto_started
+            if busy or not (self._nudge_text.text() or "").strip():
+                self._nudge_text.setText(
+                    sc.nudge_text or "Generate token 버튼을 찾고 있어요"
+                )
+            self._nudge_spin.show()
+            if busy and not self._dot_timer.isActive():
+                self._dot_timer.start()
+        self._nudge_cdp_btn.hide()
+        self._nudge_btn.hide()
 
         done = self._scene == DialogueScene.DONE
         self._done_host.setVisible(done)
@@ -1291,6 +1303,13 @@ class ExternalBrowserPatGuide(QDialog):
         spin = self._expiry_read_spin
         if spin is not None and self._expiry_scanning and spin.isVisible():
             spin.setText(dots)
+        nspin = getattr(self, "_nudge_spin", None)
+        if (
+            nspin is not None
+            and self._scene == DialogueScene.PRESS_GENERATE
+            and nspin.isVisible()
+        ):
+            nspin.setText(dots)
 
     # --- chip / history handlers ---
     def _on_history_change(self, target: DialogueScene) -> None:
@@ -1480,16 +1499,25 @@ class ExternalBrowserPatGuide(QDialog):
         return w is not None and w.isRunning()
 
     def _set_nudge_busy(self, busy: bool, *, status: str = "") -> None:
-        """Disable 「도와주세요」 while assist runs — avoids fake 'need 2 clicks'."""
+        """Update yellow Generate status strip while auto-assist runs."""
         try:
-            self._nudge_btn.setEnabled(not busy)
             if busy:
-                self._nudge_btn.setText("찾는 중…")
+                self._generate_auto_started = True
+                self._nudge_spin.show()
+                if not self._dot_timer.isActive():
+                    self._dot_timer.start()
+                self._nudge_text.setText(
+                    status or "Generate token 버튼을 찾고 있어요"
+                )
             else:
-                self._nudge_btn.setText("도와주세요")
+                if status:
+                    self._nudge_text.setText(status)
         except Exception:
             pass
-        if status:
+        if status and self._scene == DialogueScene.PRESS_GENERATE:
+            # Keep main sub quieter; yellow strip carries the live status.
+            pass
+        elif status:
             self._sub.setText(status)
 
     def _assist_guide_aside(self, aside: bool) -> None:
@@ -1535,13 +1563,6 @@ class ExternalBrowserPatGuide(QDialog):
         if self._done:
             return
 
-        # User pressed 「도와주세요」 again while the first run was still walking
-        # UIA — coalesce into one follow-up instead of a dead second click.
-        user_repress = bool(self._nudge_pending) and op in (
-            "nudge",
-            "generate",
-            "expiry",
-        )
         self._nudge_pending = False
 
         if op == "wait_ready":
@@ -1557,8 +1578,7 @@ class ExternalBrowserPatGuide(QDialog):
                 self._guide_log("[Path B][CDP] 포트 미응답 — UIA/수동으로 진행")
                 self._sub.setText(
                     "제어용 브라우저 포트가 아직 안 열렸습니다. "
-                    "페이지가 뜬 뒤 「도와주세요」를 누르거나 "
-                    "Expiration을 직접 맞춰 주세요."
+                    "페이지가 뜬 뒤 Expiration을 직접 맞춰 주세요."
                 )
             self._render()
             return
@@ -1578,15 +1598,18 @@ class ExternalBrowserPatGuide(QDialog):
                     f"자동으로 못 바꿨어요({detail}). "
                     f"Expiration을 {exp}으로 직접 고른 뒤 Generate token을 눌러 주세요."
                 )
-            if user_repress and self._scene == DialogueScene.PRESS_GENERATE:
-                QTimer.singleShot(200, self._on_nudge_generate)
             return
 
         if op == "nudge":
+            self._generate_auto_started = False
             if ok:
                 self._expiry_uia_ok = True
+                self._set_nudge_busy(
+                    False,
+                    status="Generate를 눌렀어요. 키가 나오면 받아올게요.",
+                )
                 self._sub.setText(
-                    f"Generate를 눌러 봤어요 ({detail}). 키가 나오면 받아올게요."
+                    "Generate token을 눌렀어요. 키가 화면에 나오면 받아올게요."
                 )
                 return
             # Do NOT reopen tokens/new — that wipes the user's Expiration.
@@ -1614,11 +1637,10 @@ class ExternalBrowserPatGuide(QDialog):
             return
 
         if op == "generate" and ok:
+            self._generate_auto_started = False
             self._sub.setText(
                 f"Generate를 눌러 봤어요 ({detail}). 키가 나오면 받아올게요."
             )
-        if user_repress and self._scene == DialogueScene.PRESS_GENERATE:
-            QTimer.singleShot(200, self._on_nudge_generate)
 
     def _schedule_expiry_invoke_tries(self) -> None:
         """Retry expiry assist a few times while the form loads (async)."""
@@ -1693,46 +1715,45 @@ class ExternalBrowserPatGuide(QDialog):
         if not self._start_assist_worker("wait_ready"):
             self._sub.setText("다른 자동 맞춤이 끝나길 기다린 뒤 다시 시도해 주세요.")
 
-    def _on_nudge_generate(self) -> None:
-        """도와주세요 — opt-in CDP/UIA help (Expiry + Generate). Off by default.
+    def _auto_generate_assist(self) -> None:
+        """PRESS_GENERATE entered → find/click Generate automatically.
 
-        Historically felt like "need two clicks": the first press started a slow
-        UIA walk (many Chromium PIDs) with no busy UI, so users pressed again;
-        the second press was ignored (``_assist_busy``) while the first worker
-        later succeeded. Fix: disable the button, show progress, dim StayOnTop
-        so clicks hit the browser, and skip expiry when already confirmed.
+        Yellow strip shows a spinner + 「Generate token 버튼을 찾고 있어요」.
+        No 「도와주세요」 button — less nagging, Toss-like progress.
         """
-        self._guide_log("[Path B] Generate 도움 버튼(도와주세요)")
+        if self._done or self._scene != DialogueScene.PRESS_GENERATE:
+            return
         if self._assist_busy():
-            # Remember intent — finish handler will re-fire once.
-            self._nudge_pending = True
             self._set_nudge_busy(
                 True,
-                status="이미 브라우저에서 Generate를 찾는 중이에요. 잠시만 기다려 주세요…",
+                status="Generate token 버튼을 찾고 있어요",
             )
             return
+        if self._generate_auto_started and self._got_token:
+            return
+        self._guide_log("[Path B] Generate 자동 시도")
         want = self._wanted_expiry_days()
-        # Skip expiry mutate when user already confirmed on ASK_EXPIRY (or UIA ok).
+        # Skip expiry mutate when user already confirmed on ASK_EXPIRY.
         skip = bool(
             self._expiry_uia_ok
             or self._last_expiry_days_read
             or self._expires_at
         )
         self._nudge_pending = False
+        self._generate_auto_started = True
         self._set_nudge_busy(
             True,
-            status=(
-                "Generate token을 찾아 누르는 중… "
-                "(브라우저 창이 많으면 수 초 걸릴 수 있어요)"
-            ),
+            status="Generate token 버튼을 찾고 있어요",
         )
         if not self._start_assist_worker(
             "nudge", days=want, skip_expiry=skip
         ):
+            self._generate_auto_started = False
             self._set_nudge_busy(
                 False,
-                status="다른 작업이 끝나길 기다린 뒤 다시 눌러 주세요.",
+                status="잠시 후 다시 Generate를 찾아볼게요…",
             )
+            QTimer.singleShot(800, self._auto_generate_assist)
 
     def _reopen_github_login(self) -> None:
         from PySide6.QtCore import QUrl

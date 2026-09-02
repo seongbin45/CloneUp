@@ -43,7 +43,8 @@ def test_scene_copy_tags() -> None:
     assert scene_copy(DialogueScene.ASK_EXPIRY).right_tag == "3 / 4"
     assert scene_copy(DialogueScene.PRESS_GENERATE).right_tag == "4 / 4"
     assert scene_copy(DialogueScene.DONE).right_tag == "끝"
-    assert "Generate" in scene_copy(DialogueScene.PRESS_GENERATE).nudge_text
+    assert "찾고" in scene_copy(DialogueScene.PRESS_GENERATE).nudge_text
+    assert scene_copy(DialogueScene.PRESS_GENERATE).nudge_btn == ""
     assert int(DialogueScene.ASK_SCOPE) < int(DialogueScene.ASK_EXPIRY)
 
 
@@ -92,7 +93,9 @@ def test_scene_copy_browser_first() -> None:
     assert "맞춰 볼게요" not in gen.sub
     assert "커서가 잠깐" not in gen.sub
     assert "Generate token" in gen.say or "Generate token" in gen.sub
-    assert gen.nudge_btn == "도와주세요"
+    assert "도와주세요" not in (gen.nudge_text or "")
+    assert gen.nudge_btn == ""
+    assert "찾고" in gen.nudge_text
 
 
 def test_history_change_targets() -> None:
