@@ -69,7 +69,8 @@ def assert_github_https_remote(url: str, *, what: str = "origin") -> str:
         )
     if re.match(r"^git@([^:]+):", s, re.I):
         raise UrlError(
-            f"{what} 이 SSH 주소입니다. CloneUp은 https://github.com/… 만 지원합니다."
+            f"{what} 이 SSH 주소(git@…)입니다.\n"
+            "CloneUp은 https://github.com/사용자/저장소 형식만 지원합니다."
         )
     raw = s if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", s) else "https://" + s
     parsed = urlparse(raw)
@@ -77,7 +78,7 @@ def assert_github_https_remote(url: str, *, what: str = "origin") -> str:
     if not is_github_https_host(host):
         raise UrlError(
             f"{what} 이 github.com 이 아닙니다 ({host or '?'}).\n"
-            "CloneUp은 github.com HTTPS 원격만 지원합니다."
+            "CloneUp은 github.com 의 https:// 주소만 지원합니다."
         )
     if parsed.username or parsed.password:
         raise UrlError(

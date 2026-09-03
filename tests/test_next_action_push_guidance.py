@@ -66,7 +66,10 @@ def test_missing_workflow_scope_points_at_a_new_key() -> None:
 
 def test_generic_send_failure_still_falls_back() -> None:
     hint = next_step_for_error("GitHub로 보내기에 실패했습니다.\n\n(참고)\nsome unknown error")
-    assert hint == "인터넷과 「GitHub: 연결」을 확인한 뒤 다시 시도하세요."
+    assert hint is not None
+    assert "인터넷" in hint
+    assert "GitHub: 연결" in hint
+    assert "받아오기" not in hint  # must not steal non-fast-forward's guidance
 
 
 def test_winerror_not_misrouted_to_github_reconnect() -> None:

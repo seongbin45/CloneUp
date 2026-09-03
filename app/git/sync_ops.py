@@ -58,7 +58,10 @@ def assert_safe_github_origin(folder: Path) -> None:
     fetch_url = (fetch.stdout or "").strip()
     push_url = (push.stdout or "").strip() or fetch_url
     if not fetch_url and not push_url:
-        raise SyncError("origin 주소를 읽을 수 없습니다.")
+        raise SyncError(
+            "이 폴더의 GitHub 연결 주소(origin)를 읽을 수 없습니다.\n"
+            "「만들고 올리기」로 먼저 올리거나, 「받기」로 받은 폴더를 선택하세요."
+        )
     try:
         if fetch_url:
             assert_github_https_remote(fetch_url, what="origin(fetch)")

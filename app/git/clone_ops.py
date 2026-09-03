@@ -32,14 +32,14 @@ def validate_branch_name(branch: str | None) -> str | None:
     if not name:
         return None
     if name in (".", "..") or ".." in name:
-        raise CloneError("branch 이름이 올바르지 않습니다.")
+        raise CloneError("브랜치(작업 갈래) 이름이 올바르지 않습니다.")
     if name.startswith("-") or not _SAFE_BRANCH_RE.match(name):
         raise CloneError(
-            f"branch 이름 「{name[:40]}」을(를) 사용할 수 없습니다.\n"
+            f"브랜치(작업 갈래) 이름 「{name[:40]}」을(를) 사용할 수 없습니다.\n"
             "목록에서 고르거나, 영문·숫자·/ · _ · . 만 쓰세요."
         )
     if len(name) > 200:
-        raise CloneError("branch 이름이 너무 깁니다.")
+        raise CloneError("브랜치(작업 갈래) 이름이 너무 깁니다.")
     return name
 
 
@@ -131,8 +131,8 @@ def clone_repository(
             or "did not match" in msg.lower()
         ):
             raise CloneError(
-                f"branch 「{branch_name}」을(를) 찾지 못했습니다.\n"
-                "이름을 확인하거나 default branch로 받아 보세요.\n\n"
+                f"브랜치(작업 갈래) 「{branch_name}」을(를) 찾지 못했습니다.\n"
+                "이름을 확인하거나, 기본 갈래로 받아 보세요.\n\n"
                 + msg[:400]
             ) from e
         raise CloneError(msg) from e
