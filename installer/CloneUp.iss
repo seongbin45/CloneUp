@@ -55,7 +55,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "autoupdatemanager"; Description: "백그라운드 자동 업데이트 관리자 (시작 시 실행)"; GroupDescription: "업데이트:"; Flags: checkedonce
+; Autostart only — the update_manager.exe itself is ALWAYS installed (see [Files]).
+; Do NOT use checkedonce here: that flag unchecks the task on upgrade when a
+; previous version is found, which left many PCs without the updater after
+; updating from builds that never offered this task (or after one opt-out).
+Name: "autoupdatemanager"; Description: "로그인 시 자동 업데이트 관리자 실행"; GroupDescription: "업데이트:"; Flags: checked
 ; Path B Expiration OCR — bundles UB-Mannheim Tesseract setup (runs with its own UAC)
 Name: "tesseractocr"; Description: "Tesseract OCR 설치 (키 만료일 화면 인식용)"; GroupDescription: "OCR:"; Flags: checkedonce
 
@@ -66,8 +70,10 @@ Source: "..\dist\CloneUp\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 Source: "..\VERSION"; DestDir: "{app}"; Flags: ignoreversion
 ; App icon next to exe — Control Panel + Start Menu use this path (all sizes in .ico)
 Source: "..\assets\icons\{#MyAppIcoName}"; DestDir: "{app}"; Flags: ignoreversion
-; Independent update manager (separate folder — not inside {app} onedir)
-Source: "..\dist\CloneUp_update_manager.exe"; DestDir: "{localappdata}\CloneUp\UpdateManager"; Flags: ignoreversion; Tasks: autoupdatemanager
+; Independent update manager — ALWAYS install (not gated on the autostart task).
+; Autostart (HKCU Run) remains optional via Tasks: autoupdatemanager below.
+; Separate folder so zip onedir updates never overwrite the manager.
+Source: "..\dist\CloneUp_update_manager.exe"; DestDir: "{localappdata}\CloneUp\UpdateManager"; Flags: ignoreversion
 ; Individual PNG sizes (optional consumers / shell thumbnails if needed)
 Source: "..\assets\icons\icon-16.png"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\icon-24.png"; DestDir: "{app}\icons"; Flags: ignoreversion

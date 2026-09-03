@@ -36,10 +36,17 @@ Inno Setup **GUI 마법사**가 뜰 수 있습니다. 자동 업데이트는 사
 
 ## 설치 / 자동시작
 
-Setup 작업 항목 **「백그라운드 자동 업데이트 관리자」** (기본 선택):
+| 항목 | 동작 |
+|------|------|
+| **파일** | Setup이 **항상** `%LOCALAPPDATA%\CloneUp\UpdateManager\CloneUp_update_manager.exe` 를 설치합니다. (작업 항목과 무관) |
+| **자동시작** | Setup 작업 **「로그인 시 자동 업데이트 관리자 실행」** (기본 선택) → HKCU Run `CloneUpUpdateManager` |
+| 트레이 | CloneUp 트레이 자동시작(`CloneUpTray`)과는 **별개** |
 
-- 파일 복사 + HKCU Run `CloneUpUpdateManager`
-- CloneUp 트레이 자동시작(`CloneUpTray`)과는 **별개**
+### 일부 PC에 안 깔리던 원인 (수정됨)
+
+1. **`checkedonce` + Tasks로 파일 게이트** — 이전 버전이 있으면 업그레이드 시 작업이 기본 해제되어 **exe 자체가 복사되지 않음**
+2. **UPX 패킹** — 일부 Defender/백신에서 onefile 업데이터가 격리되어 “설치 안 됨”처럼 보임
+3. **관리자 권한으로 Setup 실행** — `{localappdata}` / HKCU Run 이 **그 관리자 프로필**에만 기록됨 (일반 사용자 세션에는 없음). Setup은 `PrivilegesRequired=lowest` 이므로 **더블클릭 설치**를 권장
 
 ## 로그
 
@@ -49,7 +56,7 @@ Setup 작업 항목 **「백그라운드 자동 업데이트 관리자」** (기
 
 - Windows **설정 → 앱 → 시작** 에서 끄기, 또는  
 - `HKCU\...\Run` 의 `CloneUpUpdateManager` 삭제, 또는  
-- Setup 재설치 시 해당 작업 항목 해제 후 제거
+- Setup 재설치 시 **「로그인 시 자동 업데이트 관리자 실행」** 만 해제 (exe 파일은 남음)
 
 ## 릴리즈 체크리스트
 

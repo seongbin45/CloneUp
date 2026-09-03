@@ -44,7 +44,9 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX-packed onefile binaries are frequently quarantined by Defender /
+    # third-party AV on "some PCs", which looks like "updater didn't install".
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
