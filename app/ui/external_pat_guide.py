@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -646,13 +645,6 @@ def _dialogue_qss() -> str:
     QFrame#dlgWait {{
         background: {p.bg_muted}; border: none; border-radius: 12px;
     }}
-    QScrollArea#dlgScroll {{
-        background: transparent;
-        border: none;
-    }}
-    QScrollArea#dlgScroll > QWidget > QWidget {{
-        background: transparent;
-    }}
     QFrame#dlgNudge {{
         background: {_warn_soft()}; border: 1px solid {p.warn_border};
         border-radius: 12px;
@@ -772,8 +764,6 @@ class ExternalBrowserPatGuide(QDialog):
         self.setWindowOpacity(_GUIDE_OPACITY)
         self.setMinimumWidth(360)
         self.setMaximumWidth(440)
-        # Height capped in _place_bottom_left to the work area; content scrolls.
-        self.setMinimumHeight(220)
         self.setStyleSheet(_dialogue_qss())
         self._drag_offset: QPoint | None = None
 
@@ -802,13 +792,6 @@ class ExternalBrowserPatGuide(QDialog):
         hl.addStretch(1)
         hl.addWidget(self._right_tag)
         hl.addWidget(btn_x, 0)
-
-        # Scrollable middle: history grows with steps and used to clip the
-        # bottom of the StayOnTop card off-screen (no scroll = cut buttons).
-        mid = QWidget()
-        mid_lay = QVBoxLayout(mid)
-        mid_lay.setContentsMargins(16, 15, 16, 12)
-        mid_lay.setSpacing(12)
 
         self._hist_host = QVBoxLayout()
         self._hist_host.setContentsMargins(0, 0, 0, 0)
@@ -891,48 +874,8 @@ class ExternalBrowserPatGuide(QDialog):
         self._edit.hide()
         self._edit.textChanged.connect(self._on_edit_text)
 
-        mid_lay.addLayout(self._hist_host)
-        mid_lay.addWidget(self._say)
-        mid_lay.addWidget(self._sub)
-        mid_lay.addWidget(self._chips_host)
-        mid_lay.addWidget(self._wait)
-        mid_lay.addWidget(self._nudge)
-        mid_lay.addWidget(self._done_host)
-        mid_lay.addWidget(self._btn_reopen)
-        mid_lay.addWidget(self._edit)
-        mid_lay.addStretch(0)
-
-        self._scroll = QScrollArea()
-        self._scroll.setObjectName("dlgScroll")
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._scroll.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAsNeeded
-        )
-        self._scroll.setWidget(mid)
-        self._scroll.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-        )
-
-        # Sticky bottom: DONE CTA stays visible; quit row under it.
-        self._done_cta_host = QWidget()
-        done_cta_l = QVBoxLayout(self._done_cta_host)
-        done_cta_l.setContentsMargins(16, 0, 16, 8)
-        done_cta_l.setSpacing(0)
-        self._btn_done_go = QPushButton("클론업으로 돌아가기")
-        self._btn_done_go.setObjectName("dlgPrimary")
-        self._btn_done_go.setDefault(True)
-        self._btn_done_go.clicked.connect(self._finish_accept)
-        done_cta_l.addWidget(self._btn_done_go)
-        self._done_cta_host.hide()
-
-        foot_w = QWidget()
-        foot = QHBoxLayout(foot_w)
-        foot.setContentsMargins(16, 4, 16, 16)
-        foot.setSpacing(8)
+        foot = QHBoxLayout()
+        foot.setContentsMargins(0, 0, 0, 0)
         self._btn_quit = QPushButton("그만하기")
         self._btn_quit.setObjectName("dlgQuit")
         self._btn_quit.clicked.connect(self._on_cancel)
@@ -945,10 +888,26 @@ class ExternalBrowserPatGuide(QDialog):
         foot.addStretch(1)
         foot.addWidget(self._foot_note)
 
+        body_w = QWidget()
+        body = QVBoxLayout(body_w)
+        # Extra bottom padding so primary buttons are not clipped by the card's
+        # 16px rounded corner / translucent HWND edge.
+        body.setContentsMargins(16, 15, 16, 22)
+        body.setSpacing(12)
+        body.addLayout(self._hist_host)
+        body.addWidget(self._say)
+        body.addWidget(self._sub)
+        body.addWidget(self._chips_host)
+        body.addWidget(self._wait)
+        body.addWidget(self._nudge)
+        body.addWidget(self._done_host)
+        body.addWidget(self._btn_reopen)
+        body.addWidget(self._edit)
+        body.addSpacing(4)
+        body.addLayout(foot)
+
         card_lay.addWidget(head)
-        card_lay.addWidget(self._scroll, 1)
-        card_lay.addWidget(self._done_cta_host, 0)
-        card_lay.addWidget(foot_w, 0)
+        card_lay.addWidget(body_w)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -1025,12 +984,19 @@ class ExternalBrowserPatGuide(QDialog):
         )
 
     def _place_bottom_left(self) -> None:
-        """Lower-left of the work area; never taller than the screen.
+        """Default: lower-left of the work area (taskbar-safe).
 
-        Long history used to grow the StayOnTop card past the bottom edge
-        (buttons clipped). Cap height and scroll the middle instead.
+        Prefer sizeHint so newly shown chips/buttons are not clipped; clamp
+        only when the card would exceed the work area. No internal scroll —
+        the card grows with content (user request).
         """
         margin = 24
+        self.updateGeometry()
+        hint = self.sizeHint()
+        if hint.isValid() and hint.height() > 0:
+            self.resize(max(self.width(), hint.width()), hint.height())
+        else:
+            self.adjustSize()
         try:
             screen = None
             if self._anchor is not None:
@@ -1038,46 +1004,21 @@ class ExternalBrowserPatGuide(QDialog):
             if screen is None:
                 screen = QGuiApplication.primaryScreen()
             if screen is None:
-                self.adjustSize()
                 return
             avail = screen.availableGeometry()
-            # Leave headroom so taskbar / DPI frame never eats the CTA.
-            max_h = max(280, int(avail.height() * 0.85) - margin)
-            max_w = min(440, max(360, avail.width() - 2 * margin))
-            self.setMaximumHeight(max_h)
-            self.setMaximumWidth(max_w)
-
-            self.updateGeometry()
-            hint = self.sizeHint()
-            want_w = max(360, min(max_w, hint.width() if hint.isValid() else 400))
-            # Prefer content height but never exceed the work area.
-            want_h = hint.height() if hint.isValid() and hint.height() > 0 else 420
-            want_h = max(220, min(want_h, max_h))
-            self.resize(want_w, want_h)
-            # Force the scroll viewport to the remaining height so long
-            # history never pushes the sticky CTA off-screen.
-            try:
-                head_h = 48
-                foot_h = 52
-                cta_h = 56 if self._done_cta_host.isVisible() else 0
-                scroll_h = max(120, want_h - head_h - foot_h - cta_h)
-                self._scroll.setMaximumHeight(scroll_h)
-            except Exception:
-                pass
-
+            max_h = max(280, avail.height() - 2 * margin)
+            if self.height() > max_h:
+                self.resize(self.width(), max_h)
             fg = self.frameGeometry()
             x = avail.left() + margin
             y = avail.top() + avail.height() - fg.height() - margin
             y = max(avail.top() + margin, y)
+            # Keep bottom edge inside the work area
             if y + fg.height() > avail.top() + avail.height() - margin:
                 y = avail.top() + avail.height() - fg.height() - margin
-                y = max(avail.top() + margin, y)
-            self.move(x, y)
+            self.move(x, max(avail.top() + margin, y))
         except Exception:
-            try:
-                self.adjustSize()
-            except Exception:
-                pass
+            pass
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1168,7 +1109,6 @@ class ExternalBrowserPatGuide(QDialog):
 
         done = self._scene == DialogueScene.DONE
         self._done_host.setVisible(done)
-        self._done_cta_host.setVisible(done)
         self._btn_quit.setVisible(sc.show_cancel and not done)
         if done:
             self._rebuild_receipt()
@@ -1376,7 +1316,11 @@ class ExternalBrowserPatGuide(QDialog):
             rl.addStretch(1)
             rl.addWidget(vl)
             self._done_lay.addWidget(card)
-        # Primary CTA lives in sticky ``_done_cta_host`` (never clipped).
+        go = QPushButton("클론업으로 돌아가기")
+        go.setObjectName("dlgPrimary")
+        go.setDefault(True)
+        go.clicked.connect(self._finish_accept)
+        self._done_lay.addWidget(go)
 
     def _tick_dots(self) -> None:
         self._wait_dot_i = (self._wait_dot_i + 1) % 3
