@@ -59,7 +59,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; Do NOT use checkedonce here: that flag unchecks the task on upgrade when a
 ; previous version is found, which left many PCs without the updater after
 ; updating from builds that never offered this task (or after one opt-out).
-Name: "autoupdatemanager"; Description: "로그인 시 자동 업데이트 관리자 실행"; GroupDescription: "업데이트:"; Flags: checked
+; Default (no Flags) = initially checked. Do not use "checked" — not a valid Tasks flag.
+Name: "autoupdatemanager"; Description: "로그인 시 자동 업데이트 관리자 실행"; GroupDescription: "업데이트:"
 ; Path B Expiration OCR — bundles UB-Mannheim Tesseract setup (runs with its own UAC)
 Name: "tesseractocr"; Description: "Tesseract OCR 설치 (키 만료일 화면 인식용)"; GroupDescription: "OCR:"; Flags: checkedonce
 
