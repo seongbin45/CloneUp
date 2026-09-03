@@ -99,6 +99,7 @@ from app.ui.settings_store import (
     save_last_publish_branch,
     save_secret_pii_scan_enabled,
 )
+from app.util.error_popup import format_error_popup_body
 from app.util.autostart_win import (
     apply_autostart_preference,
     is_autostart_registered,
@@ -799,14 +800,20 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "보호 켜기 실패",
-                f"마스터 보호를 켤 수 없습니다.\n\n{e}",
+                format_error_popup_body(
+                    str(e),
+                    lead="마스터 보호를 켤 수 없어요.",
+                ),
             )
             return
         except Exception as e:  # noqa: BLE001 — surface unexpected crypto/IO
             QMessageBox.warning(
                 self,
                 "보호 켜기 실패",
-                f"예상치 못한 오류입니다.\n\n{e}",
+                format_error_popup_body(
+                    str(e),
+                    lead="마스터 보호를 켜는 중 예상치 못한 오류가 났어요.",
+                ),
             )
             return
         finally:
@@ -836,14 +843,20 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "비밀번호 바꾸기 실패",
-                f"비밀번호를 바꿀 수 없습니다.\n\n{e}",
+                format_error_popup_body(
+                    str(e),
+                    lead="마스터 비밀번호를 바꾸지 못했어요.",
+                ),
             )
             return
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(
                 self,
                 "비밀번호 바꾸기 실패",
-                f"예상치 못한 오류입니다.\n\n{e}",
+                format_error_popup_body(
+                    str(e),
+                    lead="비밀번호를 바꾸는 중 예상치 못한 오류가 났어요.",
+                ),
             )
             return
         finally:
@@ -870,14 +883,20 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "보호 끄기 실패",
-                f"마스터 보호를 끌 수 없습니다.\n\n{e}",
+                format_error_popup_body(
+                    str(e),
+                    lead="마스터 보호를 끌 수 없어요.",
+                ),
             )
             return
         except Exception as e:  # noqa: BLE001
             QMessageBox.warning(
                 self,
                 "보호 끄기 실패",
-                f"예상치 못한 오류입니다.\n\n{e}",
+                format_error_popup_body(
+                    str(e),
+                    lead="마스터 보호를 끄는 중 예상치 못한 오류가 났어요.",
+                ),
             )
             return
         finally:
@@ -1504,8 +1523,10 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "시작 프로그램",
-                "Windows 시작 항목을 등록하지 못했습니다.\n"
-                "직접 시작 폴더에 바로가기를 넣을 수 있습니다.",
+                format_error_popup_body(
+                    "Windows 시작 항목을 등록하지 못했습니다.",
+                    lead="시작 프로그램 등록에 실패했어요.",
+                ),
             )
         self._notify_prefs("boot_autostart")
 
@@ -1604,7 +1625,14 @@ class SettingsDialog(QDialog):
         try:
             text = path.read_text(encoding="utf-8-sig")
         except OSError as e:
-            QMessageBox.warning(self, title, str(e))
+            QMessageBox.warning(
+                self,
+                title,
+                format_error_popup_body(
+                    str(e),
+                    lead="문서를 열지 못했어요.",
+                ),
+            )
             return
         self._show_text_document(title, text)
 

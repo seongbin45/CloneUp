@@ -67,3 +67,18 @@ def test_missing_workflow_scope_points_at_a_new_key() -> None:
 def test_generic_send_failure_still_falls_back() -> None:
     hint = next_step_for_error("GitHub로 보내기에 실패했습니다.\n\n(참고)\nsome unknown error")
     assert hint == "인터넷과 「GitHub: 연결」을 확인한 뒤 다시 시도하세요."
+
+
+def test_winerror_not_misrouted_to_github_reconnect() -> None:
+    """Regression: bare 'denied' used to map OS Access-is-denied → PAT reconnect."""
+    hint = next_step_for_error("[WinError 5] Access is denied")
+    assert hint is not None
+    assert "GitHub" not in hint
+
+
+def test_security_problem_korean_maps() -> None:
+    hint = next_step_for_error(
+        "보안 문제: GitHub 주소에 비밀 정보가 들어 있습니다."
+    )
+    assert hint is not None
+    assert "원격" in hint or "GitHub" in hint

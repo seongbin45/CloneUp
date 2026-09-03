@@ -1062,8 +1062,17 @@ class CommitHistoryDialog(QDialog):
 
     @Slot(str)
     def _on_page_fail(self, msg: str) -> None:
+        from app.util.error_popup import format_error_popup_body
+
         self._loaded_lbl.setText("불러오기 실패")
-        QMessageBox.warning(self, "커밋 내역", msg)
+        QMessageBox.warning(
+            self,
+            "커밋 내역",
+            format_error_popup_body(
+                msg,
+                lead="커밋 목록을 불러오지 못했어요.",
+            ),
+        )
 
     def _append_row(self, c: CommitInfo) -> None:
         p = active_palette()
@@ -1212,7 +1221,14 @@ class CommitHistoryDialog(QDialog):
     @Slot(str)
     def _on_detail_fail(self, msg: str) -> None:
         self._clear_files()
-        err = QLabel(msg)
+        from app.util.error_popup import format_error_popup_body
+
+        err = QLabel(
+            format_error_popup_body(
+                msg,
+                lead="이 커밋의 파일 목록을 불러오지 못했어요.",
+            )
+        )
         err.setObjectName("histMeta")
         err.setWordWrap(True)
         while self._files_layout.count():
@@ -1298,7 +1314,16 @@ class CommitHistoryDialog(QDialog):
 
     @Slot(str)
     def _on_export_fail(self, msg: str) -> None:
-        QMessageBox.warning(self, "이 시점 파일 보기", msg)
+        from app.util.error_popup import format_error_popup_body
+
+        QMessageBox.warning(
+            self,
+            "이 시점 파일 보기",
+            format_error_popup_body(
+                msg,
+                lead="그 시점의 파일을 꺼내지 못했어요.",
+            ),
+        )
 
     @Slot()
     def _on_revert_clicked(self) -> None:
@@ -1365,7 +1390,16 @@ class CommitHistoryDialog(QDialog):
 
     @Slot(str)
     def _on_revert_preview_fail(self, msg: str) -> None:
-        QMessageBox.warning(self, "이 시점으로 되돌리기", msg)
+        from app.util.error_popup import format_error_popup_body
+
+        QMessageBox.warning(
+            self,
+            "이 시점으로 되돌리기",
+            format_error_popup_body(
+                msg,
+                lead="되돌리기 전에 바뀌는 파일을 확인하지 못했어요.",
+            ),
+        )
 
     def _execute_revert(self, rev: str) -> None:
         self._stop_worker()
@@ -1399,7 +1433,16 @@ class CommitHistoryDialog(QDialog):
 
     @Slot(str)
     def _on_revert_fail(self, msg: str) -> None:
-        QMessageBox.warning(self, "이 시점으로 되돌리기", msg)
+        from app.util.error_popup import format_error_popup_body
+
+        QMessageBox.warning(
+            self,
+            "이 시점으로 되돌리기",
+            format_error_popup_body(
+                msg,
+                lead="이 시점으로 되돌리지 못했어요.",
+            ),
+        )
 
     @staticmethod
     def _log_open_folder(path: str) -> None:

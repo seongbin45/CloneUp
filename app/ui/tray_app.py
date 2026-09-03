@@ -22,6 +22,7 @@ from app.ui.settings_store import (
     save_boot_notify_enabled,
     save_boot_notify_snooze_until,
 )
+from app.util.error_popup import format_error_popup_body
 
 
 def _main_window_visible() -> bool:
@@ -353,8 +354,15 @@ class TrayController(QObject):
             self._toast.close()
             self._toast = None
         self.request_open_main.emit(folder)
+        # Keep technical detail for support, but always lead + 다음 for beginners.
+        raw = (message or "").strip()
+        if len(raw) > 800:
+            raw = raw[:800] + "…"
         QMessageBox.warning(
             None,
             "클론업 — 올리지 못했습니다",
-            message[:800],
+            format_error_popup_body(
+                raw,
+                lead="선택한 폴더를 GitHub에 올리지 못했어요.",
+            ),
         )

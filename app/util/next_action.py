@@ -18,8 +18,15 @@ def is_missing_workflow_scope_error(message: str) -> bool:
     """
     msg = (message or "").strip()
     low = msg.lower()
-    return "without `workflow` scope" in msg or (
-        "personal access token" in low and "workflow" in low and "scope" in low
+    # Git's remote-rejected text usually has backticks; accept both forms.
+    return (
+        "without `workflow` scope" in msg
+        or "without workflow scope" in low
+        or (
+            "personal access token" in low
+            and "workflow" in low
+            and "scope" in low
+        )
     )
 
 
@@ -32,6 +39,36 @@ def next_step_for_error(message: str) -> str | None:
     if not msg:
         return None
     low = msg.lower()
+
+    # Master-password vault (settings) — English VaultError strings
+    if "wrong master password" in low or "wrong current master password" in low:
+        return "지금 입력한 마스터 비밀번호가 맞는지 다시 확인해 보세요."
+    if "empty master password" in low:
+        return "마스터 비밀번호를 비워 둘 수 없어요. 다시 입력해 보세요."
+    if "dpapi" in low:
+        return "마스터 보호는 Windows에서만 사용할 수 있어요."
+    if "master protection is already enabled" in low:
+        return "이미 마스터 보호가 켜져 있어요. 바꾸려면 「비밀번호 바꾸기」를 쓰세요."
+    if (
+        "master protection is not enabled" in low
+        or "missing wrap.json" in low
+        or "missing dek" in low
+        or "failed to recover plaintext token" in low
+    ):
+        return "설정 → 계정에서 마스터 보호 상태를 확인한 뒤 다시 시도하세요."
+
+    # Local OS filesystem permission — MUST precede generic "denied" auth match.
+    # Otherwise WinError 5 / Access is denied falsely says 「GitHub: 연결」.
+    _os_perm = bool(re.search(r"\bpermission denied\b", low)) and not any(
+        k in low for k in ("publickey", "github", "remote", "push", "fetch")
+    )
+    if (
+        "winerror" in low
+        or "access is denied" in low
+        or "errno 13" in low
+        or _os_perm
+    ):
+        return "이 폴더·파일 권한을 확인하거나, 다른 위치로 옮겨 보세요."
 
     # Missing repo scope on PAT
     if (
@@ -72,16 +109,34 @@ def next_step_for_error(message: str) -> str | None:
     if "device" in low or "장치 코드" in msg or "장치 인증" in msg:
         return "브라우저 장치 코드 방식은 꺼져 있습니다. 「GitHub: 연결」에서 키를 사용하세요."
 
+    # Token leaked into local git config / remote URL (publish safety)
+    if "보안 문제" in msg:
+        return (
+            "로그를 확인한 뒤 「GitHub: 연결」을 다시 해 보세요. "
+            "계속되면 해당 폴더의 Git 원격 주소에 비밀 정보가 없는지 점검하세요."
+        )
+
     # Auth / permission (push denied, 401, etc.)
+    # Avoid bare "denied"/"permission" — those collide with OS Access is denied.
     if (
-        "denied" in low
-        or "permission" in low
+        "permission denied (publickey)" in low
         or "403" in msg
         or "401" in msg
         or "authentication failed" in low
         or "could not read username" in low
         or "invalid credentials" in low
         or "로그인이 필요" in msg
+        or (
+            "denied" in low
+            and (
+                "push" in low
+                or "fetch" in low
+                or "remote" in low
+                or "github" in low
+                or "credential" in low
+                or "authenticat" in low
+            )
+        )
         or ("권한" in msg and ("없" in msg or "부족" in msg or "실패" in msg))
     ):
         return "창 위쪽 「GitHub: 연결」에서 키를 다시 연결하세요."
@@ -96,9 +151,21 @@ def next_step_for_error(message: str) -> str | None:
     if "폴더 이름이 올바르지 않" in msg:
         return "폴더 이름에서 특수문자(<>:\"/\\|?*)를 빼 보세요."
 
-    # Parent missing
-    if "저장 폴더가 없습니다" in msg or "폴더가 없습니다" in msg:
+    # Parent missing / folder not found
+    if (
+        "저장 폴더가 없습니다" in msg
+        or "폴더가 없습니다" in msg
+        or "폴더 없음" in msg
+        or "폴더를 찾을 수 없습니다" in msg
+    ):
         return "존재하는 로컬 폴더를 선택한 뒤 다시 시도하세요."
+
+    # Windows autostart registration
+    if "시작 항목" in msg or "시작 프로그램" in msg:
+        return (
+            "설정에서 다시 켜 보거나, Windows 시작 폴더에 "
+            "CloneUp 바로가기를 직접 넣으세요."
+        )
 
     # Empty folder / nothing to commit
     if "빈 폴더" in msg or "커밋할 파일이 최소" in msg:
@@ -129,7 +196,7 @@ def next_step_for_error(message: str) -> str | None:
         return "「만들고 올리기」로 먼저 올리거나, 「받기」로 받은 폴더를 선택하세요."
 
     # Conflict
-    if "충돌" in msg or "겹쳐" in msg:
+    if "충돌" in msg or "겹쳐" in msg or "합치지 못" in msg:
         return "「충돌 취소」로 되돌리거나, 다른 프로그램에서 파일을 고친 뒤 다시 시도하세요."
 
     # Nothing to upload

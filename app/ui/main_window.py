@@ -74,6 +74,7 @@ from app.ui.commit_history_dialog import (
 from app.ui.settings_dialog import show_settings
 from app.ui.success_dialog import show_clone_success, show_publish_success
 from app.ui.tip_card import install_tip_card
+from app.util.error_popup import format_error_popup_body
 from app.util.next_action import format_next_step_line, is_missing_workflow_scope_error
 from app.ui.onboarding_dialog import show_onboarding
 from app.ui.settings_store import (
@@ -1491,14 +1492,8 @@ class MainController(QObject):
             or "키가 올바르지" in message
             or "만료되었" in message
         )
-        # Keep the detailed error (good for support) and always append a
-        # plain-language “what to do next” for the popup.
-        hint = next_line or (
-            "다음: 위 내용을 확인한 뒤 다시 시도해 보세요. "
-            "계속 안 되면 창 위쪽 「GitHub: 연결」에서 키를 다시 연결해 보세요."
-        )
-        intro = "작업을 끝내지 못했어요."
-        body = f"{intro}\n\n{message}\n\n{hint}"
+        # Keep detailed error (support) + always a plain-language lead/next.
+        body = format_error_popup_body(message)
 
         if needs_login and not self._busy():
             reply = QMessageBox.warning(
@@ -1703,7 +1698,14 @@ class MainController(QObject):
             return
         path = Path(folder).expanduser()
         if not path.is_dir():
-            QMessageBox.warning(self.window, "CloneUp", f"폴더 없음:\n{folder}")
+            QMessageBox.warning(
+                self.window,
+                "CloneUp",
+                format_error_popup_body(
+                    f"폴더 없음:\n{folder}",
+                    lead="선택한 폴더를 찾을 수 없어요.",
+                ),
+            )
             return
         if not name:
             name = path.name
@@ -1720,7 +1722,14 @@ class MainController(QObject):
         try:
             branch = resolve_publish_branch(self._publish_branch_name())
         except PublishError as e:
-            QMessageBox.warning(self.window, "branch", str(e))
+            QMessageBox.warning(
+                self.window,
+                "브랜치 이름",
+                format_error_popup_body(
+                    str(e),
+                    lead="브랜치 이름을 확인하지 못했어요.",
+                ),
+            )
             return
 
         need_git_prep = not (root / ".git").exists()
@@ -1745,11 +1754,23 @@ class MainController(QObject):
         try:
             ensure_repo_for_safety(root, write_gitignore=True, branch=branch)
         except PublishError as e:
-            QMessageBox.warning(self.window, "CloneUp", str(e))
+            QMessageBox.warning(
+                self.window,
+                "올릴 준비",
+                format_error_popup_body(
+                    str(e),
+                    lead="이 폴더를 Git으로 준비하지 못했어요.",
+                ),
+            )
             return
         except Exception as e:
             QMessageBox.warning(
-                self.window, "CloneUp", f"폴더 Git 준비에 실패했습니다.\n{e}"
+                self.window,
+                "올릴 준비",
+                format_error_popup_body(
+                    str(e),
+                    lead="이 폴더를 Git으로 준비하지 못했어요.",
+                ),
             )
             return
         if need_git_prep:
@@ -1771,7 +1792,14 @@ class MainController(QObject):
                     hide_real_email=hide_email,
                 )
                 return
-            QMessageBox.warning(self.window, "올릴 수 없음", "\n".join(report.errors))
+            QMessageBox.warning(
+                self.window,
+                "올릴 수 없음",
+                format_error_popup_body(
+                    "\n".join(report.errors),
+                    lead="지금 상태로는 올릴 수 없어요.",
+                ),
+            )
             return
 
         if not self._confirm_upload_g3(
@@ -2338,7 +2366,14 @@ class MainController(QObject):
             for w in norm.warnings:
                 self._log(f"URL 안내: {w}")
         except UrlError as e:
-            QMessageBox.warning(self.window, "주소 오류", str(e))
+            QMessageBox.warning(
+                self.window,
+                "주소 오류",
+                format_error_popup_body(
+                    str(e),
+                    lead="GitHub 주소를 확인하지 못했어요.",
+                ),
+            )
             return
 
         branch = self._selected_clone_branch()
@@ -2587,7 +2622,14 @@ class MainController(QObject):
                 )
                 return
         except OSError as e:
-            QMessageBox.warning(self.window, "커밋 내역", str(e))
+            QMessageBox.warning(
+                self.window,
+                "커밋 내역",
+                format_error_popup_body(
+                    str(e),
+                    lead="폴더를 열지 못했어요.",
+                ),
+            )
             return
         self._log(f"커밋 내역 열기: {p}")
         show_commit_history(self.window, str(p))
@@ -2675,7 +2717,14 @@ class MainController(QObject):
         try:
             n = normalize_github_clone_url(raw)
         except UrlError as e:
-            QMessageBox.warning(self.window, "커밋 내역", str(e))
+            QMessageBox.warning(
+                self.window,
+                "커밋 내역",
+                format_error_popup_body(
+                    str(e),
+                    lead="GitHub 주소를 확인하지 못했어요.",
+                ),
+            )
             return
 
         local = self._find_local_clone_for_url(n.owner, n.repo)
@@ -2745,8 +2794,10 @@ class MainController(QObject):
             QMessageBox.warning(
                 self.window,
                 "변경이 겹침",
-                "이 폴더와 GitHub 내용이 서로 달라 자동으로 합치지 못했습니다.\n"
-                "「충돌 취소」로 되돌리거나, 다른 프로그램에서 파일을 고친 뒤 다시 하세요.",
+                format_error_popup_body(
+                    "이 폴더와 GitHub 내용이 서로 달라 자동으로 합치지 못했습니다.",
+                    lead="변경이 겹쳐서 자동으로 합치지 못했어요.",
+                ),
             )
 
     @Slot()
@@ -2826,7 +2877,13 @@ class MainController(QObject):
     @Slot(str)
     def _on_sync_action_ok(self, message: str) -> None:
         self._log(message)
-        QMessageBox.information(self.window, "동기화", message[:1500] or "완료")
+        raw = (message or "").strip() or "완료"
+        if len(raw) > 1500:
+            raw = raw[:1500] + "…"
+        # Success path: keep detail for support, Korean lead for beginners.
+        # No 「다음」 — the action already finished.
+        body = f"동기화 작업을 마쳤어요.\n\n{raw}" if raw != "완료" else "동기화 작업을 마쳤어요."
+        QMessageBox.information(self.window, "동기화", body)
         # refresh status after action
         if _folder_path(self.editSyncFolder):
             # chain a status refresh without blocking — schedule after busy clears
