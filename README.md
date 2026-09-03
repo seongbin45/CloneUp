@@ -10,7 +10,7 @@ Windows용 **GitHub 도우미** 데스크톱 앱입니다.
 
 | 항목 | 내용 |
 |------|------|
-| 현재 버전 | **0.1.9** (`VERSION`, `app/__init__.py`, `installer/CloneUp.iss`) |
+| 현재 버전 | **0.1.10** (`VERSION`, `app/__init__.py`, `installer/CloneUp.iss`) |
 | 실행 (개발) | `.\.venv\Scripts\python.exe main.py` |
 | 설치 파일 빌드 | `powershell -File scripts\build_installer.ps1` |
 | GitHub | https://github.com/seongbin45/CloneUp |
