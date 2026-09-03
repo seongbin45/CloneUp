@@ -143,6 +143,42 @@ def save_boot_autostart_enabled(enabled: bool) -> None:
     _settings().setValue("boot_autostart_enabled", bool(enabled))
 
 
+# --- Update manager health → auto GitHub diagnosis -----------------------
+
+
+def load_um_diag_report_enabled() -> bool:
+    """
+    Default True: tray watches CloneUp_update_manager and may file a GitHub
+    issue (or save a local report) when it looks unhealthy.
+    """
+    return bool(_settings().value("um_diag_report_enabled", True, type=bool))
+
+
+def save_um_diag_report_enabled(enabled: bool) -> None:
+    _settings().setValue("um_diag_report_enabled", bool(enabled))
+
+
+def load_um_diag_last_signature() -> str | None:
+    val = _settings().value("um_diag_last_signature", "")
+    s = str(val).strip() if val else ""
+    return s or None
+
+
+def save_um_diag_last_signature(signature: str) -> None:
+    _settings().setValue("um_diag_last_signature", (signature or "").strip())
+
+
+def load_um_diag_last_sent_epoch() -> int:
+    try:
+        return int(_settings().value("um_diag_last_sent_epoch", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def save_um_diag_last_sent_epoch(epoch: int) -> None:
+    _settings().setValue("um_diag_last_sent_epoch", int(epoch))
+
+
 def load_hide_real_email() -> bool:
     """Default True: beginner-safe hide school/work email in commits."""
     return bool(_settings().value("hide_real_email", True, type=bool))

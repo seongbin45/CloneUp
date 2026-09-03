@@ -68,6 +68,22 @@ powershell -ExecutionPolicy Bypass -File scripts\diagnose_update_manager.ps1 -Ou
 
 스크립트가 L1–L5와 “다른 프로필에만 설치됨 / AV 격리 / 작업 항목 해제” 패턴을 분류합니다.
 
+## 트레이 자동 감시 → GitHub 이슈
+
+CloneUp 트레이(`--tray`)가 주기적으로 `CloneUp_update_manager` 상태를 봅니다.
+
+| 항목 | 내용 |
+|------|------|
+| 시점 | 시작 ~2분 후 1회, 이후 **1시간**마다 (메뉴 **업데이트 관리자 상태 확인**으로 즉시) |
+| 이상 조건 | exe 없음 / 프로세스 없음 / 로그에 apply·install-dir·GitHub 실패 등 |
+| 복구 시도 | exe는 있는데 프로세스가 없으면 **한 번 자동 재시작** 후 재확인 |
+| 전송 | 연결 키가 있으면 `seongbin45/CloneUp`에 `[auto] update-manager unhealthy…` 이슈 생성 |
+| 폴백 | 키 없음·API 실패 시 `%LOCALAPPDATA%\CloneUp\logs\um_diag_pending.md` 저장 + 트레이 알림 |
+| 중복 방지 | 같은 문제 서명(`signature`)은 **24시간**에 한 번 |
+| 끄기 | 설정 → 안전 → **업데이트 관리자 문제 시 진단 보내기** |
+
+이슈 라벨(저장소에 있으면): `update-manager-diag`, `auto-report`.
+
 ## 로그
 
 `%LOCALAPPDATA%\CloneUp\logs\update_manager.log`

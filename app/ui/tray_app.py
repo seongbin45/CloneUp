@@ -18,11 +18,13 @@ from app.ui.icons import load_app_icon
 from app.ui.settings_store import (
     load_boot_notify_enabled,
     load_last_commit_message,
+    load_um_diag_report_enabled,
     migrate_boot_notify_later_policy,
     save_boot_notify_enabled,
     save_boot_notify_snooze_until,
 )
 from app.util.error_popup import format_error_popup_body
+from app.util.um_diag_report import DiagSendResult, run_um_diag_cycle
 
 
 def _main_window_visible() -> bool:
@@ -106,6 +108,19 @@ class _BootScanWorker(QThread):
             self.failed.emit(str(e))
 
 
+class _UmDiagWorker(QThread):
+    """Probe update manager + optional GitHub issue (off GUI thread)."""
+
+    finished_result = Signal(object)  # DiagSendResult
+
+    def run(self) -> None:  # noqa: N802
+        try:
+            result = run_um_diag_cycle(attempt_restart=True)
+        except Exception as e:  # noqa: BLE001 — never crash tray
+            result = DiagSendResult("error", str(e))
+        self.finished_result.emit(result)
+
+
 class _BootUploadWorker(QThread):
     progress = Signal(str)
     finished_ok = Signal()
@@ -176,6 +191,7 @@ class TrayController(QObject):
         self._toast: BootNotifyToast | None = None
         self._worker: _BootUploadWorker | None = None
         self._scan_worker: _BootScanWorker | None = None
+        self._um_diag_worker: _UmDiagWorker | None = None
         self._suppress_toast_until_idle = False
 
         icon = load_app_icon()
@@ -188,10 +204,13 @@ class TrayController(QObject):
         act_open.triggered.connect(lambda: self.request_open_main.emit(""))
         act_scan = QAction("지금 안 올린 수정 확인", menu)
         act_scan.triggered.connect(self.run_boot_scan)
+        act_um = QAction("업데이트 관리자 상태 확인", menu)
+        act_um.triggered.connect(self.run_um_diag_check)
         act_quit = QAction("종료", menu)
         act_quit.triggered.connect(self.request_quit.emit)
         menu.addAction(act_open)
         menu.addAction(act_scan)
+        menu.addAction(act_um)
         menu.addSeparator()
         menu.addAction(act_quit)
         self._tray.setContextMenu(menu)
@@ -210,10 +229,58 @@ class TrayController(QObject):
 
         # Delay after logon so disks / VPN settle.
         QTimer.singleShot(8000, self.run_boot_scan)
+        # Update-manager watch: first check ~2 min after tray start, then hourly.
+        QTimer.singleShot(120_000, self.run_um_diag_check)
+        self._um_diag_timer = QTimer(self)
+        self._um_diag_timer.setInterval(60 * 60 * 1000)
+        self._um_diag_timer.timeout.connect(self.run_um_diag_check)
+        self._um_diag_timer.start()
 
     def _on_activated(self, reason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.request_open_main.emit("")
+
+    def run_um_diag_check(self) -> None:
+        """Watch independent update manager; report if missing / errored."""
+        if not load_um_diag_report_enabled():
+            return
+        if self._um_diag_worker is not None and self._um_diag_worker.isRunning():
+            return
+        w = _UmDiagWorker(parent=self)
+        w.finished_result.connect(self._on_um_diag_done)
+        self._um_diag_worker = w
+        w.start()
+
+    def _on_um_diag_done(self, result: object) -> None:
+        self._um_diag_worker = None
+        if not isinstance(result, DiagSendResult):
+            return
+        if result.status in ("skipped_ok", "skipped_disabled", "skipped_rate"):
+            return
+        if result.status == "filed":
+            msg = "업데이트 관리자 문제를 감지해 진단 로그를 GitHub 이슈로 보냈습니다."
+            if result.issue_url:
+                msg += f"\n{result.issue_url}"
+            self._tray.showMessage(
+                "클론업",
+                msg,
+                QSystemTrayIcon.MessageIcon.Warning,
+                8000,
+            )
+            return
+        if result.status in ("saved_local", "error"):
+            msg = (
+                "업데이트 관리자에 문제가 있는 것 같아요. "
+                "진단 로그를 이 PC에 저장했습니다."
+            )
+            if result.detail:
+                msg += f"\n({result.detail[:120]})"
+            self._tray.showMessage(
+                "클론업",
+                msg,
+                QSystemTrayIcon.MessageIcon.Warning,
+                8000,
+            )
 
     def dismiss_boot_toast(self) -> None:
         """Hide toast immediately (login / reauth about to open)."""

@@ -79,6 +79,7 @@ from app.ui.settings_store import (
     clear_recent_folders,
     load_boot_autostart_enabled,
     load_boot_notify_enabled,
+    load_um_diag_report_enabled,
     load_hide_real_email,
     load_history_revert_enabled,
     load_last_commit_message,
@@ -91,6 +92,7 @@ from app.ui.settings_store import (
     remove_user_glossary_entry,
     save_boot_autostart_enabled,
     save_boot_notify_enabled,
+    save_um_diag_report_enabled,
     save_boot_notify_snooze_until,
     save_hide_real_email,
     save_history_revert_enabled,
@@ -677,6 +679,21 @@ class SettingsDialog(QDialog):
                 body=(
                     "로그온할 때 클론업을 트레이에만 띄워 위 알림을 확인할 수 있게 합니다. "
                     "끄면 시작 프로그램에서 빼 둡니다."
+                ),
+            )
+        )
+        self._um_diag_on = load_um_diag_report_enabled()
+        self._sw_um_diag = _ToggleSwitch(checked=self._um_diag_on)
+        self._sw_um_diag.toggled.connect(self._on_um_diag_toggled)
+        lay.addWidget(
+            self._safety_toggle_card(
+                switch=self._sw_um_diag,
+                title="업데이트 관리자 문제 시 진단 보내기",
+                body=(
+                    "백그라운드 자동 업데이트 관리자가 없거나 오류 로그가 보이면 "
+                    "진단 내용을 GitHub 이슈로 보냅니다(연결 키 필요). "
+                    "키가 없으면 이 PC 로그 폴더에만 저장합니다. "
+                    "같은 문제는 하루에 한 번만 보냅니다."
                 ),
             )
         )
@@ -1496,6 +1513,12 @@ class SettingsDialog(QDialog):
             # Clearing snooze when user turns notify back on.
             save_boot_notify_snooze_until(None)
         self._notify_prefs("boot_notify")
+
+    @Slot(bool)
+    def _on_um_diag_toggled(self, checked: bool) -> None:
+        self._um_diag_on = bool(checked)
+        save_um_diag_report_enabled(self._um_diag_on)
+        self._notify_prefs("um_diag_report")
 
     def _sync_boot_autostart_pref(self) -> bool:
         """Apply preference to HKCU; if register fails, store False so UI is honest."""
