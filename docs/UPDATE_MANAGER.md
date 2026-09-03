@@ -48,6 +48,26 @@ Inno Setup **GUI 마법사**가 뜰 수 있습니다. 자동 업데이트는 사
 2. **UPX 패킹** — 일부 Defender/백신에서 onefile 업데이터가 격리되어 “설치 안 됨”처럼 보임
 3. **관리자 권한으로 Setup 실행** — `{localappdata}` / HKCU Run 이 **그 관리자 프로필**에만 기록됨 (일반 사용자 세션에는 없음). Setup은 `PrivilegesRequired=lowest` 이므로 **더블클릭 설치**를 권장
 
+### 특정 PC 심층 조사 (증상 분리)
+
+“업데이터가 없다”는 말이 실제로는 서로 다른 층일 수 있습니다.
+
+| 층 | 의미 | 확인 |
+|----|------|------|
+| L1 파일 | `CloneUp_update_manager.exe` 없음 | `%LOCALAPPDATA%\CloneUp\UpdateManager\` |
+| L2 자동시작 | 파일은 있는데 로그인 시 안 뜸 | HKCU Run `CloneUpUpdateManager` |
+| L3 실행 | Run은 있는데 프로세스가 안 뜸 / 로그 없음 | 작업 관리자 + `logs\update_manager.log` |
+| L4 탐지 | 프로세스는 도는데 앱을 못 찾음 | 로그의 `install dir not found` / `no_install` |
+| L5 네트워크 | 앱은 찾지만 릴리즈 zip 없음 | 로그의 `no_release` / `no zip asset` |
+
+영향 PC에서 **CloneUp을 쓰는 그 사용자 세션**으로:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\diagnose_update_manager.ps1 -OutFile "$env:USERPROFILE\Desktop\cloneup-um-diag.txt"
+```
+
+스크립트가 L1–L5와 “다른 프로필에만 설치됨 / AV 격리 / 작업 항목 해제” 패턴을 분류합니다.
+
 ## 로그
 
 `%LOCALAPPDATA%\CloneUp\logs\update_manager.log`
