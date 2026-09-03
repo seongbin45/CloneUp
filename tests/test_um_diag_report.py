@@ -45,11 +45,28 @@ def test_build_markdown_contains_probe() -> None:
         exe_path=r"C:\Users\x\AppData\Local\CloneUp\UpdateManager\CloneUp_update_manager.exe",
         problems=["exe_missing"],
         log_error_hits=["install dir not found — skip"],
+        extended_diag="=== Extended probe (Python) ===\nSTATUS: MISSING\n",
     )
     body = build_diagnostic_markdown(h)
     assert "exe_missing" in body
     assert "install dir not found" in body
+    assert "Full PC diagnosis" in body
+    assert "Extended probe" in body
     assert issue_title(h).startswith("[auto] update-manager")
+
+
+def test_collect_extended_diag_mentions_layers() -> None:
+    from app.util.update_manager_health import collect_extended_diag_text
+
+    h = UpdateManagerHealth(
+        exe_present=False,
+        exe_path=r"C:\missing\CloneUp_update_manager.exe",
+        problems=["exe_missing"],
+    )
+    text = collect_extended_diag_text(h)
+    assert "Layer 1" in text
+    assert "Layer 2" in text
+    assert "exe_missing" in text
 
 
 def test_run_cycle_disabled(monkeypatch: pytest.MonkeyPatch) -> None:

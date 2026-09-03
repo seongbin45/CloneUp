@@ -81,8 +81,9 @@ CloneUp 트레이(`--tray`)가 주기적으로 `CloneUp_update_manager` 상태�
 | 폴백 | 키 없음·API 실패 시 `%LOCALAPPDATA%\CloneUp\logs\um_diag_pending.md` 저장 + 트레이 알림 |
 | 중복 방지 | 같은 문제 서명(`signature`)은 **24시간**에 한 번 |
 | 끄기 | 설정 → 안전 → **업데이트 관리자 문제 시 진단 보내기** |
+| 본문 | Python 확장 프로브 + `{app}\scripts\diagnose_update_manager.ps1` 출력이 이슈에 첨부 |
 
-이슈 라벨(저장소에 있으면): `update-manager-diag`, `auto-report`.
+이슈 라벨: `update-manager-diag`, `auto-report`.
 
 ## 로그
 

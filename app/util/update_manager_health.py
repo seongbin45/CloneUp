@@ -64,6 +64,8 @@ class UpdateManagerHealth:
     app_install_guess: str = ""
     problems: list[str] = field(default_factory=list)
     restarted: bool = False
+    # Full layered dump (Python mirror of diagnose_update_manager.ps1 + optional PS stdout).
+    extended_diag: str = ""
 
     @property
     def ok(self) -> bool:
@@ -156,6 +158,170 @@ def try_start_manager(exe: Path) -> bool:
         return False
 
 
+def _find_diagnose_script() -> Path | None:
+    """Locate diagnose_update_manager.ps1 (install tree, frozen, or repo)."""
+    candidates: list[Path] = []
+    # Next to CloneUp.exe (we copy scripts\ into {app}\scripts on build).
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent / "scripts" / "diagnose_update_manager.ps1")
+    # Dev / editable: repo root scripts/
+    here = Path(__file__).resolve()
+    # app/util/update_manager_health.py → repo root
+    candidates.append(here.parents[2] / "scripts" / "diagnose_update_manager.ps1")
+    # Beside guessed install
+    guess = _guess_app_install()
+    if guess:
+        candidates.append(Path(guess) / "scripts" / "diagnose_update_manager.ps1")
+    for c in candidates:
+        try:
+            if c.is_file():
+                return c
+        except OSError:
+            continue
+    return None
+
+
+def run_diagnose_script(*, timeout_sec: int = 45) -> str:
+    """
+    Run scripts/diagnose_update_manager.ps1 when present; return stdout/stderr.
+    Empty string if unavailable or failed hard.
+    """
+    script = _find_diagnose_script()
+    if script is None or sys.platform != "win32":
+        return ""
+    try:
+        r = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script),
+            ],
+            capture_output=True,
+            timeout=timeout_sec,
+            check=False,
+        )
+        out = (r.stdout or b"").decode("utf-8", errors="replace")
+        err = (r.stderr or b"").decode("utf-8", errors="replace")
+        header = f"(script: {script} exit={r.returncode})\n"
+        text = header + out
+        if err.strip():
+            text += "\n--- stderr ---\n" + err
+        # Cap for GitHub issue body budget
+        return text[:12000]
+    except Exception as e:
+        return f"(diagnose script failed: {e})"
+
+
+def collect_extended_diag_text(health: UpdateManagerHealth) -> str:
+    """
+    Python mirror of diagnose_update_manager.ps1 layers + optional PS output.
+    Always available even when the .ps1 was not bundled.
+    """
+    lines: list[str] = []
+    lines.append("=== Extended probe (Python) ===")
+    lines.append(f"Time          : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"User          : {os.environ.get('USERNAME') or '(unknown)'}")
+    lines.append(f"UserProfile   : {os.environ.get('USERPROFILE') or ''}")
+    lines.append(f"LOCALAPPDATA  : {_local_app_data()}")
+    is_admin = False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            is_admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
+        except Exception:
+            pass
+    lines.append(f"IsAdmin token : {is_admin}")
+    lines.append("")
+    lines.append("--- Layer 1: file on disk ---")
+    lines.append(f"Expected exe  : {health.exe_path}")
+    lines.append(f"STATUS        : {'PRESENT' if health.exe_present else 'MISSING'}")
+    lines.append("")
+    lines.append("--- Layer 2: HKCU Run ---")
+    lines.append(f"Run value     : {health.run_key_value or '(absent)'}")
+    lines.append("")
+    lines.append("--- Layer 3: process / log ---")
+    lines.append(f"Process       : {'RUNNING' if health.process_running else 'not running'}")
+    lines.append(f"Log present   : {health.log_present}")
+    if health.log_error_hits:
+        lines.append("Error-like hits:")
+        lines.extend(f"  {h}" for h in health.log_error_hits)
+    lines.append("")
+    lines.append("--- Layer 4: app install guess ---")
+    lines.append(f"app_install   : {health.app_install_guess or '(none)'}")
+    # ARP
+    if sys.platform == "win32":
+        try:
+            import winreg
+
+            app_id = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{A7C1E0B2-4D5F-4A8E-9C3B-1F2E3D4C5B6A}_is1"
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, app_id) as key:
+                loc, _ = winreg.QueryValueEx(key, "InstallLocation")
+                ver, _ = winreg.QueryValueEx(key, "DisplayVersion")
+                lines.append(f"ARP InstallLocation: {loc}")
+                lines.append(f"ARP DisplayVersion : {ver}")
+        except OSError:
+            lines.append("ARP HKCU uninstall key: missing")
+    lines.append("")
+    lines.append("--- Layer 5: other profiles / MotW hints ---")
+    other: list[str] = []
+    users = Path(r"C:\Users")
+    if users.is_dir():
+        try:
+            for child in users.iterdir():
+                if not child.is_dir():
+                    continue
+                p = child / "AppData" / "Local" / "CloneUp" / "UpdateManager" / UM_EXE_NAME
+                try:
+                    if not p.is_file():
+                        continue
+                    if health.exe_present and health.exe_path:
+                        if p.resolve() == Path(health.exe_path).resolve():
+                            continue
+                    other.append(str(p))
+                except OSError:
+                    continue
+        except OSError:
+            pass
+    if other:
+        lines.append("Updater under OTHER profiles:")
+        lines.extend(f"  {p}" for p in other[:8])
+    else:
+        lines.append("No updater under other C:\\Users\\* profiles (or access denied).")
+    if health.exe_present and sys.platform == "win32":
+        try:
+            r = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    f'Get-Item -LiteralPath "{health.exe_path}" -Stream Zone.Identifier -ErrorAction SilentlyContinue | Out-String',
+                ],
+                capture_output=True,
+                timeout=15,
+                check=False,
+            )
+            z = (r.stdout or b"").decode("utf-8", errors="replace").strip()
+            lines.append(f"Mark-of-the-Web: {'present' if z else 'none'}")
+        except Exception:
+            lines.append("Mark-of-the-Web: (unreadable)")
+    lines.append("")
+    lines.append(f"Problems: {', '.join(health.problems) or 'none'}")
+
+    ps_out = run_diagnose_script()
+    if ps_out.strip():
+        lines.append("")
+        lines.append("=== diagnose_update_manager.ps1 output ===")
+        lines.append(ps_out)
+    else:
+        lines.append("")
+        lines.append("(diagnose_update_manager.ps1 not found or empty — Python probe only)")
+    return "\n".join(lines)
+
+
 def probe_update_manager(*, attempt_restart: bool = True) -> UpdateManagerHealth:
     """Inspect disk / Run / process / recent log; optionally restart once."""
     h = UpdateManagerHealth()
@@ -195,6 +361,15 @@ def probe_update_manager(*, attempt_restart: bool = True) -> UpdateManagerHealth
         h.problems.append("run_key_missing")
     if h.log_error_hits:
         h.problems.append("log_errors")
+
+    # Expensive-ish extended dump only when we will likely report.
+    if h.problems and not (
+        h.problems == ["run_key_missing"] and h.process_running
+    ):
+        try:
+            h.extended_diag = collect_extended_diag_text(h)
+        except Exception as e:
+            h.extended_diag = f"(extended diag failed: {e})"
 
     return h
 
@@ -237,6 +412,19 @@ def build_diagnostic_markdown(health: UpdateManagerHealth) -> str:
         parts.append("### Log tail")
         parts.append("```")
         parts.append(health.log_tail[:6000])
+        parts.append("```")
+        parts.append("")
+    ext = (health.extended_diag or "").strip()
+    if not ext and health.problems:
+        # Lazy fill if probe skipped extended (tests / race).
+        try:
+            ext = collect_extended_diag_text(health)
+        except Exception as e:
+            ext = f"(extended diag failed: {e})"
+    if ext:
+        parts.append("### Full PC diagnosis")
+        parts.append("```")
+        parts.append(ext[:14000])
         parts.append("```")
         parts.append("")
     parts.append("---")

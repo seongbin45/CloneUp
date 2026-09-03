@@ -30,5 +30,15 @@ if (Test-Path $verSrc) {
     Write-Host "OK: $verDst"
 }
 
+# Field diagnosis script (tray auto-report embeds its output when present)
+$diagSrc = Join-Path $Root "scripts\diagnose_update_manager.ps1"
+$diagDir = Join-Path $Root "dist\CloneUp\scripts"
+$diagDst = Join-Path $diagDir "diagnose_update_manager.ps1"
+if (Test-Path $diagSrc) {
+    New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
+    Copy-Item -Force $diagSrc $diagDst
+    Write-Host "OK: $diagDst"
+}
+
 Write-Host "OK: $out"
 Get-Item $out | Format-List FullName, Length, LastWriteTime

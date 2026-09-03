@@ -74,6 +74,8 @@ Source: "..\assets\icons\{#MyAppIcoName}"; DestDir: "{app}"; Flags: ignoreversio
 ; Autostart (HKCU Run) remains optional via Tasks: autoupdatemanager below.
 ; Separate folder so zip onedir updates never overwrite the manager.
 Source: "..\dist\CloneUp_update_manager.exe"; DestDir: "{localappdata}\CloneUp\UpdateManager"; Flags: ignoreversion
+; Per-PC diagnosis script (also copied by build_exe.ps1 into dist\CloneUp\scripts)
+Source: "..\scripts\diagnose_update_manager.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 ; Individual PNG sizes (optional consumers / shell thumbnails if needed)
 Source: "..\assets\icons\icon-16.png"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\icon-24.png"; DestDir: "{app}\icons"; Flags: ignoreversion
