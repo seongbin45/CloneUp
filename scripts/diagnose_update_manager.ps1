@@ -77,34 +77,46 @@ if (Test-Path -LiteralPath $umExe) {
     }
 }
 
-# --- Layer 2: autostart ---
+# --- Layer 2: Scheduled Task (SYSTEM) then legacy Run keys ---
 L ""
-L "--- Layer 2: Run autostart (HKLM then HKCU) ---"
+L "--- Layer 2: Scheduled Task / Run autostart ---"
 $val = $null
 $runSource = ""
-foreach ($rk in @($runKeyHklm, $runKeyHkcu)) {
-    try {
-        $run = Get-ItemProperty -Path $rk -ErrorAction Stop
-        if ($null -ne $run.CloneUpUpdateManager -and "$($run.CloneUpUpdateManager)".Trim() -ne "") {
-            $val = $run.CloneUpUpdateManager
-            $runSource = $rk
-            break
-        }
-    } catch { }
+try {
+    $st = Get-ScheduledTask -TaskName "CloneUpUpdateManager" -ErrorAction Stop
+    $tr = ($st.Actions | ForEach-Object { $_.Execute }) -join " "
+    $val = $tr
+    $runSource = "ScheduledTask (Principal=$($st.Principal.UserId); RunLevel=$($st.Principal.RunLevel))"
+    L ("Task present  : Yes")
+    L ("Task run as   : {0} / {1}" -f $st.Principal.UserId, $st.Principal.RunLevel)
+} catch {
+    L "Task present  : No (CloneUpUpdateManager)"
+}
+if (-not $val) {
+    foreach ($rk in @($runKeyHklm, $runKeyHkcu)) {
+        try {
+            $run = Get-ItemProperty -Path $rk -ErrorAction Stop
+            if ($null -ne $run.CloneUpUpdateManager -and "$($run.CloneUpUpdateManager)".Trim() -ne "") {
+                $val = $run.CloneUpUpdateManager
+                $runSource = $rk
+                break
+            }
+        } catch { }
+    }
 }
 if ($null -ne $val -and "$val".Trim() -ne "") {
     $flags.RunKeyPresent = $true
-    L ("Run hive      : {0}" -f $runSource)
-    L ("Run value     : {0}" -f $val)
+    L ("Autostart via : {0}" -f $runSource)
+    L ("Run target    : {0}" -f $val)
     $normalized = ("$val".Trim().Trim('"'))
-    if (Test-Path -LiteralPath $normalized) {
+    if ((Test-Path -LiteralPath $normalized) -or ($normalized -like "*$exeName*")) {
         $flags.RunKeyPointsOk = $true
-        L "Run target    : exists"
+        L "Run target OK : yes"
     } else {
         L "Run target    : BROKEN PATH (points to missing file)"
     }
 } else {
-    L "Run value     : (absent) — exe may exist but will not start at logon"
+    L "Autostart     : (absent) — exe may exist but will not start at logon"
     if ($flags.ExePresent) { $flags.LikelyTaskOptOut = $true }
 }
 try {
