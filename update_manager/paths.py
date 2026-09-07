@@ -17,9 +17,31 @@ def _local_app_data() -> Path:
     return Path.home() / "AppData" / "Local"
 
 
+def _program_data() -> Path:
+    base = os.environ.get("PROGRAMDATA")
+    if base:
+        return Path(base)
+    return Path(r"C:\ProgramData")
+
+
 def manager_install_dir() -> Path:
-    """Where CloneUp_update_manager.exe lives (separate from the app)."""
-    return _local_app_data() / "CloneUp" / "UpdateManager"
+    """
+    Where CloneUp_update_manager.exe lives (separate from the app onedir).
+
+    Prefer ``%PROGRAMDATA%\\CloneUp\\UpdateManager`` (admin / all-users Setup),
+    then legacy ``%LOCALAPPDATA%\\CloneUp\\UpdateManager``.
+    """
+    candidates = (
+        _program_data() / "CloneUp" / "UpdateManager",
+        _local_app_data() / "CloneUp" / "UpdateManager",
+    )
+    for c in candidates:
+        try:
+            if (c / "CloneUp_update_manager.exe").is_file():
+                return c
+        except OSError:
+            continue
+    return candidates[0]
 
 
 def _looks_like_cloneup_dir(folder: Path) -> bool:
@@ -50,12 +72,8 @@ def _read_uninstall_install_location() -> Path | None:
     """Read Inno / ARP uninstall keys for CloneUp InstallLocation or icon path."""
     if sys.platform != "win32":
         return None
-    # Inno with PrivilegesRequired=lowest writes under HKCU.
+    # Admin Setup writes under HKLM; older lowest-privilege installs used HKCU.
     roots = (
-        (
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
-        ),
         (
             winreg.HKEY_LOCAL_MACHINE,
             r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -63,6 +81,10 @@ def _read_uninstall_install_location() -> Path | None:
         (
             winreg.HKEY_LOCAL_MACHINE,
             r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
         ),
     )
     # Inno often registers as ``{AppId}_is1`` under HKCU Uninstall.

@@ -39,11 +39,30 @@ def _local_app_data() -> Path:
     return Path.home() / "AppData" / "Local"
 
 
+def _program_data() -> Path:
+    base = os.environ.get("PROGRAMDATA")
+    if base:
+        return Path(base)
+    return Path(r"C:\ProgramData")
+
+
 def manager_exe_path() -> Path:
-    return _local_app_data() / "CloneUp" / "UpdateManager" / UM_EXE_NAME
+    """Prefer ProgramData (admin install), then legacy per-user LocalAppData."""
+    candidates = (
+        _program_data() / "CloneUp" / "UpdateManager" / UM_EXE_NAME,
+        _local_app_data() / "CloneUp" / "UpdateManager" / UM_EXE_NAME,
+    )
+    for c in candidates:
+        try:
+            if c.is_file():
+                return c
+        except OSError:
+            continue
+    return candidates[0]
 
 
 def manager_log_path() -> Path:
+    # Logs stay per-user (writable without admin).
     return _local_app_data() / "CloneUp" / "logs" / "update_manager.log"
 
 
@@ -101,19 +120,26 @@ def _process_running() -> bool:
 
 
 def _read_run_key() -> str:
+    """HKLM (admin/all-users) first, then legacy HKCU."""
     if sys.platform != "win32":
         return ""
     try:
         import winreg
-
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run",
-        ) as key:
-            val, _ = winreg.QueryValueEx(key, UM_RUN_VALUE)
-            return str(val or "").strip()
-    except OSError:
+    except Exception:
         return ""
+    for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        try:
+            with winreg.OpenKey(
+                hive,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+            ) as key:
+                val, _ = winreg.QueryValueEx(key, UM_RUN_VALUE)
+                s = str(val or "").strip()
+                if s:
+                    return s
+        except OSError:
+            continue
+    return ""
 
 
 def _guess_app_install() -> str:

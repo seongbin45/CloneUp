@@ -18,12 +18,24 @@ $lines = New-Object System.Collections.Generic.List[string]
 function L([string]$s) { [void]$lines.Add($s); Write-Host $s }
 
 $exeName = "CloneUp_update_manager.exe"
-$umDir = Join-Path $env:LOCALAPPDATA "CloneUp\UpdateManager"
-$umExe = Join-Path $umDir $exeName
+# Admin Setup (0.1.12+) → ProgramData; legacy → LocalAppData
+$umDirMachine = Join-Path $env:PROGRAMDATA "CloneUp\UpdateManager"
+$umDirUser = Join-Path $env:LOCALAPPDATA "CloneUp\UpdateManager"
+$umExeMachine = Join-Path $umDirMachine $exeName
+$umExeUser = Join-Path $umDirUser $exeName
+if (Test-Path -LiteralPath $umExeMachine) {
+    $umDir = $umDirMachine
+    $umExe = $umExeMachine
+} else {
+    $umDir = $umDirUser
+    $umExe = $umExeUser
+}
 $logPath = Join-Path $env:LOCALAPPDATA "CloneUp\logs\update_manager.log"
-$runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+$runKeyHkcu = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+$runKeyHklm = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run"
 $appId = "{A7C1E0B2-4D5F-4A8E-9C3B-1F2E3D4C5B6A}_is1"
-$unKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$appId"
+$unKeyHkcu = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$appId"
+$unKeyHklm = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$appId"
 
 $flags = @{
     ExePresent        = $false
@@ -44,12 +56,14 @@ L ("Time          : {0}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
 L ("User          : {0}" -f $env:USERNAME)
 L ("UserProfile   : {0}" -f $env:USERPROFILE)
 L ("LOCALAPPDATA  : {0}" -f $env:LOCALAPPDATA)
+L ("PROGRAMDATA   : {0}" -f $env:PROGRAMDATA)
 L ("IsAdmin token : {0}" -f ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 L ""
 
 # --- Layer 1: file install ---
 L "--- Layer 1: file on disk ---"
 L ("Expected exe  : {0}" -f $umExe)
+L ("Also checked  : {0}" -f $umExeMachine)
 if (Test-Path -LiteralPath $umExe) {
     $flags.ExePresent = $true
     $fi = Get-Item -LiteralPath $umExe
@@ -65,27 +79,39 @@ if (Test-Path -LiteralPath $umExe) {
 
 # --- Layer 2: autostart ---
 L ""
-L "--- Layer 2: HKCU Run autostart ---"
-try {
-    $run = Get-ItemProperty -Path $runKey -ErrorAction Stop
-    $val = $run.CloneUpUpdateManager
-    if ($null -ne $val -and "$val".Trim() -ne "") {
-        $flags.RunKeyPresent = $true
-        L ("Run value     : {0}" -f $val)
-        $normalized = ("$val".Trim().Trim('"'))
-        if (Test-Path -LiteralPath $normalized) {
-            $flags.RunKeyPointsOk = $true
-            L "Run target    : exists"
-        } else {
-            L "Run target    : BROKEN PATH (points to missing file)"
+L "--- Layer 2: Run autostart (HKLM then HKCU) ---"
+$val = $null
+$runSource = ""
+foreach ($rk in @($runKeyHklm, $runKeyHkcu)) {
+    try {
+        $run = Get-ItemProperty -Path $rk -ErrorAction Stop
+        if ($null -ne $run.CloneUpUpdateManager -and "$($run.CloneUpUpdateManager)".Trim() -ne "") {
+            $val = $run.CloneUpUpdateManager
+            $runSource = $rk
+            break
         }
+    } catch { }
+}
+if ($null -ne $val -and "$val".Trim() -ne "") {
+    $flags.RunKeyPresent = $true
+    L ("Run hive      : {0}" -f $runSource)
+    L ("Run value     : {0}" -f $val)
+    $normalized = ("$val".Trim().Trim('"'))
+    if (Test-Path -LiteralPath $normalized) {
+        $flags.RunKeyPointsOk = $true
+        L "Run target    : exists"
     } else {
-        L "Run value     : (absent) — exe may exist but will not start at logon"
-        if ($flags.ExePresent) { $flags.LikelyTaskOptOut = $true }
+        L "Run target    : BROKEN PATH (points to missing file)"
     }
-    L ("CloneUpTray   : {0}" -f $(if ($run.CloneUpTray) { $run.CloneUpTray } else { "(absent)" }))
+} else {
+    L "Run value     : (absent) — exe may exist but will not start at logon"
+    if ($flags.ExePresent) { $flags.LikelyTaskOptOut = $true }
+}
+try {
+    $tray = (Get-ItemProperty -Path $runKeyHkcu -ErrorAction Stop).CloneUpTray
+    L ("CloneUpTray   : {0}" -f $(if ($tray) { $tray } else { "(absent)" }))
 } catch {
-    L ("Run key read failed: {0}" -f $_.Exception.Message)
+    L "CloneUpTray   : (absent)"
 }
 
 # --- Layer 3: process + log ---
@@ -130,14 +156,19 @@ if (Test-Path -LiteralPath $logPath) {
 L ""
 L "--- Layer 4: CloneUp app install discovery ---"
 $installLocation = $null
-if (Test-Path -LiteralPath $unKey) {
+$unKey = $null
+foreach ($uk in @($unKeyHklm, $unKeyHkcu)) {
+    if (Test-Path -LiteralPath $uk) { $unKey = $uk; break }
+}
+if ($unKey) {
     $u = Get-ItemProperty -LiteralPath $unKey
     $installLocation = $u.InstallLocation
+    L ("ARP key           : {0}" -f $unKey)
     L ("ARP DisplayName    : {0}" -f $u.DisplayName)
     L ("ARP DisplayVersion : {0}" -f $u.DisplayVersion)
     L ("ARP InstallLocation: {0}" -f $installLocation)
 } else {
-    L "ARP HKCU uninstall key missing — Setup may not have registered for this user."
+    L "ARP uninstall key missing (checked HKLM then HKCU)."
 }
 
 $candidates = New-Object System.Collections.Generic.List[string]

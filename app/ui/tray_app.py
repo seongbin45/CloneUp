@@ -24,7 +24,14 @@ from app.ui.settings_store import (
     save_boot_notify_snooze_until,
 )
 from app.util.error_popup import format_error_popup_body
-from app.util.um_diag_report import DiagSendResult, run_um_diag_cycle
+
+# Soft import: older / incomplete frozen builds must not crash tray or
+# surface ModuleNotFoundError as a scary 「실패」 popup.
+try:
+    from app.util.um_diag_report import DiagSendResult, run_um_diag_cycle
+except ImportError:  # pragma: no cover — packaging gap
+    DiagSendResult = None  # type: ignore[misc, assignment]
+    run_um_diag_cycle = None  # type: ignore[assignment]
 
 
 def _main_window_visible() -> bool:
@@ -114,6 +121,9 @@ class _UmDiagWorker(QThread):
     finished_result = Signal(object)  # DiagSendResult
 
     def run(self) -> None:  # noqa: N802
+        if run_um_diag_cycle is None or DiagSendResult is None:
+            self.finished_result.emit(None)
+            return
         try:
             result = run_um_diag_cycle(attempt_restart=True)
         except Exception as e:  # noqa: BLE001 — never crash tray
@@ -242,6 +252,8 @@ class TrayController(QObject):
 
     def run_um_diag_check(self) -> None:
         """Watch independent update manager; report if missing / errored."""
+        if run_um_diag_cycle is None or DiagSendResult is None:
+            return
         if not load_um_diag_report_enabled():
             return
         if self._um_diag_worker is not None and self._um_diag_worker.isRunning():
@@ -253,7 +265,7 @@ class TrayController(QObject):
 
     def _on_um_diag_done(self, result: object) -> None:
         self._um_diag_worker = None
-        if not isinstance(result, DiagSendResult):
+        if DiagSendResult is None or not isinstance(result, DiagSendResult):
             return
         if result.status in ("skipped_ok", "skipped_disabled", "skipped_rate"):
             return

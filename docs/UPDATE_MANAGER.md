@@ -31,15 +31,16 @@ Inno Setup **GUI 마법사**가 뜰 수 있습니다. 자동 업데이트는 사
 3. 기본 후보: `%LOCALAPPDATA%\Programs\CloneUp` 등 (`CloneUp.exe` 존재 확인)
 
 업데이트 관리자 자신은  
-`%LOCALAPPDATA%\CloneUp\UpdateManager\CloneUp_update_manager.exe`  
-에 두어 앱 onedir과 파일이 겹치지 않습니다.
+`%PROGRAMDATA%\CloneUp\UpdateManager\CloneUp_update_manager.exe`  
+(관리자 설치 / 전체 사용자)에 두어 앱 onedir과 파일이 겹치지 않습니다.  
+예전(0.1.11 이하) 설치는 `%LOCALAPPDATA%\CloneUp\UpdateManager\` 일 수 있습니다.
 
 ## 설치 / 자동시작
 
 | 항목 | 동작 |
 |------|------|
-| **파일** | Setup이 **항상** `%LOCALAPPDATA%\CloneUp\UpdateManager\CloneUp_update_manager.exe` 를 설치합니다. (작업 항목과 무관) |
-| **자동시작** | Setup 작업 **「로그인 시 자동 업데이트 관리자 실행」** (기본 선택) → HKCU Run `CloneUpUpdateManager` |
+| **파일** | Setup이 **항상** `%PROGRAMDATA%\CloneUp\UpdateManager\CloneUp_update_manager.exe` 를 설치합니다. (작업 항목과 무관, 관리자 설치) |
+| **자동시작** | Setup 작업 **「로그인 시 자동 업데이트 관리자 실행」** (기본 선택) → **HKLM** Run `CloneUpUpdateManager` (모든 사용자) |
 | 트레이 | CloneUp 트레이 자동시작(`CloneUpTray`)과는 **별개** |
 
 ### 일부 PC에 안 깔리던 원인 (수정됨)

@@ -8,7 +8,7 @@
 ; Output: installer\Output\CloneUp-Setup.exe
 
 #define MyAppName "CloneUp"
-#define MyAppVersion "0.1.11"
+#define MyAppVersion "0.1.12"
 #define MyAppPublisher "CloneUp"
 #define MyAppURL "https://github.com/seongbin45/CloneUp"
 #define MyAppExeName "CloneUp.exe"
@@ -46,7 +46,10 @@ OutputBaseFilename=CloneUp-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
+; Require Administrator (UAC). Machine-wide install under Program Files.
+; (Not NT AUTHORITY\SYSTEM — that account cannot run an interactive GUI app.
+;  "최고 관리자" here means elevated admin install for all users.)
+PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
@@ -72,9 +75,10 @@ Source: "..\VERSION"; DestDir: "{app}"; Flags: ignoreversion
 ; App icon next to exe — Control Panel + Start Menu use this path (all sizes in .ico)
 Source: "..\assets\icons\{#MyAppIcoName}"; DestDir: "{app}"; Flags: ignoreversion
 ; Independent update manager — ALWAYS install (not gated on the autostart task).
-; Autostart (HKCU Run) remains optional via Tasks: autoupdatemanager below.
-; Separate folder so zip onedir updates never overwrite the manager.
-Source: "..\dist\CloneUp_update_manager.exe"; DestDir: "{localappdata}\CloneUp\UpdateManager"; Flags: ignoreversion
+; Autostart (HKLM Run) remains optional via Tasks: autoupdatemanager below.
+; ProgramData (not {app}) so zip onedir updates never overwrite the manager.
+; With PrivilegesRequired=admin this is machine-wide for every user.
+Source: "..\dist\CloneUp_update_manager.exe"; DestDir: "{commonappdata}\CloneUp\UpdateManager"; Flags: ignoreversion
 ; Per-PC diagnosis script (also copied by build_exe.ps1 into dist\CloneUp\scripts)
 Source: "..\scripts\diagnose_update_manager.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 ; Individual PNG sizes (optional consumers / shell thumbnails if needed)
@@ -99,15 +103,16 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppIcoName}"; IconIndex: 0; Tasks: desktopicon
 
 [Registry]
-; Silent background updater — separate from CloneUpTray (--tray)
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "CloneUpUpdateManager"; ValueData: """{localappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"""; Flags: uninsdeletevalue; Tasks: autoupdatemanager
+; Silent background updater — HKLM so every user gets it after admin install.
+; Separate from per-user CloneUpTray (--tray) which stays HKCU.
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "CloneUpUpdateManager"; ValueData: """{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"""; Flags: uninsdeletevalue; Tasks: autoupdatemanager
 
 [Run]
 ; Tesseract — own UAC elevation; silent-ish English UI (UB-Mannheim Inno-based)
 Filename: "{tmp}\tesseract-ocr-w64-setup-5.4.0.20240606.exe"; Parameters: "/S"; StatusMsg: "Tesseract OCR 설치 중…"; Flags: waituntilterminated; Tasks: tesseractocr
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 ; Start update manager once after install (also registered for logon)
-Filename: "{localappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"; Description: "자동 업데이트 관리자 시작"; Flags: nowait postinstall skipifsilent unchecked; Tasks: autoupdatemanager
+Filename: "{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"; Description: "자동 업데이트 관리자 시작"; Flags: nowait postinstall skipifsilent unchecked; Tasks: autoupdatemanager
 
 ; Note: Git is NOT bundled. First launch uses DG1/DG2 bootstrap
 ; (download official installer / winget) if git is missing.

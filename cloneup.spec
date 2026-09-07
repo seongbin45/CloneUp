@@ -29,6 +29,11 @@ a = Analysis(
         "PySide6.QtWebEngineCore",
         "PySide6.QtWebEngineWidgets",
         "PySide6.QtWebChannel",
+        # Tray UM watch — must ship in frozen onedir (ModuleNotFoundError on 0.1.11 installs)
+        "app.util.error_popup",
+        "app.util.next_action",
+        "app.util.um_diag_report",
+        "app.util.update_manager_health",
     ],
     hookspath=[],
     hooksconfig={},
