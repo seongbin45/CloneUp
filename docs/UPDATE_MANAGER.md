@@ -40,7 +40,7 @@ Inno Setup **GUI 마법사**가 뜰 수 있습니다. 자동 업데이트는 사
 | 항목 | 동작 |
 |------|------|
 | **파일** | Setup이 **항상** `%PROGRAMDATA%\CloneUp\UpdateManager\CloneUp_update_manager.exe` 를 설치합니다. (작업 항목과 무관, 관리자 설치) |
-| **자동시작** | Setup 작업 **「로그인 시 자동 업데이트 관리자 실행」** (기본 선택) → **HKLM** Run `CloneUpUpdateManager` (모든 사용자) |
+| **자동시작** | Setup 작업 **「로그인 시 자동 업데이트 관리자 실행」** (기본 선택) → **작업 스케줄러** `CloneUpUpdateManager` (`SYSTEM` + `HIGHEST` + ONLOGON) |
 | 트레이 | CloneUp 트레이 자동시작(`CloneUpTray`)과는 **별개** |
 
 ### 일부 PC에 안 깔리던 원인 (수정됨)

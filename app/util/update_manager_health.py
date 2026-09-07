@@ -119,8 +119,38 @@ def _process_running() -> bool:
         return False
 
 
+def _scheduled_task_command() -> str:
+    """Return TR of schtasks CloneUpUpdateManager when registered (0.1.12+)."""
+    if sys.platform != "win32":
+        return ""
+    try:
+        r = subprocess.run(
+            ["schtasks", "/Query", "/TN", "CloneUpUpdateManager", "/FO", "LIST", "/V"],
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
+        text = (r.stdout or b"").decode("utf-8", errors="replace")
+        if r.returncode != 0:
+            text += "\n" + (r.stdout or b"").decode("cp949", errors="replace")
+        for line in text.splitlines():
+            low = line.lower()
+            # English: "Task To Run:"; Korean locale often "실행할 작업:"
+            if "task to run" in low or "실행할 작업" in line or "실행할 프로그램" in line:
+                _, _, rest = line.partition(":")
+                return rest.strip().strip('"')
+        if r.returncode == 0 and UM_EXE_NAME.lower() in text.lower():
+            return f"(scheduled task present; {UM_EXE_NAME})"
+    except Exception as e:
+        log.debug("schtasks query failed: %s", e)
+    return ""
+
+
 def _read_run_key() -> str:
-    """HKLM (admin/all-users) first, then legacy HKCU."""
+    """Prefer Scheduled Task (SYSTEM); fall back to HKLM/HKCU Run (legacy)."""
+    task_tr = _scheduled_task_command()
+    if task_tr:
+        return task_tr
     if sys.platform != "win32":
         return ""
     try:

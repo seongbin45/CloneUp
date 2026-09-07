@@ -102,17 +102,21 @@ Source: "redist\tesseract-ocr-w64-setup-5.4.0.20240606.exe"; DestDir: "{tmp}"; F
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppIcoName}"; IconIndex: 0
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppIcoName}"; IconIndex: 0; Tasks: desktopicon
 
-[Registry]
-; Silent background updater — HKLM so every user gets it after admin install.
-; Separate from per-user CloneUpTray (--tray) which stays HKCU.
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "CloneUpUpdateManager"; ValueData: """{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"""; Flags: uninsdeletevalue; Tasks: autoupdatemanager
-
 [Run]
 ; Tesseract — own UAC elevation; silent-ish English UI (UB-Mannheim Inno-based)
 Filename: "{tmp}\tesseract-ocr-w64-setup-5.4.0.20240606.exe"; Parameters: "/S"; StatusMsg: "Tesseract OCR 설치 중…"; Flags: waituntilterminated; Tasks: tesseractocr
+; Register update manager as a Scheduled Task: SYSTEM + highest privileges
+; (not HKLM Run). ONLOGON so it starts when any user signs in.
+Filename: "schtasks"; Parameters: "/Create /F /RL HIGHEST /SC ONLOGON /RU SYSTEM /TN ""CloneUpUpdateManager"" /TR """"{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"""""; StatusMsg: "자동 업데이트 작업 등록 중…"; Flags: runhidden waituntilterminated; Tasks: autoupdatemanager
+; Battery / wake settings (same idea as enterprise reboot tasks)
+Filename: "powershell"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""$t = Get-ScheduledTask -TaskName 'CloneUpUpdateManager' -ErrorAction Stop; $s = $t.Settings; $s.WakeToRun = $true; $s.DisallowStartIfOnBatteries = $false; $s.StopIfGoingOnBatteries = $false; $s.AllowStartIfOnBatteries = $true; Set-ScheduledTask -TaskName 'CloneUpUpdateManager' -Settings $s"""; StatusMsg: "자동 업데이트 작업 설정 중…"; Flags: runhidden waituntilterminated; Tasks: autoupdatemanager
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-; Start update manager once after install (also registered for logon)
+; Also start once now (task will own subsequent logons)
 Filename: "{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"; Description: "자동 업데이트 관리자 시작"; Flags: nowait postinstall skipifsilent unchecked; Tasks: autoupdatemanager
+
+[UninstallRun]
+; Remove scheduled task on uninstall (admin Setup)
+Filename: "schtasks"; Parameters: "/Delete /F /TN ""CloneUpUpdateManager"""; Flags: runhidden; RunOnceId: "DelCloneUpUMTask"
 
 ; Note: Git is NOT bundled. First launch uses DG1/DG2 bootstrap
 ; (download official installer / winget) if git is missing.
