@@ -33,6 +33,52 @@ def test_host_allowed() -> None:
     assert not host_allowed("https://evil.example/x.zip")
 
 
+def test_download_asset_retries_then_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Large zip downloads used to time out once; retries recover (issues #1/#2)."""
+    import io
+
+    from update_manager import apply as apply_mod
+
+    calls = {"n": 0}
+    payload = b"MZ" + b"x" * 100
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def geturl(self):
+            return "https://objects.githubusercontent.com/github-production-release-asset-2e65be/x"
+
+        def read(self, _n: int = -1):
+            # One-shot body
+            data = getattr(self, "_data", payload)
+            self._data = b""
+            return data
+
+    def fake_urlopen(req, context=None, timeout=None):
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise TimeoutError("The read operation timed out")
+        return _Resp()
+
+    monkeypatch.setattr(apply_mod.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(apply_mod, "_DOWNLOAD_RETRIES", 3)
+    monkeypatch.setattr(apply_mod.time, "sleep", lambda _s: None)
+
+    dest = tmp_path / "a.zip"
+    apply_mod.download_asset(
+        "https://objects.githubusercontent.com/github-production-release-asset-2e65be/x",
+        dest,
+    )
+    assert calls["n"] == 2
+    assert dest.read_bytes().startswith(b"MZ")
+
+
 def test_find_install_dir_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     app = tmp_path / "CloneUp"
     app.mkdir()

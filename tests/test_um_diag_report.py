@@ -39,6 +39,128 @@ def test_should_consider_soft_run_key_only() -> None:
     assert umr.should_consider_report(h) is False
 
 
+def test_should_consider_skips_log_network_only() -> None:
+    h = UpdateManagerHealth(
+        exe_present=True,
+        process_running=False,
+        problems=["log_network"],
+    )
+    assert umr.should_consider_report(h) is False
+
+
+def test_probe_soft_network_not_problem_when_running(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """SSL timeout lines must not scare a user when the manager is running."""
+    from app.util import update_manager_health as umh
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_path = log_dir / "update_manager.log"
+    log_path.write_text(
+        "2026-09-09 01:00:00,000 WARNING github latest failed: ssl timeout\n"
+        "2026-09-09 01:00:01,000 INFO no usable release / network — skip\n",
+        encoding="utf-8",
+    )
+    exe = tmp_path / "CloneUp_update_manager.exe"
+    exe.write_bytes(b"MZ")
+
+    monkeypatch.setattr(umh, "manager_exe_path", lambda: exe)
+    monkeypatch.setattr(umh, "manager_log_path", lambda: log_path)
+    monkeypatch.setattr(umh, "_process_running", lambda: True)
+    monkeypatch.setattr(umh, "_read_run_key", lambda: str(exe))
+    monkeypatch.setattr(umh, "_guess_app_install", lambda: str(tmp_path))
+
+    h = umh.probe_update_manager(attempt_restart=False)
+    assert h.ok
+    assert "log_errors" not in h.problems
+    assert "log_network" not in h.problems
+    assert h.log_error_hits  # still visible in UI log panel
+
+
+def test_probe_hard_apply_failed_is_problem(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from app.util import update_manager_health as umh
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_path = log_dir / "update_manager.log"
+    log_path.write_text(
+        "2026-09-09 03:11:55,041 ERROR apply failed: boom\n",
+        encoding="utf-8",
+    )
+    exe = tmp_path / "CloneUp_update_manager.exe"
+    exe.write_bytes(b"MZ")
+
+    monkeypatch.setattr(umh, "manager_exe_path", lambda: exe)
+    monkeypatch.setattr(umh, "manager_log_path", lambda: log_path)
+    monkeypatch.setattr(umh, "_process_running", lambda: True)
+    monkeypatch.setattr(umh, "_read_run_key", lambda: str(exe))
+    monkeypatch.setattr(umh, "_guess_app_install", lambda: str(tmp_path))
+
+    h = umh.probe_update_manager(attempt_restart=False)
+    assert not h.ok
+    assert "log_errors" in h.problems
+
+
+def test_probe_apply_timeout_is_soft_when_running(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """GitHub #1/#2: download timed out then often retries — not auto-issue spam."""
+    from app.util import update_manager_health as umh
+    from app.util.um_diag_report import should_consider_report
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_path = log_dir / "update_manager.log"
+    log_path.write_text(
+        "2026-09-09 04:05:54,259 ERROR apply failed: The read operation timed out\n"
+        "2026-09-08 20:48:20,548 WARNING github latest failed: ssl timeout\n",
+        encoding="utf-8",
+    )
+    exe = tmp_path / "CloneUp_update_manager.exe"
+    exe.write_bytes(b"MZ")
+
+    monkeypatch.setattr(umh, "manager_exe_path", lambda: exe)
+    monkeypatch.setattr(umh, "manager_log_path", lambda: log_path)
+    monkeypatch.setattr(umh, "_process_running", lambda: True)
+    monkeypatch.setattr(umh, "_read_run_key", lambda: str(exe))
+    monkeypatch.setattr(umh, "_guess_app_install", lambda: str(tmp_path))
+
+    h = umh.probe_update_manager(attempt_restart=False)
+    assert h.ok
+    assert "log_errors" not in h.problems
+    assert should_consider_report(h) is False
+
+
+def test_probe_apply_failed_superseded_by_success(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from app.util import update_manager_health as umh
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_path = log_dir / "update_manager.log"
+    log_path.write_text(
+        "2026-09-03 12:19:19,696 ERROR apply failed: disk full somehow\n"
+        "2026-09-03 12:32:10,259 INFO success 0.1.9 → 0.1.10\n",
+        encoding="utf-8",
+    )
+    exe = tmp_path / "CloneUp_update_manager.exe"
+    exe.write_bytes(b"MZ")
+
+    monkeypatch.setattr(umh, "manager_exe_path", lambda: exe)
+    monkeypatch.setattr(umh, "manager_log_path", lambda: log_path)
+    monkeypatch.setattr(umh, "_process_running", lambda: True)
+    monkeypatch.setattr(umh, "_read_run_key", lambda: str(exe))
+    monkeypatch.setattr(umh, "_guess_app_install", lambda: str(tmp_path))
+
+    h = umh.probe_update_manager(attempt_restart=False)
+    assert h.ok
+    assert "log_errors" not in h.problems
+
+
 def test_build_markdown_contains_probe() -> None:
     h = UpdateManagerHealth(
         exe_present=False,
@@ -67,6 +189,55 @@ def test_collect_extended_diag_mentions_layers() -> None:
     assert "Layer 1" in text
     assert "Layer 2" in text
     assert "exe_missing" in text
+
+
+def test_process_running_hides_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    """tasklist must use CREATE_NO_WINDOW so GUI CloneUp does not flash a terminal."""
+    import subprocess
+
+    from app.util import update_manager_health as umh
+
+    if not hasattr(subprocess, "CREATE_NO_WINDOW"):
+        pytest.skip("CREATE_NO_WINDOW not on this platform")
+
+    seen: dict = {}
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        seen["cmd"] = cmd
+        seen["kwargs"] = kwargs
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(umh.subprocess, "run", fake_run)
+    umh._process_running()
+    flags = int(seen["kwargs"].get("creationflags") or 0)
+    assert flags & subprocess.CREATE_NO_WINDOW
+    assert "startupinfo" in seen["kwargs"]
+
+
+def test_try_start_manager_hides_console(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import subprocess
+
+    from app.util import update_manager_health as umh
+
+    if not hasattr(subprocess, "CREATE_NO_WINDOW"):
+        pytest.skip("CREATE_NO_WINDOW not on this platform")
+
+    exe = tmp_path / "CloneUp_update_manager.exe"
+    exe.write_bytes(b"MZ")
+    seen: dict = {}
+
+    def fake_popen(cmd, **kwargs):  # noqa: ANN001
+        seen["cmd"] = cmd
+        seen["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(umh.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(umh.sys, "platform", "win32")
+    assert umh.try_start_manager(exe, once=True) is True
+    assert seen["cmd"][-1] == "--once"
+    flags = int(seen["kwargs"].get("creationflags") or 0)
+    assert flags & subprocess.CREATE_NO_WINDOW
+    assert "startupinfo" in seen["kwargs"]
 
 
 def test_run_cycle_disabled(monkeypatch: pytest.MonkeyPatch) -> None:

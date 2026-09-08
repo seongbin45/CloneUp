@@ -51,6 +51,9 @@ def should_consider_report(health: UpdateManagerHealth) -> bool:
     # If we only lack Run key but process is running with no log errors — soft.
     if health.problems == ["run_key_missing"] and health.process_running:
         return False
+    # Transient GitHub/network log noise while stopped — do not auto-file.
+    if health.problems == ["log_network"]:
+        return False
     return True
 
 

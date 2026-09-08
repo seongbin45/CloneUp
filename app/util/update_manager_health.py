@@ -22,11 +22,26 @@ UM_RUN_VALUE = "CloneUpUpdateManager"
 DIAG_OWNER = "seongbin45"
 DIAG_REPO = "CloneUp"
 
-# Log lines that mean the manager is alive but failing its job.
-_ERROR_LINE_RE = re.compile(
+# Soft: transient network / no-release noise — show in log UI but do NOT
+# mark the manager "unhealthy" when exe+process are otherwise fine.
+_SOFT_LOG_RE = re.compile(
+    r"(no usable release|github latest failed|github latest HTTP|"
+    r"apply failed:.*(timed out|timeout|handshake))",
+    re.I,
+)
+# Hard: real failures a beginner should act on (non-timeout apply failures).
+_HARD_LOG_RE = re.compile(
     r"(install dir not found|cannot read installed version|"
-    r"no usable release|no zip asset|github latest failed|"
-    r"github latest HTTP|apply failed|could not stop CloneUp|"
+    r"no zip asset|could not stop CloneUp|"
+    r"tick crashed|digest mismatch|"
+    r"apply failed(?!:.*(timed out|timeout|handshake)))",
+    re.I,
+)
+# Union used when collecting hits for the log panel.
+_ERROR_LINE_RE = re.compile(
+    r"(no usable release|github latest failed|github latest HTTP|"
+    r"install dir not found|cannot read installed version|"
+    r"no zip asset|apply failed|could not stop CloneUp|"
     r"tick crashed|digest mismatch)",
     re.I,
 )
@@ -101,12 +116,16 @@ def _process_running() -> bool:
     if sys.platform != "win32":
         return False
     try:
+        from app.util.winproc import hidden_run_kwargs
+
         # /FO CSV /NH — parse image name without depending on UI language.
+        # CREATE_NO_WINDOW: GUI CloneUp must not flash a black console for tasklist.
         r = subprocess.run(
             ["tasklist", "/FI", f"IMAGENAME eq {UM_EXE_NAME}", "/FO", "CSV", "/NH"],
             capture_output=True,
             timeout=15,
             check=False,
+            **hidden_run_kwargs(),
         )
         out = (r.stdout or b"").decode("utf-8", errors="replace")
         # Also try cp949 on Korean Windows if UTF-8 empty-ish
@@ -124,11 +143,14 @@ def _scheduled_task_command() -> str:
     if sys.platform != "win32":
         return ""
     try:
+        from app.util.winproc import hidden_run_kwargs
+
         r = subprocess.run(
             ["schtasks", "/Query", "/TN", "CloneUpUpdateManager", "/FO", "LIST", "/V"],
             capture_output=True,
             timeout=20,
             check=False,
+            **hidden_run_kwargs(),
         )
         text = (r.stdout or b"").decode("utf-8", errors="replace")
         if r.returncode != 0:
@@ -196,17 +218,55 @@ def _log_error_hits(tail: str) -> list[str]:
     return out
 
 
-def try_start_manager(exe: Path) -> bool:
-    """Best-effort start when exe exists but process is down."""
+def _drop_superseded_apply_failures(
+    recent_lines: list[str], hard_hits: list[str]
+) -> list[str]:
+    """Ignore apply failures that were followed by a later ``success`` in the window."""
+    if not hard_hits or not recent_lines:
+        return hard_hits
+    last_success = -1
+    for i, line in enumerate(recent_lines):
+        if " INFO success " in line or re.search(r"\bsuccess\b.+\u2192|\bsuccess\b.+->", line):
+            last_success = i
+    if last_success < 0:
+        return hard_hits
+    kept: list[str] = []
+    for hit in hard_hits:
+        if "apply failed" not in hit.lower():
+            kept.append(hit)
+            continue
+        # Find last matching line index for this hit snippet
+        idx = -1
+        needle = hit[:60]
+        for i, line in enumerate(recent_lines):
+            if needle and needle in line:
+                idx = i
+        if idx >= 0 and idx < last_success:
+            continue
+        kept.append(hit)
+    return kept
+
+
+def try_start_manager(exe: Path, *, once: bool = False) -> bool:
+    """Best-effort start when exe exists but process is down (or run ``--once``)."""
     if sys.platform != "win32" or not exe.is_file():
         return False
     try:
+        from app.util.winproc import hidden_run_kwargs
+
+        kw = hidden_run_kwargs()
+        flags = int(kw.get("creationflags", 0)) | getattr(
+            subprocess, "DETACHED_PROCESS", 0
+        )
+        cmd = [str(exe)]
+        if once:
+            cmd.append("--once")
         subprocess.Popen(  # noqa: S603
-            [str(exe)],
+            cmd,
             cwd=str(exe.parent),
             close_fds=True,
-            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
-            | getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            creationflags=flags,
+            startupinfo=kw.get("startupinfo"),
         )
         return True
     except OSError as e:
@@ -246,10 +306,15 @@ def run_diagnose_script(*, timeout_sec: int = 45) -> str:
     if script is None or sys.platform != "win32":
         return ""
     try:
+        from app.util.winproc import hidden_run_kwargs
+
+        # Windowed CloneUp + bare powershell = black console flash — always hide.
         r = subprocess.run(
             [
                 "powershell",
                 "-NoProfile",
+                "-WindowStyle",
+                "Hidden",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
@@ -258,6 +323,7 @@ def run_diagnose_script(*, timeout_sec: int = 45) -> str:
             capture_output=True,
             timeout=timeout_sec,
             check=False,
+            **hidden_run_kwargs(),
         )
         out = (r.stdout or b"").decode("utf-8", errors="replace")
         err = (r.stderr or b"").decode("utf-8", errors="replace")
@@ -349,16 +415,21 @@ def collect_extended_diag_text(health: UpdateManagerHealth) -> str:
         lines.append("No updater under other C:\\Users\\* profiles (or access denied).")
     if health.exe_present and sys.platform == "win32":
         try:
+            from app.util.winproc import hidden_run_kwargs
+
             r = subprocess.run(
                 [
                     "powershell",
                     "-NoProfile",
+                    "-WindowStyle",
+                    "Hidden",
                     "-Command",
                     f'Get-Item -LiteralPath "{health.exe_path}" -Stream Zone.Identifier -ErrorAction SilentlyContinue | Out-String',
                 ],
                 capture_output=True,
                 timeout=15,
                 check=False,
+                **hidden_run_kwargs(),
             )
             z = (r.stdout or b"").decode("utf-8", errors="replace").strip()
             lines.append(f"Mark-of-the-Web: {'present' if z else 'none'}")
@@ -391,12 +462,14 @@ def probe_update_manager(*, attempt_restart: bool = True) -> UpdateManagerHealth
 
     log_path = manager_log_path()
     h.log_present = log_path.is_file()
+    recent_lines: list[str] = []
     if h.log_present:
         try:
             text = log_path.read_text(encoding="utf-8", errors="replace")
             lines = text.splitlines()
             h.log_tail = "\n".join(lines[-40:])
-            h.log_error_hits = _log_error_hits("\n".join(lines[-120:]))
+            recent_lines = lines[-120:]
+            h.log_error_hits = _log_error_hits("\n".join(recent_lines))
         except OSError as e:
             h.log_tail = f"(read failed: {e})"
 
@@ -415,8 +488,23 @@ def probe_update_manager(*, attempt_restart: bool = True) -> UpdateManagerHealth
         h.problems.append("process_not_running")
     if h.exe_present and not h.run_key_present:
         h.problems.append("run_key_missing")
-    if h.log_error_hits:
+    hard_hits = [
+        x
+        for x in h.log_error_hits
+        if _HARD_LOG_RE.search(x) and not _SOFT_LOG_RE.search(x)
+    ]
+    hard_hits = _drop_superseded_apply_failures(recent_lines, hard_hits)
+    soft_hits = [
+        x
+        for x in h.log_error_hits
+        if _SOFT_LOG_RE.search(x) and not _HARD_LOG_RE.search(x)
+    ]
+    if hard_hits:
         h.problems.append("log_errors")
+    elif soft_hits and not (h.exe_present and h.process_running):
+        # Network noise alone while stopped — still worth a soft flag.
+        h.problems.append("log_network")
+    # Soft hits while running: keep in log_error_hits for the UI, not problems.
 
     # Expensive-ish extended dump only when we will likely report.
     if h.problems and not (

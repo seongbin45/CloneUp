@@ -11,6 +11,8 @@ import hashlib
 import logging
 import shutil
 import tempfile
+import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -28,34 +30,69 @@ def _ssl_context():
     return ssl.create_default_context()
 
 
+# CloneUp-win64.zip is ~200MB+. Slow / flaky links used to hit the old 300s
+# socket timeout mid-read (GitHub issue auto-reports: apply failed timed out).
+_DOWNLOAD_TIMEOUT_SEC = 900
+_DOWNLOAD_RETRIES = 3
+
+
 def download_asset(url: str, dest: Path, *, digest: str | None = None) -> None:
     if not url.startswith("https://") or not host_allowed(url):
         raise RuntimeError(f"refusing download host: {url!r}")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": USER_AGENT, "Accept": "application/octet-stream"},
-        method="GET",
-    )
-    h = hashlib.sha256()
-    with urllib.request.urlopen(req, context=_ssl_context(), timeout=300) as resp:
-        final = resp.geturl()
-        if not host_allowed(final):
-            raise RuntimeError(f"redirect to disallowed host: {final!r}")
-        with dest.open("wb") as out:
-            while True:
-                chunk = resp.read(1024 * 256)
-                if not chunk:
-                    break
-                h.update(chunk)
-                out.write(chunk)
-    if digest:
-        # GitHub format: "sha256:hex"
-        expect = digest.split(":", 1)[-1].strip().lower()
-        got = h.hexdigest().lower()
-        if expect and got != expect:
-            dest.unlink(missing_ok=True)
-            raise RuntimeError(f"digest mismatch: expected {expect[:12]}… got {got[:12]}…")
+
+    last_err: BaseException | None = None
+    for attempt in range(1, _DOWNLOAD_RETRIES + 1):
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/octet-stream"},
+            method="GET",
+        )
+        h = hashlib.sha256()
+        try:
+            if dest.exists():
+                dest.unlink(missing_ok=True)
+            with urllib.request.urlopen(
+                req, context=_ssl_context(), timeout=_DOWNLOAD_TIMEOUT_SEC
+            ) as resp:
+                final = resp.geturl()
+                if not host_allowed(final):
+                    raise RuntimeError(f"redirect to disallowed host: {final!r}")
+                with dest.open("wb") as out:
+                    while True:
+                        chunk = resp.read(1024 * 256)
+                        if not chunk:
+                            break
+                        h.update(chunk)
+                        out.write(chunk)
+            if digest:
+                # GitHub format: "sha256:hex"
+                expect = digest.split(":", 1)[-1].strip().lower()
+                got = h.hexdigest().lower()
+                if expect and got != expect:
+                    dest.unlink(missing_ok=True)
+                    raise RuntimeError(
+                        f"digest mismatch: expected {expect[:12]}… got {got[:12]}…"
+                    )
+            if attempt > 1:
+                log.info("download ok on attempt %s/%s", attempt, _DOWNLOAD_RETRIES)
+            return
+        except (TimeoutError, OSError, urllib.error.URLError, RuntimeError) as e:
+            last_err = e
+            log.warning(
+                "download attempt %s/%s failed: %s",
+                attempt,
+                _DOWNLOAD_RETRIES,
+                e,
+            )
+            try:
+                dest.unlink(missing_ok=True)
+            except OSError:
+                pass
+            if attempt >= _DOWNLOAD_RETRIES:
+                break
+            time.sleep(min(30, 5 * attempt))
+    raise RuntimeError(f"download failed after {_DOWNLOAD_RETRIES} attempts: {last_err}")
 
 
 def _find_onedir_root(extract_dir: Path) -> Path:
