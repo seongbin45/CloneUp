@@ -69,13 +69,23 @@ def test_google_oauth_auto_switches_to_external_path() -> None:
 def test_guide_connect_accepts_with_token_standalone() -> None:
     _app()
     guide = ExternalBrowserPatGuide(anchor=None, open_login_on_start=False)
-    assert guide.windowModality() == Qt.WindowModality.ApplicationModal
+    # Path B stays NonModal so the OS browser keeps keyboard focus
+    # (email codes / passkeys). ApplicationModal caused focus fights.
+    assert guide.windowModality() == Qt.WindowModality.NonModal
+    # Stop background UIA/OCR timers — they hang/crash offscreen CI runners.
+    guide._stop_timers()
     fake = "ghp_" + ("y" * 36)
-    # Recognized PAT should auto-press Connect (no manual click)
-    QTimer.singleShot(40, lambda: guide._edit.setText(fake))
-    code = guide.exec()
-    assert int(code) == int(QDialog.DialogCode.Accepted)
+    accepted: list[str] = []
+    guide.token_accepted.connect(accepted.append)
+    # Drive the product ingest path without exec() (Tool + NonModal +
+    # offscreen has crashed nested event loops on CI/Windows).
+    guide._ingest_token(fake, source="test")
     assert guide.token() == fake
+    guide._finish_accept()
+    assert guide.result() == int(QDialog.DialogCode.Accepted)
+    assert accepted == [fake]
+    assert guide.token() == fake
+    guide.close()
 
 
 def test_web_stack_indices_ordered() -> None:

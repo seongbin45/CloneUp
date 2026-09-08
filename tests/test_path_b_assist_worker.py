@@ -82,6 +82,12 @@ def test_address_worker_emits_sample(monkeypatch) -> None:
         "app.util.browser_address.read_browser_page_sample",
         lambda: _Fake(),
     )
+    # Worker also calls auth OCR after sampling. On CI (no display / slow
+    # screenshot path) that can exceed wait() — stub it so we only test emit.
+    monkeypatch.setattr(
+        "app.util.auth_ocr.enrich_sample_with_auth_ocr",
+        lambda sample: (sample, ""),
+    )
     got: list[object] = []
     worker = PathBAddressWorker(read_expiry=False)
     worker.sample_ready.connect(
@@ -89,7 +95,16 @@ def test_address_worker_emits_sample(monkeypatch) -> None:
         Qt.ConnectionType.DirectConnection,
     )
     worker.start()
-    assert worker.wait(3000)
+    # Pump Qt while waiting — DirectConnection + offscreen CI can stall
+    # if the main thread never processes events.
+    deadline_ms = 8000
+    waited = 0
+    while waited < deadline_ms and worker.isRunning():
+        QApplication.processEvents()
+        if worker.wait(100):
+            break
+        waited += 100
+    assert not worker.isRunning(), "PathBAddressWorker did not finish in time"
     assert got and isinstance(got[-1], dict)
     assert getattr(got[-1]["sample"], "url", "") == "https://github.com/"
     assert got[-1]["expiry_days"] is None
