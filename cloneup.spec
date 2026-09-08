@@ -34,6 +34,8 @@ a = Analysis(
         "app.util.next_action",
         "app.util.um_diag_report",
         "app.util.update_manager_health",
+        # Tray/settings 「업데이트 관리자 확인」 dialog (lazy-imported)
+        "app.ui.update_manager_dialog",
     ],
     hookspath=[],
     hooksconfig={},

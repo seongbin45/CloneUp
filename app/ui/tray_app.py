@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QObject, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 
@@ -202,6 +202,7 @@ class TrayController(QObject):
         self._worker: _BootUploadWorker | None = None
         self._scan_worker: _BootScanWorker | None = None
         self._um_diag_worker: _UmDiagWorker | None = None
+        self._um_dialog = None  # UpdateManagerDialog | None (lazy)
         self._suppress_toast_until_idle = False
 
         icon = load_app_icon()
@@ -214,8 +215,8 @@ class TrayController(QObject):
         act_open.triggered.connect(lambda: self.request_open_main.emit(""))
         act_scan = QAction("지금 안 올린 수정 확인", menu)
         act_scan.triggered.connect(self.run_boot_scan)
-        act_um = QAction("업데이트 관리자 상태 확인", menu)
-        act_um.triggered.connect(self.run_um_diag_check)
+        act_um = QAction("업데이트 관리자 확인", menu)
+        act_um.triggered.connect(self.open_update_manager_ui)
         act_quit = QAction("종료", menu)
         act_quit.triggered.connect(self.request_quit.emit)
         menu.addAction(act_open)
@@ -250,8 +251,38 @@ class TrayController(QObject):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.request_open_main.emit("")
 
+    def open_update_manager_ui(self) -> None:
+        """Show management UI (explicit user action — not the silent background probe)."""
+        try:
+            from app.ui.update_manager_dialog import UpdateManagerDialog
+        except ImportError:
+            self._tray.showMessage(
+                "클론업",
+                "업데이트 관리자 화면을 열 수 없습니다. 앱을 최신으로 설치해 주세요.",
+                QSystemTrayIcon.MessageIcon.Warning,
+                6000,
+            )
+            return
+        dlg = self._um_dialog
+        if dlg is not None:
+            try:
+                if dlg.isVisible():
+                    dlg.raise_()
+                    dlg.activateWindow()
+                    dlg.refresh(attempt_restart=False)
+                    return
+            except RuntimeError:
+                self._um_dialog = None
+        dlg = UpdateManagerDialog(None)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dlg.destroyed.connect(lambda *_: setattr(self, "_um_dialog", None))
+        self._um_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
     def run_um_diag_check(self) -> None:
-        """Watch independent update manager; report if missing / errored."""
+        """Silent background watch; report if missing / errored (no management UI)."""
         if run_um_diag_cycle is None or DiagSendResult is None:
             return
         if not load_um_diag_report_enabled():

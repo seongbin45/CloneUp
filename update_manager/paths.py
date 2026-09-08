@@ -44,6 +44,83 @@ def manager_install_dir() -> Path:
     return candidates[0]
 
 
+def _is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def manager_mode() -> str:
+    """Return ``machine`` if UM lives under ProgramData, else ``user``."""
+    mgr = manager_install_dir()
+    if _is_under(mgr, _program_data()):
+        return "machine"
+    return "user"
+
+
+def pending_root() -> Path:
+    """
+    Persistent download staging root (Tier 2).
+
+    Decision tree (rev.5+):
+      - Dev override ``CLONEUP_UM_PENDING_DIR`` only when not frozen.
+      - Else tie to manager_install_dir() mode (ProgramData vs LocalAppData).
+      - Sticky choice file avoids flip-flop across ticks.
+    """
+    import sys
+
+    frozen = bool(getattr(sys, "frozen", False))
+    env = os.environ.get("CLONEUP_UM_PENDING_DIR", "").strip()
+    if env and not frozen:
+        root = Path(env).expanduser()
+        root.mkdir(parents=True, exist_ok=True)
+        return root.resolve()
+
+    mgr = manager_install_dir()
+    sticky = mgr / "pending_root_choice.txt"
+    if sticky.is_file():
+        try:
+            line = sticky.read_text(encoding="utf-8").strip().splitlines()[0].strip()
+            if line:
+                chosen = Path(line)
+                chosen.mkdir(parents=True, exist_ok=True)
+                return chosen.resolve()
+        except OSError:
+            pass
+
+    if manager_mode() == "machine":
+        root = _program_data() / "CloneUp" / "UpdateManager" / "pending"
+    else:
+        root = _local_app_data() / "CloneUp" / "UpdateManager" / "pending"
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        sticky.parent.mkdir(parents=True, exist_ok=True)
+        sticky.write_text(str(root.resolve()) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return root.resolve()
+
+
+def status_root() -> Path:
+    """Status tree for UX polling (Users can read on machine mode)."""
+    if manager_mode() == "machine":
+        root = _program_data() / "CloneUp" / "UpdateManager" / "status"
+    else:
+        root = _local_app_data() / "CloneUp" / "UpdateManager" / "status"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "runs").mkdir(parents=True, exist_ok=True)
+    return root.resolve()
+
+
+def pending_version_dir(version: str) -> Path:
+    safe = "".join(c if c.isalnum() or c in ".-_" else "_" for c in version.strip())
+    d = pending_root() / (safe or "unknown")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _looks_like_cloneup_dir(folder: Path) -> bool:
     """True if folder appears to be a CloneUp onedir install."""
     try:

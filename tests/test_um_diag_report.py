@@ -231,6 +231,8 @@ def test_try_start_manager_hides_console(monkeypatch: pytest.MonkeyPatch, tmp_pa
         seen["kwargs"] = kwargs
         return object()
 
+    # Force Popen fallback (no scheduled task).
+    monkeypatch.setattr(umh, "run_scheduled_manager", lambda: (False, "task_missing"))
     monkeypatch.setattr(umh.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(umh.sys, "platform", "win32")
     assert umh.try_start_manager(exe, once=True) is True
@@ -238,6 +240,26 @@ def test_try_start_manager_hides_console(monkeypatch: pytest.MonkeyPatch, tmp_pa
     flags = int(seen["kwargs"].get("creationflags") or 0)
     assert flags & subprocess.CREATE_NO_WINDOW
     assert "startupinfo" in seen["kwargs"]
+
+
+def test_try_start_manager_prefers_schtasks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from app.util import update_manager_health as umh
+
+    exe = tmp_path / "CloneUp_update_manager.exe"
+    exe.write_bytes(b"MZ")
+    popped = {"n": 0}
+
+    def boom(*_a, **_k):  # noqa: ANN001
+        popped["n"] += 1
+        raise AssertionError("Popen should not run when schtasks succeeds")
+
+    monkeypatch.setattr(umh, "run_scheduled_manager", lambda: (True, "ok"))
+    monkeypatch.setattr(umh.subprocess, "Popen", boom)
+    monkeypatch.setattr(umh.sys, "platform", "win32")
+    assert umh.try_start_manager(exe, once=True) is True
+    assert popped["n"] == 0
 
 
 def test_run_cycle_disabled(monkeypatch: pytest.MonkeyPatch) -> None:

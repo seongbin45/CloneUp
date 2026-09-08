@@ -247,10 +247,125 @@ def _drop_superseded_apply_failures(
     return kept
 
 
+def status_root() -> Path:
+    """Mirror UM status tree (Users can read; no update_manager import)."""
+    machine = _program_data() / "CloneUp" / "UpdateManager" / "status"
+    user = _local_app_data() / "CloneUp" / "UpdateManager" / "status"
+    # Prefer whichever already has current.json / runs; else machine if exe there.
+    for cand in (machine, user):
+        try:
+            if (cand / "current.json").is_file() or (cand / "runs").is_dir():
+                return cand
+        except OSError:
+            continue
+    exe = manager_exe_path()
+    try:
+        if _is_under(exe, _program_data()):
+            return machine
+    except OSError:
+        pass
+    return user if not (_program_data() / "CloneUp" / "UpdateManager" / UM_EXE_NAME).is_file() else machine
+
+
+def _is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def read_current_run_id() -> str | None:
+    import json
+
+    p = status_root() / "current.json"
+    if not p.is_file():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        rid = str(data.get("run_id") or "").strip()
+        return rid or None
+    except (OSError, json.JSONDecodeError, TypeError):
+        return None
+
+
+def read_run_status(run_id: str) -> dict | None:
+    import json
+
+    if not run_id:
+        return None
+    p = status_root() / "runs" / f"{run_id}.json"
+    if not p.is_file():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError, TypeError):
+        return None
+
+
+def _scheduled_task_exists() -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        from app.util.winproc import hidden_run_kwargs
+
+        r = subprocess.run(
+            ["schtasks", "/Query", "/TN", "CloneUpUpdateManager"],
+            capture_output=True,
+            timeout=15,
+            check=False,
+            **hidden_run_kwargs(),
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def run_scheduled_manager() -> tuple[bool, str]:
+    """Trigger SYSTEM scheduled task (Parallel one-shot while daemon lives)."""
+    if sys.platform != "win32":
+        return False, "not windows"
+    if not _scheduled_task_exists():
+        return False, "task_missing"
+    try:
+        from app.util.winproc import hidden_run_kwargs
+
+        r = subprocess.run(
+            ["schtasks", "/Run", "/TN", "CloneUpUpdateManager"],
+            capture_output=True,
+            timeout=30,
+            check=False,
+            **hidden_run_kwargs(),
+        )
+        out = (r.stdout or b"").decode("utf-8", errors="replace")
+        err = (r.stderr or b"").decode("utf-8", errors="replace")
+        detail = (out + err).strip()
+        if r.returncode != 0:
+            # Korean locale often still returns useful text
+            if not detail:
+                detail = (r.stdout or b"").decode("cp949", errors="replace").strip()
+            return False, detail or f"exit {r.returncode}"
+        return True, detail or "ok"
+    except Exception as e:
+        return False, str(e)
+
+
 def try_start_manager(exe: Path, *, once: bool = False) -> bool:
-    """Best-effort start when exe exists but process is down (or run ``--once``)."""
+    """
+    Prefer ``schtasks /Run`` (SYSTEM identity + Parallel) when the task exists.
+    Fall back to detached Popen as the current user (legacy / no task).
+    """
     if sys.platform != "win32" or not exe.is_file():
         return False
+    # On-demand and "start daemon" both use the same task action (exe, no args).
+    # Parallel policy + UM one-shot-on-mutex-busy makes /Run safe while daemon lives.
+    ok, detail = run_scheduled_manager()
+    if ok:
+        log.info("started update manager via schtasks: %s", detail[:120])
+        return True
+    if detail != "task_missing":
+        log.info("schtasks /Run failed (%s) — falling back to Popen", detail[:160])
     try:
         from app.util.winproc import hidden_run_kwargs
 

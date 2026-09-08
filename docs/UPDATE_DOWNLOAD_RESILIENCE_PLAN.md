@@ -170,25 +170,28 @@ download_asset(url, dest, digest=None)
 
 ---
 
-## Tier 2 — Persistent pending + single-writer (after Tier 1 green)
+## Tier 2 — Persistent pending + single-writer — **IMPLEMENTED** (see `UPDATE_TIER2_PENDING_PLAN.md` rev.9)
 
 ```
-%LOCALAPPDATA%\CloneUp\UpdateManager\pending\
-  {version}\
-    CloneUp-win64.zip
-    CloneUp-win64.zip.part
-    CloneUp-win64.zip.part.meta   # etag, total, url
-    meta.json
-    download.lock                 # exclusive
+%PROGRAMDATA%\CloneUp\UpdateManager\pending\{version}\   # machine mode
+%LOCALAPPDATA%\CloneUp\UpdateManager\pending\{version}\  # user mode
+  CloneUp-win64.zip / .part / .part.meta
+  meta.json
+  download.lock                 # OS exclusive (PendingLock)
+  extract\ + .complete
+
+%PROGRAMDATA|LOCALAPPDATA%\CloneUp\UpdateManager\status\
+  current.json                  # atomic pointer
+  runs\{run_id}.json            # per-run (Parallel-safe)
 ```
 
-- Staging root = pending, not process temp → **cross-tick resume becomes real**
-- Complete zip + digest/size OK → skip re-download
-- Defer after complete download → keep zip; only skip kill/copy
-- Version bump → delete other version dirs
-- **Lock file** (or Windows exclusive open) so overlapping ticks / dual UM bootloader+child don’t corrupt `.part`
-- **`os.replace` same-volume:** pending and final zip path stay on LOCALAPPDATA; install copy is `copytree` not replace across devices. If ever cross-volume, fallback copy+delete (document in Tier 2 impl).
-
+- Staging root = pending (sticky choice) → **cross-tick resume**
+- Idle cache skip re-download; **apply-gate always full sha256**
+- Defer when main window visible → keep zip; skip kill/copy only
+- Version prune; junction-safe remove (`os.rmdir` not rmtree-through)
+- Machine pending ACL: SYSTEM+Admins write (no Users) — anti-LPE
+- schtasks **Parallel** + interactive `/Run`; dialog poll 15s / 15m
+- **No UM rebuild until user asks** (code+tests landed; field effect needs build)
 ---
 
 ## Tier 3–4 — Hardening / product
@@ -203,13 +206,11 @@ download_asset(url, dest, digest=None)
 
 ## Implementation order
 
-1. Revise plan with limits + ETag + digest gate (**this revision**)
-2. Implement **Tier 1 only** (`apply.py` + tests)
-3. Run pytest; optional small script: “does latest GitHub asset return ETag + Accept-Ranges?”
-4. Stop; then Tier 2
-5. Tier 1b digest survey → fail-closed decision
-6. **No UM build** until user asks
-
+1. Revise plan with limits + ETag + digest gate — done
+2. Implement **Tier 1 only** (`apply.py` + tests) — done (`bc1cd45`)
+3. Tier 1b digest fail-closed — done (5/5 zips)
+4. **Tier 2** pending + status + schtasks Parallel + dialog poll — **code done** (await UM rebuild)
+5. **No UM build** until user asks
 ## Success criteria
 
 **Tier 1**

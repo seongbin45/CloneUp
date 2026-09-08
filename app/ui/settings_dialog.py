@@ -697,6 +697,11 @@ class SettingsDialog(QDialog):
                 ),
             )
         )
+        btn_um = QPushButton("업데이트 관리자 확인")
+        btn_um.setObjectName("setSecondaryBtn")
+        btn_um.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_um.clicked.connect(self._open_update_manager_ui)
+        lay.addWidget(btn_um, 0, Qt.AlignmentFlag.AlignLeft)
 
         warn = QLabel(
             "파일 이름(과 일부 내용 검사) 범위에는 한계가 있습니다. "
@@ -1519,6 +1524,19 @@ class SettingsDialog(QDialog):
         self._um_diag_on = bool(checked)
         save_um_diag_report_enabled(self._um_diag_on)
         self._notify_prefs("um_diag_report")
+
+    def _open_update_manager_ui(self) -> None:
+        try:
+            from app.ui.update_manager_dialog import UpdateManagerDialog
+        except ImportError:
+            QMessageBox.warning(
+                self,
+                "업데이트 관리자",
+                "관리 화면을 불러올 수 없습니다. 앱을 최신으로 설치해 주세요.",
+            )
+            return
+        dlg = UpdateManagerDialog(self)
+        dlg.exec()
 
     def _sync_boot_autostart_pref(self) -> bool:
         """Apply preference to HKCU; if register fails, store False so UI is honest."""

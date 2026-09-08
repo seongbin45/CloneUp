@@ -112,7 +112,9 @@ Filename: "{tmp}\tesseract-ocr-w64-setup-5.4.0.20240606.exe"; Parameters: "/S"; 
 ; (not HKLM Run). ONLOGON so it starts when any user signs in.
 Filename: "schtasks"; Parameters: "/Create /F /RL HIGHEST /SC ONLOGON /RU SYSTEM /TN ""CloneUpUpdateManager"" /TR """"{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"""""; StatusMsg: "자동 업데이트 작업 등록 중…"; Flags: runhidden waituntilterminated; Tasks: autoupdatemanager
 ; Battery / wake settings (same idea as enterprise reboot tasks)
-Filename: "powershell"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""$t = Get-ScheduledTask -TaskName 'CloneUpUpdateManager' -ErrorAction Stop; $s = $t.Settings; $s.WakeToRun = $true; $s.DisallowStartIfOnBatteries = $false; $s.StopIfGoingOnBatteries = $false; $s.AllowStartIfOnBatteries = $true; Set-ScheduledTask -TaskName 'CloneUpUpdateManager' -Settings $s"""; StatusMsg: "자동 업데이트 작업 설정 중…"; Flags: runhidden waituntilterminated; Tasks: autoupdatemanager
+; Parallel = tray 「한 번 확인」 schtasks /Run can start while daemon lives.
+; ACL = Authenticated Users may /Run (otherwise only Admin/SYSTEM can trigger).
+Filename: "powershell"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""$ErrorActionPreference='Stop'; $n='CloneUpUpdateManager'; $t=Get-ScheduledTask -TaskName $n; $s=$t.Settings; $s.WakeToRun=$true; $s.DisallowStartIfOnBatteries=$false; $s.StopIfGoingOnBatteries=$false; $s.AllowStartIfOnBatteries=$true; $s.MultipleInstances=0; Set-ScheduledTask -TaskName $n -Settings $s; $svc=New-Object -ComObject Schedule.Service; $svc.Connect(); $task=$svc.GetFolder('\').GetTask($n); $task.SetSecurityDescriptor('D:AR(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;AU)',0)"""; StatusMsg: "자동 업데이트 작업 설정 중…"; Flags: runhidden waituntilterminated; Tasks: autoupdatemanager
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 ; Also start once now (task will own subsequent logons)
 Filename: "{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"; Description: "자동 업데이트 관리자 시작"; Flags: nowait postinstall skipifsilent unchecked; Tasks: autoupdatemanager
