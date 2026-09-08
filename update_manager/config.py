@@ -39,4 +39,4 @@ CLONEUP_TRAY_RUN_VALUE = "CloneUpTray"
 # Inno AppId (without outer braces variant used under Uninstall keys).
 INNO_APP_ID = "{A7C1E0B2-4D5F-4A8E-9C3B-1F2E3D4C5B6A}"
 
-USER_AGENT = "CloneUp-UpdateManager/0.1.0"
+USER_AGENT = "CloneUp-UpdateManager/0.1.14"
