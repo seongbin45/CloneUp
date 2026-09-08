@@ -8,7 +8,7 @@
 ; Output: installer\Output\CloneUp-Setup.exe
 
 #define MyAppName "CloneUp"
-#define MyAppVersion "0.1.12"
+#define MyAppVersion "0.1.13"
 #define MyAppPublisher "CloneUp"
 #define MyAppURL "https://github.com/seongbin45/CloneUp"
 #define MyAppExeName "CloneUp.exe"
@@ -32,7 +32,8 @@ LicenseFile=license\CloneUp_Terms_ko.txt
 ; Setup wizard icon
 SetupIconFile=..\assets\icons\{#MyAppIcoName}
 ; Control Panel / Apps & Features uninstall entry icon
-UninstallDisplayIcon={app}\{#MyAppIcoName}
+; Prefer exe (always present). CloneUp.ico is also installed beside it.
+UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
 ; Version resources shown in file properties / Add-Remove Programs
 VersionInfoVersion={#MyAppVersion}
@@ -72,10 +73,11 @@ Name: "tesseractocr"; Description: "Tesseract OCR 설치 (키 만료일 화면 �
 Source: "..\dist\CloneUp\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Plain VERSION next to exe (update_manager); also copied by build_exe.ps1 into dist
 Source: "..\VERSION"; DestDir: "{app}"; Flags: ignoreversion
-; App icon next to exe — Control Panel + Start Menu use this path (all sizes in .ico)
-Source: "..\assets\icons\{#MyAppIcoName}"; DestDir: "{app}"; Flags: ignoreversion
+; App icon next to exe — must exist at {app}\CloneUp.ico for shortcuts / ARP.
+; Also copied by build_exe.ps1 into dist\CloneUp\ so onedir zip has it too.
+; Place AFTER dist\* wildcard so this explicit copy always wins.
+Source: "..\assets\icons\{#MyAppIcoName}"; DestDir: "{app}"; DestName: "{#MyAppIcoName}"; Flags: ignoreversion
 ; Independent update manager — ALWAYS install (not gated on the autostart task).
-; Autostart (HKLM Run) remains optional via Tasks: autoupdatemanager below.
 ; ProgramData (not {app}) so zip onedir updates never overwrite the manager.
 ; With PrivilegesRequired=admin this is machine-wide for every user.
 Source: "..\dist\CloneUp_update_manager.exe"; DestDir: "{commonappdata}\CloneUp\UpdateManager"; Flags: ignoreversion
@@ -98,9 +100,10 @@ Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "redist\tesseract-ocr-w64-setup-5.4.0.20240606.exe"; DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall; Tasks: tesseractocr
 
 [Icons]
-; Start Menu — explicit multi-size .ico so shell picks 16/32/48 correctly
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppIcoName}"; IconIndex: 0
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppIcoName}"; IconIndex: 0; Tasks: desktopicon
+; Prefer embedded exe icon (always present after PyInstaller). Also ship CloneUp.ico
+; for UninstallDisplayIcon / explorers that prefer a standalone .ico.
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; IconIndex: 0
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; IconIndex: 0; Tasks: desktopicon
 
 [Run]
 ; Tesseract — own UAC elevation; silent-ish English UI (UB-Mannheim Inno-based)

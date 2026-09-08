@@ -30,6 +30,15 @@ if (Test-Path $verSrc) {
     Write-Host "OK: $verDst"
 }
 
+# Shell shortcuts / UninstallDisplayIcon expect {app}\CloneUp.ico (NOT only _internal).
+$icoSrc = Join-Path $Root "assets\icons\CloneUp.ico"
+$icoDst = Join-Path $Root "dist\CloneUp\CloneUp.ico"
+if (-not (Test-Path $icoSrc)) {
+    Write-Error "Missing $icoSrc"
+}
+Copy-Item -Force $icoSrc $icoDst
+Write-Host "OK: $icoDst"
+
 # Field diagnosis script (tray auto-report embeds its output when present)
 $diagSrc = Join-Path $Root "scripts\diagnose_update_manager.ps1"
 $diagDir = Join-Path $Root "dist\CloneUp\scripts"
