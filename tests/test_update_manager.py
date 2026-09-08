@@ -33,50 +33,253 @@ def test_host_allowed() -> None:
     assert not host_allowed("https://evil.example/x.zip")
 
 
+def _ok_url() -> str:
+    return "https://objects.githubusercontent.com/github-production-release-asset-2e65be/x"
+
+
+class _FakeHeaders(dict):
+    def get(self, key, default=None):  # noqa: ANN001
+        for k, v in self.items():
+            if k.lower() == str(key).lower():
+                return v
+        return default
+
+
+class _FakeResp:
+    def __init__(self, *, status: int, body: bytes, headers: dict | None = None):
+        self.status = status
+        self._body = body
+        self._pos = 0
+        self.headers = _FakeHeaders(headers or {})
+        self._fail_after: int | None = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def geturl(self):
+        return _ok_url()
+
+    def getcode(self):
+        return self.status
+
+    def read(self, n: int = -1):
+        if self._pos >= len(self._body):
+            if self._fail_after is not None and self._pos >= self._fail_after:
+                # Already emitted all allowed bytes; next read stalls.
+                raise TimeoutError("The read operation timed out")
+            return b""
+        if self._fail_after is not None and self._pos >= self._fail_after:
+            raise TimeoutError("The read operation timed out")
+        if n < 0:
+            n = len(self._body) - self._pos
+        # Cap this read so mid-stream timeout tests can stop early.
+        if self._fail_after is not None:
+            n = min(n, max(0, self._fail_after - self._pos))
+            if n == 0:
+                raise TimeoutError("The read operation timed out")
+        chunk = self._body[self._pos : self._pos + n]
+        self._pos += len(chunk)
+        return chunk
+
+
 def test_download_asset_retries_then_ok(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Large zip downloads used to time out once; retries recover (issues #1/#2)."""
-    import io
+    """Single attempt budget: first connect fails, second delivers full body."""
+    import hashlib
 
     from update_manager import apply as apply_mod
 
-    calls = {"n": 0}
     payload = b"MZ" + b"x" * 100
-
-    class _Resp:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def geturl(self):
-            return "https://objects.githubusercontent.com/github-production-release-asset-2e65be/x"
-
-        def read(self, _n: int = -1):
-            # One-shot body
-            data = getattr(self, "_data", payload)
-            self._data = b""
-            return data
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    calls = {"n": 0}
 
     def fake_urlopen(req, context=None, timeout=None):
         calls["n"] += 1
         if calls["n"] < 2:
             raise TimeoutError("The read operation timed out")
-        return _Resp()
+        return _FakeResp(
+            status=200,
+            body=payload,
+            headers={
+                "Content-Length": str(len(payload)),
+                "ETag": '"abc"',
+            },
+        )
 
     monkeypatch.setattr(apply_mod.urllib.request, "urlopen", fake_urlopen)
-    monkeypatch.setattr(apply_mod, "_DOWNLOAD_RETRIES", 3)
     monkeypatch.setattr(apply_mod.time, "sleep", lambda _s: None)
 
     dest = tmp_path / "a.zip"
-    apply_mod.download_asset(
-        "https://objects.githubusercontent.com/github-production-release-asset-2e65be/x",
-        dest,
-    )
+    apply_mod.download_asset(_ok_url(), dest, digest=digest)
     assert calls["n"] == 2
-    assert dest.read_bytes().startswith(b"MZ")
+    assert dest.read_bytes() == payload
+    assert not Path(str(dest) + ".part").exists()
+
+
+def test_download_asset_resumes_with_206(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Intra-call Range resume after mid-stream timeout."""
+    import hashlib
+
+    from update_manager import apply as apply_mod
+
+    payload = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    mid = 10
+    calls = {"n": 0}
+    seen_range: list[str | None] = []
+
+    def _req_hdr(req, name: str) -> str | None:
+        # urllib title-cases header keys (e.g. If-range).
+        for k, v in req.headers.items():
+            if k.lower() == name.lower():
+                return v
+        return None
+
+    def fake_urlopen(req, context=None, timeout=None):
+        calls["n"] += 1
+        rng = _req_hdr(req, "Range")
+        seen_range.append(rng)
+        if calls["n"] == 1:
+            resp = _FakeResp(
+                status=200,
+                body=payload,
+                headers={
+                    "Content-Length": str(len(payload)),
+                    "ETag": '"v1"',
+                },
+            )
+            resp._fail_after = mid
+            return resp
+        # Resume
+        assert rng == f"bytes={mid}-"
+        assert _req_hdr(req, "If-Range") == '"v1"'
+        return _FakeResp(
+            status=206,
+            body=payload[mid:],
+            headers={
+                "Content-Range": f"bytes {mid}-{len(payload)-1}/{len(payload)}",
+                "Content-Length": str(len(payload) - mid),
+            },
+        )
+
+    monkeypatch.setattr(apply_mod.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(apply_mod.time, "sleep", lambda _s: None)
+
+    dest = tmp_path / "a.zip"
+    apply_mod.download_asset(_ok_url(), dest, digest=digest)
+    assert calls["n"] == 2
+    assert seen_range[1] == f"bytes={mid}-"
+    assert dest.read_bytes() == payload
+
+
+def test_download_asset_200_on_resume_truncates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CDN ignores Range / If-Range → truncate, never append (HF corruption case)."""
+    import hashlib
+
+    from update_manager import apply as apply_mod
+
+    payload = b"FULLFILECONTENT_OK_123456"
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    calls = {"n": 0}
+
+    def fake_urlopen(req, context=None, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            resp = _FakeResp(
+                status=200,
+                body=payload,
+                headers={"Content-Length": str(len(payload)), "ETag": '"e"'},
+            )
+            resp._fail_after = 5
+            return resp
+        # Server returns full body again (200) despite Range
+        return _FakeResp(
+            status=200,
+            body=payload,
+            headers={"Content-Length": str(len(payload)), "ETag": '"e"'},
+        )
+
+    monkeypatch.setattr(apply_mod.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(apply_mod.time, "sleep", lambda _s: None)
+
+    dest = tmp_path / "a.zip"
+    apply_mod.download_asset(_ok_url(), dest, digest=digest)
+    assert dest.read_bytes() == payload  # not doubled
+
+
+def test_download_asset_digest_mismatch_clears_part(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from update_manager import apply as apply_mod
+
+    payload = b"MZ" + b"y" * 20
+
+    def fake_urlopen(req, context=None, timeout=None):
+        return _FakeResp(
+            status=200,
+            body=payload,
+            headers={"Content-Length": str(len(payload)), "ETag": '"z"'},
+        )
+
+    monkeypatch.setattr(apply_mod.urllib.request, "urlopen", fake_urlopen)
+    dest = tmp_path / "a.zip"
+    with pytest.raises(RuntimeError, match="digest mismatch"):
+        apply_mod.download_asset(_ok_url(), dest, digest="sha256:" + ("0" * 64))
+    assert not dest.exists()
+    assert not Path(str(dest) + ".part").exists()
+
+
+def test_download_asset_requires_digest(tmp_path: Path) -> None:
+    from update_manager import apply as apply_mod
+
+    with pytest.raises(RuntimeError, match="digest missing"):
+        apply_mod.download_asset(_ok_url(), tmp_path / "a.zip", digest=None)
+
+
+def test_download_asset_206_without_content_range_restarts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+
+    from update_manager import apply as apply_mod
+
+    payload = b"0123456789ABCDEF"
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    calls = {"n": 0}
+
+    def fake_urlopen(req, context=None, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            resp = _FakeResp(
+                status=200,
+                body=payload,
+                headers={"Content-Length": str(len(payload)), "ETag": '"t"'},
+            )
+            resp._fail_after = 4
+            return resp
+        # Bad 206 (no Content-Range) → code must restart; next attempt full 200
+        if calls["n"] == 2:
+            return _FakeResp(status=206, body=payload[4:], headers={})
+        return _FakeResp(
+            status=200,
+            body=payload,
+            headers={"Content-Length": str(len(payload)), "ETag": '"t"'},
+        )
+
+    monkeypatch.setattr(apply_mod.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(apply_mod.time, "sleep", lambda _s: None)
+    dest = tmp_path / "a.zip"
+    apply_mod.download_asset(_ok_url(), dest, digest=digest)
+    assert dest.read_bytes() == payload
+    assert calls["n"] == 3
 
 
 def test_find_install_dir_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
