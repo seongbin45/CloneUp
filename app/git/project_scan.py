@@ -42,8 +42,17 @@ class ProjectEntry:
     name: str
     has_git: bool
     last_mtime: float
-    dirty: bool | None = None  # None = not probed; True/False = presence only (Phase B)
+    dirty: bool | None = None  # None = not probed; True/False = pending changes
+    dirty_count: int = 0  # porcelain line count (Phase C); 0 if unknown/clean
     branch: str = ""
+
+
+@dataclass(frozen=True)
+class SubPathHit:
+    """A child path under a project, ranked by mtime (expand row)."""
+
+    rel_path: str
+    mtime: float
 
 
 def default_scan_roots() -> list[Path]:
@@ -169,9 +178,10 @@ def scan_projects(
             return
         seen.add(key)
         dirty: bool | None = None
+        dirty_count = 0
         branch = ""
         if has_git and probe_dirty:
-            dirty, branch = _probe_git_presence(path)
+            dirty, branch, dirty_count = _probe_git_presence(path)
         found.append(
             ProjectEntry(
                 path=str(path),
@@ -179,6 +189,7 @@ def scan_projects(
                 has_git=has_git,
                 last_mtime=_dir_mtime(path),
                 dirty=dirty,
+                dirty_count=dirty_count,
                 branch=branch,
             )
         )
@@ -238,9 +249,10 @@ def scan_projects(
             continue
         has_git = (p / ".git").exists()
         dirty = None
+        dirty_count = 0
         branch = ""
         if has_git and probe_dirty:
-            dirty, branch = _probe_git_presence(p)
+            dirty, branch, dirty_count = _probe_git_presence(p)
         seen.add(key)
         found.append(
             ProjectEntry(
@@ -249,6 +261,7 @@ def scan_projects(
                 has_git=has_git,
                 last_mtime=_dir_mtime(p),
                 dirty=dirty,
+                dirty_count=dirty_count,
                 branch=branch,
             )
         )
@@ -257,19 +270,117 @@ def scan_projects(
     return found
 
 
-def _probe_git_presence(path: Path) -> tuple[bool, str]:
-    """Return (has_pending_changes, branch_name). Presence only — no file counts."""
+def _probe_git_presence(path: Path) -> tuple[bool, str, int]:
+    """Return (has_pending_changes, branch_name, porcelain_count)."""
     from app.ui.boot_scan import folder_needs_notify
 
     branch = ""
+    count = 0
     try:
-        from app.git.sync_ops import SyncError, get_repo_status
+        from app.git.sync_ops import get_repo_status
 
         st = get_repo_status(path)
         branch = str(getattr(st, "branch", "") or "")
-        return bool(folder_needs_notify(st)), branch
+        dirty = bool(folder_needs_notify(st))
     except Exception:
-        return False, branch
+        return False, branch, 0
+    try:
+        from app.git.runner import run_git
+
+        full = run_git(["status", "--porcelain"], cwd=str(path), check=False)
+        if full.returncode == 0:
+            count = len(
+                [ln for ln in (full.stdout or "").splitlines() if ln.strip()]
+            )
+        if count == 0 and dirty:
+            # Ahead-only: surface as at least 1 so UI can show a count later
+            ahead = int(getattr(st, "ahead", 0) or 0)
+            count = max(ahead, 1) if dirty else 0
+        return bool(dirty or count > 0), branch, count
+    except Exception:
+        return dirty, branch, count
+
+
+def list_recent_child_paths(
+    root: Path | str,
+    *,
+    limit: int = 8,
+    max_depth: int = 2,
+) -> list[SubPathHit]:
+    """
+    Recent child dirs/files under *root* for expand rows (mtime ranked).
+
+    Skips ``.git`` / ``node_modules`` / etc. Depth is relative to *root*.
+    """
+    root = Path(root).expanduser()
+    try:
+        root = root.resolve()
+    except OSError:
+        return []
+    if not root.is_dir():
+        return []
+    hits: list[SubPathHit] = []
+
+    def walk(current: Path, depth: int) -> None:
+        if depth > max_depth:
+            return
+        try:
+            children = list(current.iterdir())
+        except OSError:
+            return
+        for child in children:
+            try:
+                if child.name in _SKIP_DIR_NAMES or (
+                    child.name.startswith(".") and child.name != ".env"
+                ):
+                    continue
+                if child.is_symlink():
+                    continue
+                is_dir = child.is_dir()
+                is_file = child.is_file()
+            except OSError:
+                continue
+            if not is_dir and not is_file:
+                continue
+            # Prefer directories for “손댄 곳”; skip huge binary noise files
+            if is_file and child.suffix.lower() in {
+                ".pyc",
+                ".pyo",
+                ".dll",
+                ".exe",
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".webp",
+                ".mp4",
+                ".zip",
+                ".7z",
+            }:
+                continue
+            try:
+                rel = str(child.relative_to(root)).replace("\\", "/")
+                mt = float(child.stat().st_mtime)
+            except OSError:
+                continue
+            if depth >= 1:
+                hits.append(SubPathHit(rel_path=rel, mtime=mt))
+            if is_dir and depth < max_depth:
+                walk(child, depth + 1)
+
+    walk(root, 0)
+    hits.sort(key=lambda h: h.mtime, reverse=True)
+    # De-dupe by top segment preference: keep first N unique rel paths
+    out: list[SubPathHit] = []
+    seen: set[str] = set()
+    for h in hits:
+        if h.rel_path in seen:
+            continue
+        seen.add(h.rel_path)
+        out.append(h)
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
 
 
 def format_relative_mtime(mtime: float, *, now: float | None = None) -> str:
@@ -292,6 +403,65 @@ def format_relative_mtime(mtime: float, *, now: float | None = None) -> str:
     if days < 30:
         return f"{days // 7}주 전"
     return f"{days // 30}개월 전"
+
+
+def format_clock(mtime: float) -> str:
+    """HH:MM for timeline rows."""
+    if mtime <= 0:
+        return "--:--"
+    try:
+        return time.strftime("%H:%M", time.localtime(mtime))
+    except (OverflowError, OSError, ValueError):
+        return "--:--"
+
+
+def time_bucket_label(mtime: float, *, now: float | None = None) -> str:
+    """Bucket label: 오늘 / 어제 / 이번 주 / 지난주 / 더 오래 전."""
+    from datetime import date, datetime, timedelta
+
+    if mtime <= 0:
+        return "더 오래 전"
+    now_dt = datetime.fromtimestamp(now if now is not None else time.time())
+    try:
+        then = datetime.fromtimestamp(mtime)
+    except (OverflowError, OSError, ValueError):
+        return "더 오래 전"
+    today = now_dt.date()
+    d = then.date()
+    if d == today:
+        return "오늘"
+    if d == today - timedelta(days=1):
+        return "어제"
+    # Week starts Monday
+    start_this = today - timedelta(days=today.weekday())
+    start_last = start_this - timedelta(days=7)
+    if d >= start_this:
+        return "이번 주"
+    if d >= start_last:
+        return "지난주"
+    return "더 오래 전"
+
+
+_BUCKET_ORDER = ("오늘", "어제", "이번 주", "지난주", "더 오래 전")
+
+
+def group_by_time_bucket(
+    entries: list[ProjectEntry], *, now: float | None = None
+) -> list[tuple[str, list[ProjectEntry]]]:
+    """Return ordered (label, entries) buckets for timeline view."""
+    now = time.time() if now is None else now
+    buckets: dict[str, list[ProjectEntry]] = {k: [] for k in _BUCKET_ORDER}
+    for e in entries:
+        label = time_bucket_label(e.last_mtime, now=now)
+        buckets.setdefault(label, []).append(e)
+    out: list[tuple[str, list[ProjectEntry]]] = []
+    for label in _BUCKET_ORDER:
+        items = buckets.get(label) or []
+        if not items:
+            continue
+        items.sort(key=lambda x: x.last_mtime, reverse=True)
+        out.append((label, items))
+    return out
 
 
 def use_legacy_tabs() -> bool:

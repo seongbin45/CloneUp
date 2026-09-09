@@ -27,14 +27,16 @@ from PySide6.QtWidgets import (
 from app.auth.token_store import is_logged_in
 from app.git.project_scan import (
     ProjectEntry,
+    SubPathHit,
+    format_clock,
     format_relative_mtime,
+    group_by_time_bucket,
+    list_recent_child_paths,
     scan_projects,
 )
 from app.ui.home_chrome import (
     GitMissingBanner,
-    install_chrome_shortcuts,
     make_overflow_button,
-    open_terms_dialog,
     populate_overflow_menu,
 )
 from app.ui.settings_store import add_scan_root, load_last_github_login
@@ -79,8 +81,11 @@ class HomeShellWidget(QWidget):
         self._entries: list[ProjectEntry] = []
         self._filter = FILTER_ALL
         self._query = ""
-        self._sort_time = True
+        self._view_timeline = False  # False = list grid; True = time buckets
+        self._sort_time = True  # list mode: sort by mtime vs name
         self._selected: ProjectEntry | None = None
+        self._expanded: set[str] = set()
+        self._subs_cache: dict[str, list[SubPathHit]] = {}
         self._worker: _ScanWorker | None = None
         self.setObjectName("homeShell")
 
@@ -118,8 +123,8 @@ class HomeShellWidget(QWidget):
             b.setFlat(True)
             b.setCheckable(True)
             b.setChecked(active)
-        self._btn_list_mode.clicked.connect(lambda: self._set_view_mode(False))
-        self._btn_time_mode.clicked.connect(lambda: self._set_view_mode(True))
+        self._btn_list_mode.clicked.connect(lambda: self._set_view_mode(timeline=False))
+        self._btn_time_mode.clicked.connect(lambda: self._set_view_mode(timeline=True))
         mode_wrap = QFrame()
         mode_l = QHBoxLayout(mode_wrap)
         mode_l.setContentsMargins(2, 2, 2, 2)
@@ -218,8 +223,14 @@ class HomeShellWidget(QWidget):
             lab.setStyleSheet(
                 f"font-size: 11.5px; font-weight: 600; color: {p.text_muted};"
             )
+        self._h_name.setCursor(Qt.CursorShape.PointingHandCursor)
         self._h_time.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._h_time.mousePressEvent = lambda _e: self._toggle_sort_time()  # type: ignore[method-assign]
+        self._h_name.mousePressEvent = (  # type: ignore[method-assign]
+            lambda _e: self._set_list_sort(time_sort=False)
+        )
+        self._h_time.mousePressEvent = (  # type: ignore[method-assign]
+            lambda _e: self._set_list_sort(time_sort=True)
+        )
         h.addWidget(self._h_name, 1)
         self._h_time.setFixedWidth(118)
         self._h_dirty.setFixedWidth(108)
@@ -227,6 +238,7 @@ class HomeShellWidget(QWidget):
         h.addWidget(self._h_time, 0)
         h.addWidget(self._h_dirty, 0)
         h.addWidget(self._h_branch, 0)
+        self._list_header = header
         center_l.addWidget(header)
 
         self._list_scroll = QScrollArea()
@@ -303,6 +315,7 @@ class HomeShellWidget(QWidget):
         self._overflow_menu = QMenu(self)
         self._refresh_account()
         self._sync_git_banner()
+        self._update_header_emphasis()
         self._select_filter(FILTER_ALL, refresh=False)
         self.refresh_projects()
 
@@ -405,14 +418,32 @@ class HomeShellWidget(QWidget):
         if refresh:
             self._rebuild_list()
 
-    def _set_view_mode(self, time_mode: bool) -> None:
-        self._sort_time = time_mode
-        self._btn_list_mode.setChecked(not time_mode)
-        self._btn_time_mode.setChecked(time_mode)
+    def _set_view_mode(self, *, timeline: bool) -> None:
+        self._view_timeline = timeline
+        self._btn_list_mode.setChecked(not timeline)
+        self._btn_time_mode.setChecked(timeline)
+        # Column header only applies to list grid
+        if hasattr(self, "_list_header") and self._list_header is not None:
+            self._list_header.setVisible(not timeline)
         self._rebuild_list()
 
-    def _toggle_sort_time(self) -> None:
-        self._set_view_mode(True)
+    def _set_list_sort(self, *, time_sort: bool) -> None:
+        """Clicking column headers sorts the list view (does not switch to timeline)."""
+        self._view_timeline = False
+        self._sort_time = time_sort
+        self._btn_list_mode.setChecked(True)
+        self._btn_time_mode.setChecked(False)
+        if hasattr(self, "_list_header") and self._list_header is not None:
+            self._list_header.setVisible(True)
+        self._update_header_emphasis()
+        self._rebuild_list()
+
+    def _update_header_emphasis(self) -> None:
+        p = active_palette()
+        active = f"font-size: 11.5px; font-weight: 600; color: {p.text};"
+        idle = f"font-size: 11.5px; font-weight: 600; color: {p.text_muted};"
+        self._h_name.setStyleSheet(active if not self._sort_time else idle)
+        self._h_time.setStyleSheet(active if self._sort_time else idle)
 
     def _on_query(self, text: str) -> None:
         self._query = (text or "").strip().lower()
@@ -421,6 +452,7 @@ class HomeShellWidget(QWidget):
     def refresh_projects(self) -> None:
         if self._worker is not None and self._worker.isRunning():
             return
+        self._subs_cache.clear()
         self._status.setText("폴더를 찾는 중…")
         w = _ScanWorker(probe_dirty=True, parent=self)
         w.finished_ok.connect(self._on_scan_done)
@@ -461,7 +493,7 @@ class HomeShellWidget(QWidget):
                 for e in items
                 if str(Path(e.path).resolve()).lower() in recent
             ]
-        if self._sort_time:
+        if self._view_timeline or self._sort_time:
             items.sort(key=lambda e: e.last_mtime, reverse=True)
         else:
             items.sort(key=lambda e: e.name.lower())
@@ -478,6 +510,7 @@ class HomeShellWidget(QWidget):
         p = active_palette()
         if not rows:
             empty = QLabel(
+                "찾는 폴더가 없어요\n\n"
                 "이름을 다르게 적어 보시거나,\n왼쪽 아래 찾을 위치로 폴더를 알려 주세요."
             )
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -486,12 +519,104 @@ class HomeShellWidget(QWidget):
             )
             self._list_layout.insertWidget(0, empty)
             return
-        for entry in rows:
-            self._list_layout.insertWidget(
-                self._list_layout.count() - 1, self._make_row(entry)
-            )
+        if self._view_timeline:
+            self._rebuild_timeline(rows)
+        else:
+            for entry in rows:
+                self._list_layout.insertWidget(
+                    self._list_layout.count() - 1, self._make_project_block(entry)
+                )
 
-    def _make_row(self, entry: ProjectEntry) -> QWidget:
+    def _rebuild_timeline(self, rows: list[ProjectEntry]) -> None:
+        p = active_palette()
+        for label, items in group_by_time_bucket(rows):
+            title = QLabel(label)
+            title.setStyleSheet(
+                f"padding: 13px 16px 7px; font-size: 11.5px; font-weight: 600; "
+                f"color: {p.text_muted};"
+            )
+            self._list_layout.insertWidget(self._list_layout.count() - 1, title)
+            for entry in items:
+                self._list_layout.insertWidget(
+                    self._list_layout.count() - 1, self._make_timeline_row(entry)
+                )
+
+    def _make_timeline_row(self, entry: ProjectEntry) -> QWidget:
+        p = active_palette()
+        row = QFrame()
+        row.setObjectName("homeTimelineRow")
+        row.setCursor(Qt.CursorShape.PointingHandCursor)
+        selected = (
+            self._selected is not None and self._selected.path == entry.path
+        )
+        bg = p.hover_muted if selected else "transparent"
+        row.setStyleSheet(
+            f"QFrame#homeTimelineRow {{ background: {bg}; "
+            f"border-bottom: 1px solid {p.border_soft}; }}"
+            f"QFrame#homeTimelineRow:hover {{ background: {p.bg_hint}; }}"
+        )
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(16, 10, 16, 10)
+        lay.setSpacing(12)
+        clock = QLabel(format_clock(entry.last_mtime))
+        clock.setFixedWidth(52)
+        clock.setStyleSheet(
+            f"font-size: 11.5px; color: {p.text_muted}; font-family: Consolas, monospace;"
+        )
+        lay.addWidget(clock, 0)
+        name = QLabel(entry.name)
+        name.setStyleSheet(
+            f"font-size: 13px; font-weight: 500; color: {p.text};"
+        )
+        lay.addWidget(name, 0)
+        what = QLabel(
+            "변경 있음"
+            if entry.dirty
+            else ("Git 없음" if not entry.has_git else format_relative_mtime(entry.last_mtime))
+        )
+        what.setStyleSheet(f"font-size: 12px; color: {p.text_muted};")
+        lay.addWidget(what, 1)
+        if entry.dirty:
+            flag = QLabel("안 올림")
+            flag.setStyleSheet(
+                f"padding: 2px 8px; border-radius: 999px; font-size: 10.5px; "
+                f"font-weight: 600; background: #f6efdd; color: #8a6d12;"
+            )
+            lay.addWidget(flag, 0)
+        row.mousePressEvent = (  # type: ignore[method-assign]
+            lambda _ev, e=entry: self._select_entry(e)
+        )
+        return row
+
+    def _dirty_label(self, entry: ProjectEntry) -> tuple[str, str]:
+        p = active_palette()
+        if not entry.has_git:
+            return "Git 없음", p.text_muted
+        if entry.dirty and entry.dirty_count > 0:
+            return f"파일 {entry.dirty_count}개", p.warn_text
+        if entry.dirty:
+            return "변경 있음", p.warn_text
+        if entry.dirty is False:
+            return "없음", p.text_muted
+        return "—", p.text_muted
+
+    def _make_project_block(self, entry: ProjectEntry) -> QWidget:
+        """Parent row + optional expanded sub-rows (same 4-col widths)."""
+        p = active_palette()
+        block = QFrame()
+        block.setObjectName("homeProjectBlock")
+        block.setStyleSheet(
+            f"QFrame#homeProjectBlock {{ border-bottom: 1px solid {p.border_soft}; }}"
+        )
+        v = QVBoxLayout(block)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(0)
+        v.addWidget(self._make_parent_row(entry))
+        if entry.path in self._expanded:
+            v.addWidget(self._make_expand_panel(entry))
+        return block
+
+    def _make_parent_row(self, entry: ProjectEntry) -> QWidget:
         p = active_palette()
         row = QFrame()
         row.setObjectName("homeProjectRow")
@@ -508,11 +633,27 @@ class HomeShellWidget(QWidget):
         lay.setContentsMargins(16, 10, 16, 10)
         lay.setSpacing(12)
 
+        name_wrap = QHBoxLayout()
+        name_wrap.setContentsMargins(0, 0, 0, 0)
+        name_wrap.setSpacing(8)
+        twist = QPushButton("▼" if entry.path in self._expanded else "▶")
+        twist.setObjectName("homeTwist")
+        twist.setFixedSize(16, 20)
+        twist.setCursor(Qt.CursorShape.PointingHandCursor)
+        twist.setFlat(True)
+        twist.setStyleSheet(
+            f"QPushButton {{ border: none; color: {p.text_muted}; font-size: 10px; }}"
+        )
+        twist.clicked.connect(lambda _=False, e=entry: self._toggle_expand(e))
+        name_wrap.addWidget(twist, 0)
         name = QLabel(entry.name)
         name.setStyleSheet(
             f"font-size: 13px; font-weight: 500; color: {p.text};"
         )
-        lay.addWidget(name, 1)
+        name_wrap.addWidget(name, 1)
+        name_host = QWidget()
+        name_host.setLayout(name_wrap)
+        lay.addWidget(name_host, 1)
 
         when = QLabel(format_relative_mtime(entry.last_mtime))
         when.setFixedWidth(118)
@@ -521,21 +662,16 @@ class HomeShellWidget(QWidget):
         )
         lay.addWidget(when, 0)
 
-        if not entry.has_git:
-            dirty_t = "Git 없음"
-            dirty_c = p.text_muted
-        elif entry.dirty:
-            dirty_t = "변경 있음"
-            dirty_c = p.warn_text
-        else:
-            dirty_t = "없음"
-            dirty_c = p.text_muted
+        dirty_t, dirty_c = self._dirty_label(entry)
         dirty = QLabel(dirty_t)
         dirty.setFixedWidth(108)
-        dirty.setStyleSheet(f"font-size: 12px; color: {dirty_c};")
+        dirty.setStyleSheet(
+            f"font-size: 12px; color: {dirty_c}; "
+            f"font-weight: {'600' if entry.dirty else '400'};"
+        )
         lay.addWidget(dirty, 0)
 
-        branch = QLabel(entry.branch or ("—" if entry.has_git else "—"))
+        branch = QLabel(entry.branch or "—")
         branch.setFixedWidth(92)
         branch.setStyleSheet(
             f"font-size: 12px; color: {p.text_muted}; font-family: Consolas, monospace;"
@@ -543,14 +679,92 @@ class HomeShellWidget(QWidget):
         lay.addWidget(branch, 0)
 
         row.mousePressEvent = (  # type: ignore[method-assign]
-            lambda ev, e=entry: self._select_entry(e)
+            lambda _ev, e=entry: self._select_entry(e)
         )
         return row
+
+    def _make_expand_panel(self, entry: ProjectEntry) -> QWidget:
+        """Sub-rows share parent column widths; indent only in column 1."""
+        p = active_palette()
+        panel = QFrame()
+        panel.setStyleSheet(f"background: {p.bg_hint};")
+        pv = QVBoxLayout(panel)
+        pv.setContentsMargins(0, 4, 0, 12)
+        pv.setSpacing(2)
+        cap = QLabel("이 안에서 최근에 손댄 곳")
+        cap.setStyleSheet(
+            f"padding: 4px 16px 6px 54px; font-size: 11px; color: {p.text_muted};"
+        )
+        pv.addWidget(cap)
+        subs = self._subs_for(entry)
+        if not subs:
+            empty = QLabel("최근에 손댄 하위 경로가 없습니다.")
+            empty.setStyleSheet(
+                f"padding: 4px 16px 4px 54px; font-size: 11.5px; color: {p.text_faint};"
+            )
+            pv.addWidget(empty)
+            return panel
+        for hit in subs:
+            pv.addWidget(self._make_sub_row(hit))
+        return panel
+
+    def _make_sub_row(self, hit: SubPathHit) -> QWidget:
+        p = active_palette()
+        row = QFrame()
+        lay = QHBoxLayout(row)
+        # Same padding/gap as parent so 118/108/92 columns line up
+        lay.setContentsMargins(16, 6, 16, 6)
+        lay.setSpacing(12)
+        name_host = QWidget()
+        nh = QHBoxLayout(name_host)
+        nh.setContentsMargins(38, 0, 0, 0)  # indent inside col 1 only
+        nh.setSpacing(8)
+        path_l = QLabel(hit.rel_path)
+        path_l.setStyleSheet(
+            f"font-size: 12px; color: {p.text_secondary}; "
+            f"font-family: Consolas, monospace;"
+        )
+        nh.addWidget(path_l, 1)
+        lay.addWidget(name_host, 1)
+        when = QLabel(format_relative_mtime(hit.mtime))
+        when.setFixedWidth(118)
+        when.setStyleSheet(
+            f"font-size: 11.5px; color: {p.text_muted};"
+        )
+        lay.addWidget(when, 0)
+        # Empty placeholders keep the 4-column alignment
+        spacer_a = QWidget()
+        spacer_a.setFixedWidth(108)
+        spacer_b = QWidget()
+        spacer_b.setFixedWidth(92)
+        lay.addWidget(spacer_a, 0)
+        lay.addWidget(spacer_b, 0)
+        return row
+
+    def _subs_for(self, entry: ProjectEntry) -> list[SubPathHit]:
+        cached = self._subs_cache.get(entry.path)
+        if cached is not None:
+            return cached
+        hits = list_recent_child_paths(entry.path, limit=8, max_depth=2)
+        self._subs_cache[entry.path] = hits
+        return hits
+
+    def _toggle_expand(self, entry: ProjectEntry) -> None:
+        if entry.path in self._expanded:
+            self._expanded.discard(entry.path)
+        else:
+            self._expanded.add(entry.path)
+            self._subs_for(entry)  # warm cache
+        self._selected = entry
+        self._rebuild_list()
+        self._apply_detail(entry)
 
     def _select_entry(self, entry: ProjectEntry) -> None:
         self._selected = entry
         self._rebuild_list()
-        p = active_palette()
+        self._apply_detail(entry)
+
+    def _apply_detail(self, entry: ProjectEntry) -> None:
         self._detail_title.setText(entry.name)
         self._detail_path.setText(entry.path)
         bits = [
@@ -558,10 +772,12 @@ class HomeShellWidget(QWidget):
             "Git: " + ("있음" if entry.has_git else "없음"),
         ]
         if entry.has_git:
-            bits.append(
-                "안 올린 변경: "
-                + ("있음" if entry.dirty else "없음" if entry.dirty is False else "확인 중")
-            )
+            if entry.dirty and entry.dirty_count > 0:
+                bits.append(f"안 올린 변경: 파일 {entry.dirty_count}개")
+            elif entry.dirty:
+                bits.append("안 올린 변경: 있음")
+            elif entry.dirty is False:
+                bits.append("안 올린 변경: 없음")
             if entry.branch:
                 bits.append(f"브랜치: {entry.branch}")
         self._detail_meta.setText("\n".join(bits))

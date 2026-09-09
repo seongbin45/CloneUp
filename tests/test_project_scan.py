@@ -45,3 +45,41 @@ def test_use_legacy_tabs_env(monkeypatch) -> None:
     assert use_legacy_tabs() is False
     monkeypatch.setenv("CLONEUP_LEGACY_TABS", "1")
     assert use_legacy_tabs() is True
+
+
+def test_list_recent_child_paths(tmp_path: Path) -> None:
+    from app.git.project_scan import list_recent_child_paths
+
+    root = tmp_path / "proj"
+    (root / "app" / "ui").mkdir(parents=True)
+    (root / "app" / "ui" / "main.py").write_text("x", encoding="utf-8")
+    (root / "README.md").write_text("r", encoding="utf-8")
+    (root / ".git").mkdir()
+    hits = list_recent_child_paths(root, limit=5, max_depth=2)
+    rels = {h.rel_path for h in hits}
+    assert "app" in rels or "app/ui" in rels or "README.md" in rels
+    # .git itself must not appear
+    assert not any(r == ".git" or r.startswith(".git/") for r in rels)
+
+
+def test_time_bucket_and_group() -> None:
+    import time
+
+    from app.git.project_scan import (
+        ProjectEntry,
+        group_by_time_bucket,
+        time_bucket_label,
+    )
+
+    now = time.time()
+    assert time_bucket_label(now - 60, now=now) == "오늘"
+    assert time_bucket_label(now - 90000, now=now) in {"어제", "이번 주", "지난주"}
+    entries = [
+        ProjectEntry("a", "A", True, now - 100),
+        ProjectEntry("b", "B", True, now - 90000),
+        ProjectEntry("c", "C", False, now - 40 * 86400),
+    ]
+    buckets = group_by_time_bucket(entries, now=now)
+    labels = [b[0] for b in buckets]
+    assert "오늘" in labels
+    assert "더 오래 전" in labels
