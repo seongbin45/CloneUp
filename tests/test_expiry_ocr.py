@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-from app.util.expiry_ocr import parse_expiration_from_ocr_text
+import subprocess
+import sys
 
+import pytest
+
+from app.util.expiry_ocr import (
+    _patch_pytesseract_hide_console,
+    parse_expiration_from_ocr_text,
+)
 
 def test_parse_near_expiration_label() -> None:
     text = """
@@ -120,3 +127,19 @@ No expiration
 """
     got, detail = parse_expiration_from_ocr_text(text)
     assert got == "30"
+
+
+def test_pytesseract_subprocess_args_get_create_no_window() -> None:
+    """GUI CloneUp must not flash a Terminal for tesseract.exe children."""
+    if sys.platform != "win32":
+        pytest.skip("Windows only")
+    if not hasattr(subprocess, "CREATE_NO_WINDOW"):
+        pytest.skip("CREATE_NO_WINDOW missing")
+    pytest.importorskip("pytesseract")
+    from pytesseract import pytesseract as pt
+
+    _patch_pytesseract_hide_console()
+    kw = pt.subprocess_args(include_stdout=True)
+    flags = int(kw.get("creationflags") or 0)
+    assert flags & subprocess.CREATE_NO_WINDOW
+    assert kw.get("startupinfo") is not None

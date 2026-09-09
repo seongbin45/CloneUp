@@ -60,18 +60,80 @@ _EXPIRATION_LABEL_RE = re.compile(r"\bexpiration\b|만료", re.IGNORECASE)
 _SELECT_DATE_RE = re.compile(r"select\s*date", re.IGNORECASE)
 _CUSTOM_OPT_RE = re.compile(r"^custom\b", re.IGNORECASE)
 
+_TESS_NO_CONSOLE_PATCHED = False
+_TESS_AVAIL_CACHE: bool | None = None
+
+
+def _patch_pytesseract_hide_console() -> None:
+    """
+    GUI CloneUp (console=False / pythonw) must not flash a black Terminal when
+    spawning ``tesseract.exe``.
+
+    Cross-verify 2026-09-09: under pythonw, pytesseract's SW_HIDE-only
+    ``subprocess_args`` still opens ``CASCADIA_HOSTING_WINDOW_CLASS`` titled
+    ``tesseract.exe``. ``CREATE_NO_WINDOW`` suppresses it. Also avoid
+    ``get_tesseract_version()`` which uses naked ``check_output``.
+    """
+    global _TESS_NO_CONSOLE_PATCHED
+    if _TESS_NO_CONSOLE_PATCHED or sys.platform != "win32":
+        return
+    try:
+        import subprocess
+
+        from pytesseract import pytesseract as pt
+    except Exception:
+        return
+    if getattr(pt, "_cloneup_no_console", False):
+        _TESS_NO_CONSOLE_PATCHED = True
+        return
+    orig = pt.subprocess_args
+
+    def _subprocess_args(include_stdout: bool = True):  # noqa: ANN202
+        kw = orig(include_stdout=include_stdout)
+        flags = int(kw.get("creationflags") or 0) | getattr(
+            subprocess, "CREATE_NO_WINDOW", 0x08000000
+        )
+        kw["creationflags"] = flags
+        # Keep SW_HIDE startupinfo from upstream when present.
+        return kw
+
+    pt.subprocess_args = _subprocess_args  # type: ignore[method-assign]
+    pt._cloneup_no_console = True  # type: ignore[attr-defined]
+    _TESS_NO_CONSOLE_PATCHED = True
+
+
 def tesseract_available() -> bool:
+    global _TESS_AVAIL_CACHE
+    if _TESS_AVAIL_CACHE is not None:
+        return _TESS_AVAIL_CACHE
     try:
         import pytesseract  # noqa: F401
     except Exception:
+        _TESS_AVAIL_CACHE = False
         return False
     try:
-        _configure_tesseract()
-        import pytesseract
+        cmd = _configure_tesseract()
+        if not cmd:
+            _TESS_AVAIL_CACHE = False
+            return False
+        # Hidden probe — do NOT call pytesseract.get_tesseract_version()
+        # (uses subprocess.check_output without CREATE_NO_WINDOW → black flash).
+        from app.util.winproc import run_hidden
 
-        pytesseract.get_tesseract_version()
-        return True
+        r = run_hidden(
+            [cmd, "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=20,
+        )
+        ok = r.returncode == 0
+        _TESS_AVAIL_CACHE = ok
+        return ok
     except Exception:
+        _TESS_AVAIL_CACHE = False
         return False
 
 
@@ -89,6 +151,7 @@ def windows_ocr_available() -> bool:
 def _configure_tesseract() -> str | None:
     import pytesseract
 
+    _patch_pytesseract_hide_console()
     env = (os.environ.get("TESSERACT_CMD") or "").strip()
     # Prefer CloneUp-bundled / post-install path, then system.
     local = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe")
@@ -113,7 +176,6 @@ def _configure_tesseract() -> str | None:
             pytesseract.pytesseract.tesseract_cmd = path
         return path
     return None
-
 
 def _ymd(y: int, m: int, d: int) -> str | None:
     try:
@@ -456,6 +518,7 @@ def ocr_image_tesseract(img: Any) -> tuple[str, str]:
     cmd = _configure_tesseract()
     if cmd is None:
         return "", "tesseract-binary-missing"
+    _patch_pytesseract_hide_console()
     try:
         text = pytesseract.image_to_string(img, lang="eng", config="--psm 6")
         return text or "", f"tesseract:{cmd}"
