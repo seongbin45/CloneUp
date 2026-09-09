@@ -71,10 +71,8 @@ def main() -> int:
     # ----- UI presence -----
     RESULTS.append("\n## UI 위젯 (설정·탭 안전)")
     window = load_main_window()
+    # Phase A home IA: settings/help may be ⋯ only (btnSettings hidden/removed later).
     need = [
-        ("btnSettings", QPushButton),
-        ("btnHelpOnboarding", QPushButton),
-        ("btnLogout", QPushButton),
         ("checkAllowSecrets", QCheckBox),
         ("checkHideEmail", QCheckBox),
         ("checkSyncAllowSecrets", QCheckBox),
@@ -91,6 +89,7 @@ def main() -> int:
         ok("필수 위젯", f"{len(need)}개")
 
     from app.ui import main_window as mw_mod
+    from app.ui.home_chrome import help_reachable, settings_reachable
 
     src = Path(mw_mod.__file__).read_text(encoding="utf-8")
     ctrl = getattr(window, "_cloneup_controller", None)
@@ -99,10 +98,14 @@ def main() -> int:
     else:
         fail("window._cloneup_controller", f"got {type(ctrl)!r}")
 
-    if "btnSettings" in src and "on_settings_menu" in src and "show_settings" in src:
-        ok("main_window 설정 연결 코드 존재")
+    if settings_reachable(window, src):
+        ok("설정 도달 가능 (버튼 또는 ⋯ / show_settings)")
     else:
-        fail("main_window 설정 연결", "btnSettings / show_settings missing")
+        fail("설정 도달", "btnSettings / btnOverflowMenu / show_settings missing")
+    if help_reachable(window, src):
+        ok("도움말 도달 가능 (버튼 또는 ⋯ / show_onboarding)")
+    else:
+        fail("도움말 도달", "btnHelpOnboarding / btnOverflowMenu / onboarding missing")
     if "_effective_allow_secrets" in src and "load_secret_pii_scan_enabled" in src:
         ok("main_window effective allow + secret scan 연동")
     else:

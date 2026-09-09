@@ -9,7 +9,8 @@
 
 | 경로 | 내용 |
 |------|------|
-| [CloneUp Window.dc.html](./CloneUp%20Window.dc.html) | 라이트 메인 창 시안 |
+| [CloneUp 홈.dc.html](./CloneUp%20홈.dc.html) | **목표 홈 IA** — 폴더 우선 · 사이드바 · ⋯ · Git 조건부 띠 |
+| [CloneUp Window.dc.html](./CloneUp%20Window.dc.html) | 구 탭형 메인 창 시안 (레거시) |
 | [dark/](dark/README.md) | 다크 창 시안 |
 | [icon/](icon/README.md) | 로고·아이콘 시안 |
 | [provision/](provision/README.md) | 이용약관 등 문서 시안 |

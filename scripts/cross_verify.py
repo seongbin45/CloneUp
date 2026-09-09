@@ -403,8 +403,6 @@ def main() -> int:
             ("editSyncFolder", QLineEdit),
             ("btnSyncRefresh", QPushButton),
             ("btnSyncBrowse", QPushButton),
-            ("btnSettings", QPushButton),
-            ("btnHelpOnboarding", QPushButton),
         ]
         missing = []
         for name, cls in need:
@@ -414,6 +412,17 @@ def main() -> int:
             fail("UI 위젯", str(missing))
         else:
             ok("UI 위젯 (Publish/Clone/Sync)")
+        # Home IA Phase A: settings/help via ⋯ or legacy buttons — not required as findChild.
+        from pathlib import Path as _Path
+
+        from app.ui import main_window as _mw_mod
+        from app.ui.home_chrome import help_reachable, settings_reachable
+
+        _src = _Path(_mw_mod.__file__).read_text(encoding="utf-8")
+        if settings_reachable(w, _src) and help_reachable(w, _src):
+            ok("설정·도움말 도달 가능 (홈 크롬)")
+        else:
+            fail("설정·도움말 도달", "overflow/legacy entry missing")
         w.close()
     except Exception as e:
         fail("UI 로드", str(e))

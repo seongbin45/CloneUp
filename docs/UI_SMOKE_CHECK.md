@@ -35,8 +35,9 @@ $env:QT_QPA_PLATFORM = "offscreen"
 |------|------|------|
 | 앱 기동 (`load_main_window`) | 정상 | |
 | 탭 전환 (만들고 올리기 / 받기 / 동기화) | 정상 | 3개 전부 |
-| `btnSettings` | 정상 | `SettingsDialog` 열고 닫힘 |
-| `btnHelpOnboarding` | 정상 | `OnboardingDialog` 열고 닫힘 |
+| 설정 진입 | 정상 | `btnOverflowMenu` ⋯ 또는 `Ctrl+,` → `SettingsDialog` (구 `btnSettings`는 Phase A에서 숨김) |
+| 도움말 진입 | 정상 | ⋯ 또는 `F1` → `OnboardingDialog` (구 `btnHelpOnboarding` 숨김) |
+| Git 없음 띠 | 정상 | `gitMissingBanner` — Git 문제일 때만 표시 |
 | `btnPublish` (빈 입력) | 정상 | "로컬 폴더를 선택하세요" 경고 후 중단 |
 | `btnBrowseFolder` | 정상 | 네이티브 폴더 선택창 뜸 |
 | `btnClone` (빈 입력) | 정상 | 경고 후 중단 |

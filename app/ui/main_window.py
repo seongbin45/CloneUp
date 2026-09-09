@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -76,6 +77,13 @@ from app.ui.success_dialog import show_clone_success, show_publish_success
 from app.ui.tip_card import install_tip_card
 from app.util.error_popup import format_error_popup_body
 from app.util.next_action import format_next_step_line, is_missing_workflow_scope_error
+from app.ui.home_chrome import (
+    GitMissingBanner,
+    install_chrome_shortcuts,
+    make_overflow_button,
+    open_terms_dialog,
+    populate_overflow_menu,
+)
 from app.ui.onboarding_dialog import show_onboarding
 from app.ui.settings_store import (
     load_hide_real_email,
@@ -322,6 +330,13 @@ class MainController(QObject):
         self.btnLogout = window.findChild(QPushButton, "btnLogout")
         self.btnSettings = window.findChild(QPushButton, "btnSettings")
         self.btnHelpOnboarding = window.findChild(QPushButton, "btnHelpOnboarding")
+        self.btnOverflow: QPushButton | None = None
+        self._overflow_menu: QMenu | None = None
+        self.git_banner: GitMissingBanner | None = None
+        self._git_ok = False
+        self._git_version_label = ""
+        self._chrome_shortcuts: list = []
+        self._install_phase_a_chrome()
 
         # D2 — recolor status-row widgets when OS light/dark flips
         # (inline setStyleSheet overrides global QSS and would stay light)
@@ -474,6 +489,87 @@ class MainController(QObject):
         # Git installed → skip, unless CLONEUP_FORCE_NO_GIT=1 (UI test)
         if probe_git().ok and not force_git_setup_ui():
             return
+        ensure_git_or_offer_setup(self.window, log=self._log)
+        self._refresh_status_bar()
+
+    def _install_phase_a_chrome(self) -> None:
+        """
+        Home IA Phase A: hide always-on settings/help/logout/Git label;
+        add ⋯ overflow + Git-missing banner + Ctrl+, / F1.
+        (.ui widgets stay until Phase B removal.)
+        """
+        for w in (
+            self.labelStatusGit,
+            self.btnSettings,
+            self.btnHelpOnboarding,
+            self.btnLogout,
+        ):
+            if w is not None:
+                w.hide()
+
+        status_frame = self.window.findChild(QWidget, "statusBarFrame")
+        status_layout = None
+        if status_frame is not None:
+            status_layout = status_frame.layout()
+        if isinstance(status_layout, QHBoxLayout):
+            self.btnOverflow = make_overflow_button(status_frame)
+            status_layout.addWidget(self.btnOverflow)
+            self.btnOverflow.clicked.connect(self._show_overflow_menu)
+
+        # Banner above tabs (central column)
+        central = self.window.centralWidget()
+        central_lay = central.layout() if central is not None else None
+        self.git_banner = GitMissingBanner(central)
+        self.git_banner.install_clicked.connect(self._on_git_banner_install)
+        if isinstance(central_lay, QVBoxLayout) and self.tabWidget is not None:
+            # statusBarFrame is index 0, tabWidget follows — insert before tabs.
+            idx = central_lay.indexOf(self.tabWidget)
+            if idx < 0:
+                idx = 1
+            central_lay.insertWidget(idx, self.git_banner)
+        elif central is not None:
+            self.git_banner.setParent(central)
+            self.git_banner.hide()
+
+        self._overflow_menu = QMenu(self.window)
+        self._overflow_menu.setObjectName("overflowChromeMenu")
+        self._chrome_shortcuts = install_chrome_shortcuts(
+            self.window,
+            on_settings=self.on_settings_menu,
+            on_help=self.on_help_onboarding,
+        )
+
+    @Slot()
+    def _show_overflow_menu(self) -> None:
+        if self.btnOverflow is None or self._overflow_menu is None:
+            return
+        populate_overflow_menu(
+            self._overflow_menu,
+            git_ok=self._git_ok,
+            git_version=self._git_version_label,
+            logged_in=is_logged_in(),
+            on_settings=self.on_settings_menu,
+            on_help=self.on_help_onboarding,
+            on_terms=self._open_terms_from_chrome,
+            on_login=self.on_login,
+            on_logout=self.on_logout,
+            on_git_setup=self._on_git_banner_install,
+        )
+        # Align menu under the ⋯ button
+        pos = self.btnOverflow.mapToGlobal(self.btnOverflow.rect().bottomLeft())
+        self._overflow_menu.popup(pos)
+
+    @Slot()
+    def _open_terms_from_chrome(self) -> None:
+        self._log("이용약관 열기")
+        open_terms_dialog(self.window)
+
+    @Slot()
+    def _on_git_banner_install(self) -> None:
+        """Banner / ⋯ → same install chooser as bootstrap."""
+        from app.ui.git_setup import ensure_git_or_offer_setup
+
+        self._log("Git 설치 안내 (홈 크롬)")
         ensure_git_or_offer_setup(self.window, log=self._log)
         self._refresh_status_bar()
 
@@ -1024,35 +1120,46 @@ class MainController(QObject):
         self._refresh_status_bar()
 
     def _refresh_status_bar(self) -> None:
-        # Design: green status dot + "Git: x.y.z" (desin status row)
+        # Phase A: Git version lives in ⋯; missing → yellow banner (not always-on label).
         p = active_palette()
+        from app.git.bootstrap import force_git_setup_ui, probe_git
+
+        probe = probe_git()
+        if probe.ok and not force_git_setup_ui():
+            self._git_ok = True
+            ver = probe.version  # type: ignore[attr-defined]
+            if isinstance(ver, tuple) and len(ver) >= 3:
+                self._git_version_label = f"{ver[0]}.{ver[1]}.{ver[2]}"
+            else:
+                self._git_version_label = str(ver or "").strip() or "확인됨"
+        else:
+            self._git_ok = False
+            self._git_version_label = ""
+        # Keep legacy label updated but hidden (removed in Phase B).
         if self.labelStatusGit is not None:
-            try:
-                _e, ver = require_git()
-                self.labelStatusGit.setText(
-                    f"●  Git: {ver[0]}.{ver[1]}.{ver[2]}"
-                )
-                # success_dot for ● (desin green); whole label one color
+            if self._git_ok:
+                self.labelStatusGit.setText(f"●  Git: {self._git_version_label}")
                 self.labelStatusGit.setStyleSheet(
                     f"color: {p.success_dot}; font-size: 12.5px;"
                 )
-            except GitError:
+            else:
                 self.labelStatusGit.setText("●  Git: 없음")
                 self.labelStatusGit.setStyleSheet(
                     f"color: {p.text_faint}; font-size: 12.5px;"
                 )
+            self.labelStatusGit.hide()
+        if self.git_banner is not None:
+            self.git_banner.refresh_theme()
+            self.git_banner.setVisible(not self._git_ok)
         self.auth_status.refresh()
         self._update_logout_button()
         self._sync_clone_url_login_mode()
 
     def _update_logout_button(self) -> None:
-        """Show 로그아웃 only when a GitHub session is stored."""
+        """Logout lives in ⋯ (Phase A); keep legacy button hidden if present."""
         if self.btnLogout is None:
             return
-        logged_in = is_logged_in()
-        self.btnLogout.setVisible(logged_in)
-        if logged_in:
-            self.btnLogout.setEnabled(not self._busy())
+        self.btnLogout.hide()
 
     @Slot()
     def on_logout(self) -> None:

@@ -39,7 +39,8 @@
 
 | objectName | 종류 | 용도 |
 |------------|------|------|
-| `labelStatusGit` | QLabel | Git 설치 여부 |
+| `labelStatusGit` | QLabel | (레거시·숨김) Git 설치 여부 — 홈 IA에서는 `gitMissingBanner` + ⋯ 메뉴 힌트 |
+| `btnOverflowMenu` | QPushButton | 설정·도움말·약관·Git·로그인/아웃 |
 | `btnAuthStatus` | QPushButton | `AuthStatusButton` — 미로그인/로그인됨 표시 + 클릭 로그인 |
 | `tabWidget` | QTabWidget | 탭 컨테이너 |
 | `tabPublish` | QWidget | Publish 탭 |
