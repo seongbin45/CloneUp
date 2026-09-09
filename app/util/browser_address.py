@@ -1727,6 +1727,21 @@ def read_select_date_ymd_uia(window) -> tuple[str | None, str]:
         return None, f"select-date-walk:{e}"
 
     has_select_label = any(uia_name_is_select_date_field(n) for n, _t, _c in fields)
+    # Cross-verify (Chrome classic PAT, 2026-09-09): after Custom + calendar,
+    # 「Select date *」 is often a TextControl with *empty* Value. The chosen
+    # YYYY-MM-DD lives on an EditControl named ``Expiration``. Prefer that
+    # when the Select date label is visible (Custom mode).
+    if has_select_label:
+        for n, ctype, c in fields:
+            if (n or "").strip().lower() != "expiration":
+                continue
+            if "Edit" not in ctype and "ComboBox" not in ctype:
+                continue
+            val = _ctrl_value(c)
+            ymd = _ymd_from_ctrl_text(val, n)
+            if ymd is not None:
+                return ymd, f"select-date:expiration-edit:{ymd}"
+
     # Prefer controls whose Name is Select date; then any ISO-valued edit.
     scored: list[tuple[int, str, str]] = []
     for n, ctype, c in fields:
@@ -1748,6 +1763,8 @@ def read_select_date_ymd_uia(window) -> tuple[str | None, str]:
         score = 0
         if uia_name_is_select_date_field(n):
             score += 5
+        if (n or "").strip().lower() == "expiration" and "Edit" in ctype:
+            score += 4
         if "date" in (n or "").lower():
             score += 2
         if "Edit" in ctype or "ComboBox" in ctype:
@@ -1771,7 +1788,6 @@ def read_select_date_ymd_uia(window) -> tuple[str | None, str]:
     strong.sort(key=lambda t: (-t[0], len(t[2])))
     _sc, ymd, label = strong[0]
     return ymd, f"select-date:{label}"
-
 
 def try_set_token_expiration_uia(
     days_value: str, *, allow_click: bool = True

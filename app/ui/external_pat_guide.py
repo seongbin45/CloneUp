@@ -1267,14 +1267,17 @@ class ExternalBrowserPatGuide(QDialog):
                 val.setText(detected)
             else:
                 val.setObjectName("dlgExpiryReadHint")
-                val.setText("만료일을 읽는 중…")
+                # Not scanning anymore — avoid forever 「읽는 중」 when Custom
+                # date is on screen but not yet parsed.
+                val.setText(
+                    "아직 못 읽었어요 · Custom이면 Select date(YYYY-MM-DD) 확인"
+                )
             # Stop dots if login/auth wait is not also active.
             if self._scene not in (
                 DialogueScene.LOGIN_WAIT,
                 DialogueScene.AUTH_WAIT,
             ):
-                self._dot_timer.stop()
-        # Force style refresh after objectName change
+                self._dot_timer.stop()        # Force style refresh after objectName change
         val.style().unpolish(val)
         val.style().polish(val)
         if btn is not None:

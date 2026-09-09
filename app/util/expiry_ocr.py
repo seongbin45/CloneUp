@@ -139,12 +139,11 @@ def parse_expiration_from_ocr_text(text: str) -> tuple[str | None, str]:
     lines = [ln.strip() for ln in raw.replace("\r", "\n").split("\n") if ln.strip()]
     blob = "\n".join(lines)
 
-    # Custom flow: Expiration shows "Custom…" and the real value is under
-    # 「Select date *」 as YYYY-MM-DD (or locale date). Prefer that over
-    # calendar chrome / open-menu noise.
-    for i, ln in enumerate(lines):
-        if not _SELECT_DATE_RE.search(ln):
-            continue
+    # Custom flow: UI shows 「Select date *」; OCR may put YYYY-MM-DD on the
+    # same line, the next line, or near the Expiration label (UIA often keeps
+    # the ISO on an Edit named Expiration while Select date text is empty).
+    select_idxs = [i for i, ln in enumerate(lines) if _SELECT_DATE_RE.search(ln)]
+    for i in select_idxs:
         window = " ".join(lines[i : i + 3])
         got_sd, how_sd = _parse_custom_date(window)
         if got_sd is not None:
@@ -153,12 +152,20 @@ def parse_expiration_from_ocr_text(text: str) -> tuple[str | None, str]:
             got_nx, how_nx = _parse_custom_date(lines[i + 1])
             if got_nx is not None and len(lines[i + 1]) < 48:
                 return got_nx, f"select-date-next:{how_nx}:{lines[i + 1][:32]}"
-        # Field visible but still placeholder — tell caller Custom needs a day.
-        if _CUSTOM_OPT_RE.search(
-            " ".join(lines[max(0, i - 3) : i + 1])
-        ) or any(_CUSTOM_OPT_RE.search(x) for x in lines):
-            return None, f"custom-pending-select-date|{ln[:40]}"
-
+    if select_idxs:
+        # Scan a wider band around Expiration / Select date for an ISO date.
+        for i, ln in enumerate(lines):
+            if not (
+                _EXPIRATION_LABEL_RE.search(ln)
+                or _SELECT_DATE_RE.search(ln)
+                or _CUSTOM_OPT_RE.search(ln)
+            ):
+                continue
+            band = " ".join(lines[max(0, i - 1) : i + 4])
+            got_b, how_b = _parse_custom_date(band)
+            if got_b is not None:
+                return got_b, f"select-date-band:{how_b}:{band[:56]}"
+        return None, "custom-pending-select-date|ocr-no-ymd"
     for i, ln in enumerate(lines):
         if not _EXPIRATION_LABEL_RE.search(ln):
             continue
