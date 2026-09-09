@@ -57,7 +57,7 @@ class _ScanWorker(QThread):
     finished_ok = Signal(object)  # list[ProjectEntry]
     failed = Signal(str)
 
-    def __init__(self, *, probe_dirty: bool = True, parent=None) -> None:
+    def __init__(self, *, probe_dirty: bool = False, parent=None) -> None:
         super().__init__(parent)
         self._probe_dirty = probe_dirty
 
@@ -67,6 +67,32 @@ class _ScanWorker(QThread):
             self.finished_ok.emit(entries)
         except Exception as e:  # noqa: BLE001
             self.failed.emit(str(e))
+
+
+class _DirtyEnrichWorker(QThread):
+    """Fill dirty/branch after the fast path list is on screen."""
+
+    one_done = Signal(str, object, int, str)  # path, dirty(bool), count, branch
+    finished_all = Signal()
+
+    def __init__(self, paths: list[str], parent=None) -> None:
+        super().__init__(parent)
+        self._paths = list(paths)
+
+    def run(self) -> None:  # noqa: N802
+        from pathlib import Path as _P
+
+        from app.git.project_scan import _probe_git_presence
+
+        for raw in self._paths:
+            if self.isInterruptionRequested():
+                break
+            try:
+                dirty, branch, count = _probe_git_presence(_P(raw))
+            except Exception:
+                dirty, branch, count = False, "", 0
+            self.one_done.emit(raw, dirty, int(count), branch or "")
+        self.finished_all.emit()
 
 
 class HomeShellWidget(QWidget):
@@ -87,6 +113,7 @@ class HomeShellWidget(QWidget):
         self._expanded: set[str] = set()
         self._subs_cache: dict[str, list[SubPathHit]] = {}
         self._worker: _ScanWorker | None = None
+        self._dirty_worker: _DirtyEnrichWorker | None = None
         self.setObjectName("homeShell")
 
         p = active_palette()
@@ -452,9 +479,12 @@ class HomeShellWidget(QWidget):
     def refresh_projects(self) -> None:
         if self._worker is not None and self._worker.isRunning():
             return
+        if self._dirty_worker is not None and self._dirty_worker.isRunning():
+            self._dirty_worker.requestInterruption()
         self._subs_cache.clear()
         self._status.setText("폴더를 찾는 중…")
-        w = _ScanWorker(probe_dirty=True, parent=self)
+        # Fast path first (no per-repo git status) so the list appears in ~1–2s.
+        w = _ScanWorker(probe_dirty=False, parent=self)
         w.finished_ok.connect(self._on_scan_done)
         w.failed.connect(self._on_scan_fail)
         self._worker = w
@@ -466,8 +496,60 @@ class HomeShellWidget(QWidget):
             self._entries = [e for e in entries if isinstance(e, ProjectEntry)]
         else:
             self._entries = []
-        self._status.setText(f"{len(self._entries)}개 폴더")
+        n = len(self._entries)
+        git_n = sum(1 for e in self._entries if e.has_git)
+        self._status.setText(f"{n}개 폴더 · 변경 정보 확인 중…" if git_n else f"{n}개 폴더")
         self._rebuild_list()
+        self._start_dirty_enrich()
+
+    def _start_dirty_enrich(self) -> None:
+        paths = [e.path for e in self._entries if e.has_git]
+        if not paths:
+            self._status.setText(f"{len(self._entries)}개 폴더")
+            return
+        w = _DirtyEnrichWorker(paths, parent=self)
+        w.one_done.connect(self._on_dirty_one)
+        w.finished_all.connect(self._on_dirty_all)
+        self._dirty_worker = w
+        w.start()
+
+    def _on_dirty_one(self, path: str, dirty: object, count: int, branch: str) -> None:
+        updated: list[ProjectEntry] = []
+        changed = False
+        for e in self._entries:
+            if e.path != path:
+                updated.append(e)
+                continue
+            dirty_b = bool(dirty) if isinstance(dirty, bool) else None
+            updated.append(
+                ProjectEntry(
+                    path=e.path,
+                    name=e.name,
+                    has_git=e.has_git,
+                    last_mtime=e.last_mtime,
+                    dirty=dirty_b,
+                    dirty_count=int(count or 0),
+                    branch=branch or e.branch,
+                )
+            )
+            changed = True
+        if changed:
+            self._entries = updated
+            # Keep selection object in sync
+            if self._selected is not None and self._selected.path == path:
+                self._selected = next(
+                    (x for x in self._entries if x.path == path), self._selected
+                )
+                self._apply_detail(self._selected)
+            self._rebuild_list()
+
+    def _on_dirty_all(self) -> None:
+        self._dirty_worker = None
+        dirty_n = sum(1 for e in self._entries if e.dirty)
+        self._status.setText(
+            f"{len(self._entries)}개 폴더"
+            + (f" · 변경 {dirty_n}곳" if dirty_n else "")
+        )
 
     def _on_scan_fail(self, msg: str) -> None:
         self._worker = None
