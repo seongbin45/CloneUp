@@ -297,6 +297,13 @@ def load_main_window() -> QMainWindow:
 
     ctrl = MainController(window)
     window._cloneup_controller = ctrl  # keep strong ref
+    # Phase B: Finder-style home is default; CLONEUP_LEGACY_TABS=1 keeps tabs-only.
+    from app.git.project_scan import use_legacy_tabs
+
+    if not use_legacy_tabs():
+        from app.ui.home_shell import install_home_shell
+
+        install_home_shell(window, ctrl)
     return window
 
 
@@ -1151,6 +1158,12 @@ class MainController(QObject):
         if self.git_banner is not None:
             self.git_banner.refresh_theme()
             self.git_banner.setVisible(not self._git_ok)
+        home = getattr(self, "_home_shell", None)
+        if home is not None:
+            try:
+                home.sync_from_controller()
+            except Exception:
+                pass
         self.auth_status.refresh()
         self._update_logout_button()
         self._sync_clone_url_login_mode()

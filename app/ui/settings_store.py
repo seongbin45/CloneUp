@@ -45,6 +45,58 @@ def clear_recent_folders() -> None:
     _settings().setValue("recent_folders", [])
 
 
+MAX_SCAN_ROOTS = 24
+
+
+def load_scan_roots() -> list[str]:
+    """
+    User-registered folders to search for projects (홈 「찾을 위치」).
+
+    Empty means “use defaults” (Desktop/Documents + recent parents) at scan time.
+    """
+    raw = _settings().value("scan_roots", [])
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        items = [raw] if raw else []
+    else:
+        items = [str(x) for x in raw]
+    out: list[str] = []
+    for p in items:
+        if p and p not in out:
+            out.append(p)
+    return out[:MAX_SCAN_ROOTS]
+
+
+def save_scan_roots(roots: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    for raw in roots:
+        try:
+            path = str(Path(raw).expanduser().resolve())
+        except OSError:
+            continue
+        if path and path not in cleaned:
+            cleaned.append(path)
+    cleaned = cleaned[:MAX_SCAN_ROOTS]
+    _settings().setValue("scan_roots", cleaned)
+    return cleaned
+
+
+def add_scan_root(folder: str) -> list[str]:
+    path = str(Path(folder).expanduser().resolve())
+    items = load_scan_roots()
+    items = [path] + [x for x in items if x != path]
+    return save_scan_roots(items)
+
+
+def remove_scan_root(folder: str) -> list[str]:
+    try:
+        path = str(Path(folder).expanduser().resolve())
+    except OSError:
+        path = str(folder)
+    items = [x for x in load_scan_roots() if x != path]
+    return save_scan_roots(items)
+
 def load_last_private() -> bool:
     """Default True: beginner-safe private repos (M5 / security review)."""
     return bool(_settings().value("last_private", True, type=bool))
