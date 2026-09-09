@@ -33,11 +33,12 @@ from app.util.browser_address import (
     looks_like_token_note_taken,
     parse_tasklist_csv_pids,
     token_create_error_snippets,
+    uia_name_is_custom_expiration,
     uia_name_is_expiration_opener,
+    uia_name_is_select_date_field,
     uia_name_matches_expiration_option,
     window_title_connect_score,
 )
-
 
 def test_normalize_url() -> None:
     assert _normalize_url("github.com/settings/tokens").startswith("https://")
@@ -524,6 +525,15 @@ def test_expiration_uia_name_matchers() -> None:
     assert uia_name_is_expiration_opener("No expiration")
     assert not uia_name_is_expiration_opener("Generate token")
     assert not uia_name_is_expiration_opener("")
+    # After choosing Custom, the closed button Name becomes Custom… (not Expiration).
+    assert uia_name_is_custom_expiration("Custom...")
+    assert uia_name_is_custom_expiration("Custom…")
+    assert uia_name_is_expiration_opener("Custom...")
+    assert uia_name_is_expiration_opener("Custom…")
+    assert uia_name_is_select_date_field("Select date *")
+    assert uia_name_is_select_date_field("Select date")
+    assert not uia_name_is_select_date_field("Expiration")
+    assert not uia_name_is_expiration_opener("Select date *")
 
     assert uia_name_matches_expiration_option("90 days", "90")
     assert uia_name_matches_expiration_option("90 days (recommended)", "90")
@@ -536,9 +546,12 @@ def test_expiration_uia_name_matchers() -> None:
     assert _parse_expiration_opener_days("No expiration") == "none"
     # Closed GitHub action-menu often exposes bare label only — must not invent days.
     assert _parse_expiration_opener_days("Expiration") is None
+    # Bare Custom is not a date — caller must read Select date YYYY-MM-DD.
+    assert _parse_expiration_opener_days("Custom...") is None
+    assert _parse_expiration_opener_days("Custom…") is None
     assert _parse_expiration_opener_days("2026-12-01") == "2026-12-01"
     assert _parse_expiration_opener_days("Expires 2026-10-15") == "2026-10-15"
-
+    assert _parse_expiration_opener_days("Select date * 2026-09-10") == "2026-09-10"
 
 def test_path_b_log_sink_tees_masked_lines() -> None:
     from app.util.browser_address import path_b_log, set_path_b_log_sink

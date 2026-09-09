@@ -57,7 +57,8 @@ _EN_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 _EXPIRATION_LABEL_RE = re.compile(r"\bexpiration\b|만료", re.IGNORECASE)
-
+_SELECT_DATE_RE = re.compile(r"select\s*date", re.IGNORECASE)
+_CUSTOM_OPT_RE = re.compile(r"^custom\b", re.IGNORECASE)
 
 def tesseract_available() -> bool:
     try:
@@ -138,12 +139,37 @@ def parse_expiration_from_ocr_text(text: str) -> tuple[str | None, str]:
     lines = [ln.strip() for ln in raw.replace("\r", "\n").split("\n") if ln.strip()]
     blob = "\n".join(lines)
 
+    # Custom flow: Expiration shows "Custom…" and the real value is under
+    # 「Select date *」 as YYYY-MM-DD (or locale date). Prefer that over
+    # calendar chrome / open-menu noise.
+    for i, ln in enumerate(lines):
+        if not _SELECT_DATE_RE.search(ln):
+            continue
+        window = " ".join(lines[i : i + 3])
+        got_sd, how_sd = _parse_custom_date(window)
+        if got_sd is not None:
+            return got_sd, f"select-date:{how_sd}:{window[:56]}"
+        if i + 1 < len(lines):
+            got_nx, how_nx = _parse_custom_date(lines[i + 1])
+            if got_nx is not None and len(lines[i + 1]) < 48:
+                return got_nx, f"select-date-next:{how_nx}:{lines[i + 1][:32]}"
+        # Field visible but still placeholder — tell caller Custom needs a day.
+        if _CUSTOM_OPT_RE.search(
+            " ".join(lines[max(0, i - 3) : i + 1])
+        ) or any(_CUSTOM_OPT_RE.search(x) for x in lines):
+            return None, f"custom-pending-select-date|{ln[:40]}"
+
     for i, ln in enumerate(lines):
         if not _EXPIRATION_LABEL_RE.search(ln):
             continue
         # Closed button: selection is usually on the same or next line only.
         # Do not pull in open-menu siblings ("Custom…", "No expiration").
         window = " ".join(lines[i : i + 2])
+        # Bare Custom on the opener is not a date — keep looking for Select date
+        # / ISO elsewhere rather than treating the near-label window as final.
+        if _CUSTOM_OPT_RE.search(window) and _parse_custom_date(window)[0] is None:
+            if _parse_days_blob(window, near_label=True)[0] is None:
+                continue
         got, how = _parse_days_blob(window, near_label=True)
         if got is not None:
             return got, f"near-label:{how}:{window[:56]}"
@@ -153,6 +179,8 @@ def parse_expiration_from_ocr_text(text: str) -> tuple[str | None, str]:
             return ln.split()[0], f"line-only:{ln[:24]}"
         if _NONE_RE.search(ln) and len(ln) < 48:
             return "none", f"line-only:{ln[:24]}"
+        if _CUSTOM_OPT_RE.search(ln) and _parse_custom_date(ln)[0] is None:
+            continue
         got_ln, how_ln = _parse_custom_date(ln)
         if got_ln is not None and len(ln) < 48:
             return got_ln, f"line-custom:{how_ln}:{ln[:32]}"
@@ -160,8 +188,11 @@ def parse_expiration_from_ocr_text(text: str) -> tuple[str | None, str]:
     got, how = _parse_days_blob(blob, near_label=False)
     if got is not None:
         return got, f"page:{how}"
+    if any(_CUSTOM_OPT_RE.search(ln) for ln in lines) and any(
+        _SELECT_DATE_RE.search(ln) for ln in lines
+    ):
+        return None, "custom-pending-select-date|ocr-no-ymd"
     return None, f"ocr-no-match|chars={len(blob)}"
-
 
 def _parse_custom_date(blob: str) -> tuple[str | None, str]:
     m = _KO_DATE_RE.search(blob)

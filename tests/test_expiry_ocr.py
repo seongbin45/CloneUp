@@ -70,3 +70,53 @@ def test_parse_empty() -> None:
     got, detail = parse_expiration_from_ocr_text("")
     assert got is None
     assert "empty" in detail
+
+
+def test_parse_custom_select_date_iso() -> None:
+    """Custom… + Select date * with YYYY-MM-DD (screenshot Path B flow)."""
+    text = """
+New personal access token (classic)
+Note
+CloneUp-demo
+Expiration
+Custom...
+Select date *
+2026-09-10
+Generate token
+"""
+    got, detail = parse_expiration_from_ocr_text(text)
+    assert got == "2026-09-10"
+    assert "select-date" in detail
+
+
+def test_parse_custom_select_date_same_line() -> None:
+    text = "Expiration\nCustom…\nSelect date * 2026-09-10\nGenerate"
+    got, detail = parse_expiration_from_ocr_text(text)
+    assert got == "2026-09-10"
+    assert "select-date" in detail
+
+
+def test_parse_custom_select_date_pending_placeholder() -> None:
+    """Custom chosen but calendar value still placeholder — do not invent a date."""
+    text = """
+Expiration
+Custom...
+Select date *
+YYYY-MM-DD
+Generate token
+"""
+    got, detail = parse_expiration_from_ocr_text(text)
+    assert got is None
+    assert "custom-pending" in detail
+
+
+def test_parse_preset_still_beats_open_menu_custom() -> None:
+    """Open menu lists Custom… — closed selection is still 30 days."""
+    text = """
+Expiration
+30 days
+Custom...
+No expiration
+"""
+    got, detail = parse_expiration_from_ocr_text(text)
+    assert got == "30"

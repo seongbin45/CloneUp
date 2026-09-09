@@ -1397,6 +1397,23 @@ def try_invoke_generate_token_button(*, allow_click: bool = True) -> tuple[bool,
         return False, f"scan:{e}"
 
 
+def uia_name_is_custom_expiration(name: str) -> bool:
+    """True if Name is the closed Expiration button after choosing Custom."""
+    low = (name or "").strip().lower()
+    if not low or len(low) > 80:
+        return False
+    # GitHub uses "Custom..." or "Custom…" (unicode ellipsis).
+    return bool(re.match(r"^custom(\b|[.…])", low))
+
+
+def uia_name_is_select_date_field(name: str) -> bool:
+    """True if Name is the classic PAT 「Select date *」 date input."""
+    low = (name or "").strip().lower()
+    if not low or len(low) > 80:
+        return False
+    return "select date" in low or "selectdate" in low.replace(" ", "")
+
+
 def uia_name_is_expiration_opener(name: str) -> bool:
     """True if accessible Name looks like the Expiration dropdown button."""
     low = (name or "").strip().lower()
@@ -1404,9 +1421,16 @@ def uia_name_is_expiration_opener(name: str) -> bool:
         return False
     if "generate" in low:
         return False
+    if "select date" in low:
+        return False
     if "no expiration" in low or "만료 없음" in low:
         return True
+    if uia_name_is_custom_expiration(name):
+        return True
     if re.search(r"\b\d{1,3}\s*days?\b", low):
+        return True
+    # After Custom pick, some builds put the ISO date on the menu button.
+    if re.search(r"\b20\d{2}-\d{2}-\d{2}\b", low):
         return True
     if low == "expiration" or low.startswith("expiration"):
         return True
@@ -1497,6 +1521,9 @@ def read_token_expiration_uia() -> tuple[str | None, str]:
             openers = [
                 (n, c) for n, _t, c in all_ctrls if uia_name_is_expiration_opener(n)
             ]
+            custom_openers = [
+                (n, c) for n, c in openers if uia_name_is_custom_expiration(n)
+            ]
             # Day-like option names (open menu: "30 days", "No expiration", …)
             day_opts: list[tuple[str, str, object]] = []
             for n, _t, c in all_ctrls:
@@ -1507,6 +1534,22 @@ def read_token_expiration_uia() -> tuple[str | None, str]:
                 if (n or "").strip().lower() in ("expiration",):
                     continue
                 day_opts.append((parsed_n, n, c))
+
+            # 0) Custom… → read 「Select date *」 YYYY-MM-DD (not opener text).
+            # Also try whenever the date field is present (opener Name missed).
+            ymd, sd_detail = read_select_date_ymd_uia(w)
+            if ymd is not None:
+                return (
+                    ymd,
+                    f"{sd_detail}|win={title}|pids={len(pids)}"
+                    + ("|via-custom" if custom_openers else ""),
+                )
+            if custom_openers and sd_detail.startswith("select-date-empty"):
+                last_detail = (
+                    f"custom-pending-select-date|{sd_detail}"
+                    f"|win={title}|pids={len(pids)}"
+                )
+                continue
 
             # 1) Opener Name already includes the selection ("30 days", …)
             scored: list[tuple[int, str, str]] = []
@@ -1519,6 +1562,8 @@ def read_token_expiration_uia() -> tuple[str | None, str]:
                     score += 2
                 if "no expiration" in n.lower() or "만료" in n:
                     score += 1
+                if re.fullmatch(r"20\d{2}-\d{2}-\d{2}", p):
+                    score += 3
                 scored.append((score, p, n))
             if scored:
                 scored.sort(key=lambda t: (-t[0], len(t[2])))
@@ -1528,10 +1573,8 @@ def read_token_expiration_uia() -> tuple[str | None, str]:
                     f"opener:{name[:64]}|win={title}|pids={len(pids)}",
                 )
 
-            # 2) ValuePattern / Legacy value on bare "Expiration" button
+            # 2) ValuePattern / Legacy value on bare "Expiration" / Custom button
             for n, c in openers:
-                if "expiration" not in (n or "").lower():
-                    continue
                 val = _ctrl_value(c)
                 p = _parse_expiration_opener_days(val) if val else None
                 if p is None and val:
@@ -1607,20 +1650,127 @@ def _parse_expiration_opener_days(name: str) -> str | None:
     Map Expiration opener / option Name → days token or absolute date.
 
     Returns ``\"7\"|\"30\"|\"60\"|\"90\"|\"none\"`` or ``YYYY-MM-DD`` for Custom.
+    Bare ``Custom…`` is not a date — callers must read 「Select date」.
     """
     low = (name or "").strip().lower()
     if not low:
+        return None
+    if uia_name_is_custom_expiration(name) and not re.search(
+        r"\b20\d{2}-\d{2}-\d{2}\b", low
+    ):
         return None
     if "no expiration" in low or "만료 없음" in low:
         return "none"
     m = re.search(r"\b(\d{1,3})\s*days?\b", low)
     if m:
         return m.group(1)
-    # Custom date shown on the opener after picking a calendar day.
-    m_iso = re.search(r"(\d{4})-(\d{2})-(\d{2})", low)
+    # Custom date shown on the opener / Select date after picking a day.
+    m_iso = re.search(r"(20\d{2})-(\d{2})-(\d{2})", low)
     if m_iso:
         return f"{m_iso.group(1)}-{m_iso.group(2)}-{m_iso.group(3)}"
     return None
+
+
+def _ymd_from_ctrl_text(*parts: str) -> str | None:
+    for part in parts:
+        p = _parse_expiration_opener_days(part or "")
+        if p and re.fullmatch(r"20\d{2}-\d{2}-\d{2}", p):
+            return p
+    return None
+
+
+def _collect_date_field_controls(
+    ctrl, out: list, *, depth: int, max_depth: int = 16
+) -> None:
+    """
+    Walk a11y tree for Edit/Text/ComboBox that may hold 「Select date」.
+
+    Broader than ``_collect_named_controls`` (buttons only) — Custom date
+    lives in an input, not the Expiration menu button.
+    """
+    if depth > max_depth or ctrl is None:
+        return
+    try:
+        ctype = (ctrl.ControlTypeName or "") if hasattr(ctrl, "ControlTypeName") else ""
+        name = (ctrl.Name or "").strip()
+        interesting = (
+            "Edit" in ctype
+            or "Text" in ctype
+            or "ComboBox" in ctype
+            or "Document" in ctype
+            or "Spinner" in ctype
+            or "Custom" in ctype
+            or "Button" in ctype
+            or "Hyperlink" in ctype
+        )
+        if interesting and (name or _ctrl_value(ctrl)):
+            out.append((name, ctype, ctrl))
+        for ch in ctrl.GetChildren():
+            _collect_date_field_controls(
+                ch, out, depth=depth + 1, max_depth=max_depth
+            )
+    except Exception:
+        return
+
+
+def read_select_date_ymd_uia(window) -> tuple[str | None, str]:
+    """
+    Read classic PAT 「Select date *」 value as ``YYYY-MM-DD``.
+
+    Returns ``(ymd_or_none, detail)``. Placeholder ``YYYY-MM-DD`` does not match.
+    """
+    fields: list = []
+    try:
+        for ctrl in window.GetChildren():
+            _collect_date_field_controls(ctrl, fields, depth=0)
+    except Exception as e:
+        return None, f"select-date-walk:{e}"
+
+    has_select_label = any(uia_name_is_select_date_field(n) for n, _t, _c in fields)
+    # Prefer controls whose Name is Select date; then any ISO-valued edit.
+    scored: list[tuple[int, str, str]] = []
+    for n, ctype, c in fields:
+        val = _ctrl_value(c)
+        ymd = _ymd_from_ctrl_text(n, val)
+        if ymd is None:
+            # Nested text under the date picker button/input.
+            try:
+                for ch in c.GetChildren():
+                    cn = (getattr(ch, "Name", None) or "").strip()
+                    cv = _ctrl_value(ch)
+                    ymd = _ymd_from_ctrl_text(cn, cv)
+                    if ymd is not None:
+                        break
+            except Exception:
+                pass
+        if ymd is None:
+            continue
+        score = 0
+        if uia_name_is_select_date_field(n):
+            score += 5
+        if "date" in (n or "").lower():
+            score += 2
+        if "Edit" in ctype or "ComboBox" in ctype:
+            score += 1
+        # Label and value are often sibling controls — boost when Select date
+        # is present anywhere on the form.
+        if has_select_label:
+            score += 3
+        scored.append((score, ymd, (n or val or "")[:64]))
+    if not scored:
+        # Signal Custom UI present but date not filled yet.
+        for n, _ctype, _c in fields:
+            if uia_name_is_select_date_field(n):
+                return None, f"select-date-empty:{n[:40]}"
+        return None, "select-date-not-found"
+    # Require Select date context (label on page → score≥3) or date-named (≥2).
+    # Avoid grabbing unrelated Edit fields that happen to hold an ISO string.
+    strong = [t for t in scored if t[0] >= 2]
+    if not strong:
+        return None, "select-date-iso-unlabeled"
+    strong.sort(key=lambda t: (-t[0], len(t[2])))
+    _sc, ymd, label = strong[0]
+    return ymd, f"select-date:{label}"
 
 
 def try_set_token_expiration_uia(

@@ -1375,7 +1375,8 @@ class ExternalBrowserPatGuide(QDialog):
             self._set_scene(DialogueScene.PRESS_GENERATE)
             return
         self._sub.setText(
-            "아직 만료일을 못 읽었어요. 브라우저에서 Expiration을 고른 뒤 "
+            "아직 만료일을 못 읽었어요. Expiration에서 기간을 고르거나, "
+            "Custom이면 Select date에 YYYY-MM-DD가 보이게 한 뒤 "
             "다시 「골랐어요」를 눌러 주세요."
         )
         self._guide_log("[Path B] 만료 확인 실패 — 감지값 없음")
@@ -1890,10 +1891,17 @@ class ExternalBrowserPatGuide(QDialog):
                         self._guide_log(
                             f"[Path B] 만료 미감지(poll): {expiry_detail}"
                         )
-                        self._sub.setText(
-                            "만료일을 아직 못 읽었어요. "
-                            "키 만들기 창이 보이도록 둔 뒤 잠시 기다려 주세요."
-                        )
+                        detail_l = (expiry_detail or "").lower()
+                        if "custom-pending" in detail_l or "select-date-empty" in detail_l:
+                            self._sub.setText(
+                                "만료일을 아직 못 읽었어요. "
+                                "Custom이면 Select date의 YYYY-MM-DD가 보여야 해요."
+                            )
+                        else:
+                            self._sub.setText(
+                                "만료일을 아직 못 읽었어요. "
+                                "키 만들기 창이 보이도록 둔 뒤 잠시 기다려 주세요."
+                            )
             self._poll_address_inner(sample)
         except Exception as e:
             self._guide_log(f"[Path B] 주소 폴링 오류: {e}")
