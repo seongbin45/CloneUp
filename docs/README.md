@@ -15,7 +15,7 @@
 | [ORG_OAUTH_APP.md](ORG_OAUTH_APP.md) | **Org OAuth App 운영** 초보 체크리스트 (client_id 이전) |
 | [BOOT_NOTIFY.md](BOOT_NOTIFY.md) | 부팅/트레이 **안 올린 수정** 알림 (시안: 시작 알림) |
 | [UPDATE_MANAGER.md](UPDATE_MANAGER.md) | 독립 `CloneUp_update_manager` (zip 파일 복사, Setup GUI 없음) |
-| [RELEASE_0.1.14.md](RELEASE_0.1.14.md) | **0.1.14** 사용자·배포 노트 (현재) |
+| [RELEASE_0.1.15.md](RELEASE_0.1.15.md) | **0.1.15** 사용자·배포 노트 (현재) |
 | [RELEASE_0.1.12.md](RELEASE_0.1.12.md) | 0.1.12 노트 |
 | [RELEASE_0.1.11.md](RELEASE_0.1.11.md) | 0.1.11 노트 |
 | [RELEASE_0.1.10.md](RELEASE_0.1.10.md) | 0.1.10 노트 |
