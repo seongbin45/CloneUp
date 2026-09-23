@@ -207,6 +207,12 @@ def refresh_scopes_from_github(
         return load_scope(), None
 
     scope = apply_oauth_scopes_from_user(token, user)
+    try:
+        from app.ui.home_avatar import persist_avatar_from_user
+
+        persist_avatar_from_user(user)
+    except Exception:
+        pass
     return scope, user
 
 
@@ -296,6 +302,16 @@ def login_with_pat(
     user = dict(user)
     user["_expires_at"] = exp
     user["_pat_note"] = note
+    try:
+        from app.ui.home_avatar import persist_avatar_from_user
+        from app.ui.settings_store import save_last_github_login
+
+        login = str(user.get("login") or "").strip()
+        if login:
+            save_last_github_login(login)
+        persist_avatar_from_user(user)
+    except Exception:
+        pass
     return cleaned, user
 
 
@@ -407,6 +423,16 @@ def ensure_valid_token(
     # looked too narrow — so GitHub-side changes never reached Settings.
     stored = apply_oauth_scopes_from_user(token, user)
     print(f"  stored scope (after refresh): {stored!r}")
+    try:
+        from app.ui.home_avatar import persist_avatar_from_user
+        from app.ui.settings_store import save_last_github_login
+
+        login = str(user.get("login") or "").strip()
+        if login:
+            save_last_github_login(login)
+        persist_avatar_from_user(user)
+    except Exception:
+        pass
 
     # Only enforce when classic scopes are known. Fine-grained / unknown →
     # allow through; API/git will fail with a clear error if rights lack.

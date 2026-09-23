@@ -195,10 +195,12 @@ Each class picks different points on the taxonomy (A–E).
 | CloneUp pain | Proven pattern | Suggested direction |
 |--------------|----------------|---------------------|
 | First paint blocked by `git status` × N repos | Two-phase enrich; Git fsmonitor for *inside* a repo | ✅ Done: fast scan + dirty worker |
-| Walking all of Desktop | Root allowlist + depth cap + stop at `.git` | Tighten defaults; prefer recent ∪ user roots over whole Desktop |
+| Walking all of Desktop | Root allowlist + depth cap + stop at `.git` | **rev.7.1:** A=`SHGetKnownFolderPath` (Profile+Desktop/Docs/Downloads, fail-closed) ∪ B child count ≥48; Pass A=`MAX_RECENT` (`BENCH_HOME_SCAN_S0.md`) |
 | Expand “손댄 곳” | Bounded depth + skip sets + mtime top-K | ✅ `list_recent_child_paths` |
-| Stale dirty badges | Event-driven refresh (USN/RDCW) or TTL re-probe selected row | Next: watch selected roots or refresh-on-focus |
+| Stale dirty badges | Event-driven refresh (USN/RDCW) or TTL re-probe selected row | **S2:** K=8 + debounce 300ms + TTL 90s (S0-locked) |
 | Want “Everything speed” globally | MFT+USN index (admin) | Optional advanced backend; not required for project picker |
+
+**Implementation track:** S0 baseline ✅ (`docs/BENCH_HOME_SCAN_S0.md`) → S1 allowlist → S2 selective dirty → S3 verify.
 
 **Do not** chase MFT for the default home list unless product accepts admin elevation and NTFS-only — for a GitHub helper, **budgeted walk + caches + monitors** match the Git/IDE class better than Everything-class.
 

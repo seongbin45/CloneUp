@@ -511,8 +511,11 @@ class MainController(QObject):
             self.btnHelpOnboarding,
             self.btnLogout,
         ):
-            if w is not None:
-                w.hide()
+            if self._qwidget_alive(w):
+                try:
+                    w.hide()
+                except RuntimeError:
+                    pass
 
         status_frame = self.window.findChild(QWidget, "statusBarFrame")
         status_layout = None
@@ -646,6 +649,22 @@ class MainController(QObject):
 
         if w in ("all", "folders", "recent"):
             self._reload_recent_combo()
+
+        if w == "scan":
+            # 「지금 목록 갱신」완료 → 열린 홈에 강제 full 반영
+            shell = getattr(self, "_home_shell", None)
+            if shell is not None and hasattr(shell, "refresh_projects"):
+                try:
+                    shell.refresh_projects(force_full=True)
+                except Exception:
+                    pass
+        elif w in ("all", "folders", "recent"):
+            shell = getattr(self, "_home_shell", None)
+            if shell is not None and hasattr(shell, "refresh_projects"):
+                try:
+                    shell.refresh_projects()
+                except Exception:
+                    pass
 
         # secret_scan: no tab widget; read live via load_secret_pii_scan_enabled()
         # history_revert: no tab widget either — CommitHistoryDialog reads
@@ -784,7 +803,36 @@ class MainController(QObject):
     def _busy(self) -> bool:
         return self._worker is not None and self._worker.isRunning()
 
+    @staticmethod
+    def _qwidget_alive(w: object) -> bool:
+        """True if *w* is a live Qt widget (not a dangling shiboken wrapper)."""
+        if w is None:
+            return False
+        try:
+            from shiboken6 import isValid
+
+            return bool(isValid(w))
+        except Exception:
+            try:
+                # Touch the C++ object; deleted wrappers raise RuntimeError.
+                w.objectName()  # type: ignore[union-attr]
+                return True
+            except RuntimeError:
+                return False
+
+    def _set_enabled_safe(self, w: object, enabled: bool) -> None:
+        if not self._qwidget_alive(w):
+            return
+        try:
+            w.setEnabled(enabled)  # type: ignore[union-attr]
+        except RuntimeError:
+            pass
+
     def _set_global_busy(self, busy: bool) -> None:
+        # Teardown / home↔workspace swap can delete UI children while a
+        # debounced sync refresh still fires — never touch dead wrappers.
+        if getattr(self, "_closing", False):
+            return
         # publish
         for w in (
             self.btnPublish,
@@ -798,22 +846,36 @@ class MainController(QObject):
             self.checkHideEmail,
             self.checkAllowSecrets,
         ):  # path fields stay enabled via same list
-            if w is not None:
-                w.setEnabled(not busy)
-        self.auth_status.set_enabled(not busy)
-        if self.btnLogout is not None and self.btnLogout.isVisible():
-            self.btnLogout.setEnabled(not busy)
-        if self.btnPublish is not None:
-            self.btnPublish.setText(
-                "올리는 중…" if busy else "GitHub에 만들고 올리기"
-            )
-        if self.btnCancel is not None:
-            self.btnCancel.setEnabled(
-                busy
-                and isinstance(
-                    self._worker, (PublishWorker, LoginWorker, PatLoginWorker)
+            self._set_enabled_safe(w, not busy)
+        try:
+            self.auth_status.set_enabled(not busy)
+        except RuntimeError:
+            pass
+        # Legacy btnLogout is always hidden (logout lives in ⋯); it may already
+        # be a deleted C++ object — never call isVisible() without isValid.
+        if self._qwidget_alive(self.btnLogout):
+            try:
+                if self.btnLogout.isVisible():
+                    self.btnLogout.setEnabled(not busy)
+            except RuntimeError:
+                self.btnLogout = None
+        if self._qwidget_alive(self.btnPublish):
+            try:
+                self.btnPublish.setText(
+                    "올리는 중…" if busy else "GitHub에 만들고 올리기"
                 )
-            )
+            except RuntimeError:
+                pass
+        if self._qwidget_alive(self.btnCancel):
+            try:
+                self.btnCancel.setEnabled(
+                    busy
+                    and isinstance(
+                        self._worker, (PublishWorker, LoginWorker, PatLoginWorker)
+                    )
+                )
+            except RuntimeError:
+                pass
 
         # clone
         for w in (
@@ -827,12 +889,23 @@ class MainController(QObject):
             self.editCloneDirName,
             self.checkCloneUseToken,
         ):
-            if w is not None:
-                w.setEnabled(not busy)
-        if self.btnCloneCancel is not None:
-            self.btnCloneCancel.setEnabled(busy and isinstance(self._worker, CloneWorker))
-        if self.btnClone is not None:
-            self.btnClone.setText("받는 중…" if busy and isinstance(self._worker, CloneWorker) else "저장소 받기")
+            self._set_enabled_safe(w, not busy)
+        if self._qwidget_alive(self.btnCloneCancel):
+            try:
+                self.btnCloneCancel.setEnabled(
+                    busy and isinstance(self._worker, CloneWorker)
+                )
+            except RuntimeError:
+                pass
+        if self._qwidget_alive(self.btnClone):
+            try:
+                self.btnClone.setText(
+                    "받는 중…"
+                    if busy and isinstance(self._worker, CloneWorker)
+                    else "저장소 받기"
+                )
+            except RuntimeError:
+                pass
 
         # sync
         for w in (
@@ -847,14 +920,18 @@ class MainController(QObject):
             self.checkSyncHideEmail,
             self.checkSyncAllowSecrets,
         ):
-            if w is not None:
-                w.setEnabled(not busy)
-        if self.btnSyncCancel is not None:
-            self.btnSyncCancel.setEnabled(
-                busy and isinstance(self._worker, SyncActionWorker)
-            )
+            self._set_enabled_safe(w, not busy)
+        if self._qwidget_alive(self.btnSyncCancel):
+            try:
+                self.btnSyncCancel.setEnabled(
+                    busy and isinstance(self._worker, SyncActionWorker)
+                )
+            except RuntimeError:
+                pass
 
     def _start_worker(self, worker) -> None:
+        if getattr(self, "_closing", False):
+            return
         self._worker = worker
         # Non-login workers: mid-flow first auth keeps "로그인 취소"
         if not isinstance(worker, LoginWorker):
@@ -1003,10 +1080,17 @@ class MainController(QObject):
 
     @Slot()
     def _on_worker_finished(self) -> None:
+        if getattr(self, "_closing", False):
+            self._worker = None
+            return
         self._close_device_overlay()
         self._set_global_busy(False)
         self._worker = None
-        self._refresh_status_bar()
+        try:
+            self._refresh_status_bar()
+        except RuntimeError:
+            # Dangling status-bar widgets after home-shell install — ignore.
+            pass
 
     def _wire(self) -> None:
         if self.btnBrowseFolder:
@@ -1113,12 +1197,14 @@ class MainController(QObject):
 
     @Slot()
     def _toggle_fullscreen(self) -> None:
-        """F11: plain top-level QMainWindow, so showNormal() restores the
-        exact pre-fullscreen geometry itself — no Frameless-flag dance
-        needed here (that workaround is only for the Dialog-flagged popups
-        in commit_history_dialog.py / onboarding_dialog.py)."""
+        """F11: toggle fullscreen; leaving fills the taskbar-safe work area."""
         if self.window.isFullScreen():
-            self.window.showNormal()
+            try:
+                from app.util.screen_fit import apply_work_area_normal_fill
+
+                apply_work_area_normal_fill(self.window)
+            except Exception:
+                self.window.showNormal()
         else:
             self.window.showFullScreen()
 
@@ -1128,6 +1214,18 @@ class MainController(QObject):
 
     def _refresh_status_bar(self) -> None:
         # Phase A: Git version lives in ⋯; missing → yellow banner (not always-on label).
+        if getattr(self, "_closing", False):
+            return
+        # Re-entrancy guard: sync_from_controller used to call us back.
+        if getattr(self, "_refreshing_status", False):
+            return
+        self._refreshing_status = True
+        try:
+            self._refresh_status_bar_body()
+        finally:
+            self._refreshing_status = False
+
+    def _refresh_status_bar_body(self) -> None:
         p = active_palette()
         from app.git.bootstrap import force_git_setup_ui, probe_git
 
@@ -1142,37 +1240,57 @@ class MainController(QObject):
         else:
             self._git_ok = False
             self._git_version_label = ""
-        # Keep legacy label updated but hidden (removed in Phase B).
-        if self.labelStatusGit is not None:
-            if self._git_ok:
-                self.labelStatusGit.setText(f"●  Git: {self._git_version_label}")
-                self.labelStatusGit.setStyleSheet(
-                    f"color: {p.success_dot}; font-size: 12.5px;"
-                )
-            else:
-                self.labelStatusGit.setText("●  Git: 없음")
-                self.labelStatusGit.setStyleSheet(
-                    f"color: {p.text_faint}; font-size: 12.5px;"
-                )
-            self.labelStatusGit.hide()
+        # Legacy label is deleteLater'd in install_home_shell — skip if gone.
+        if self._qwidget_alive(self.labelStatusGit):
+            try:
+                if self._git_ok:
+                    self.labelStatusGit.setText(
+                        f"●  Git: {self._git_version_label}"
+                    )
+                    self.labelStatusGit.setStyleSheet(
+                        f"color: {p.success_dot}; font-size: 12.5px;"
+                    )
+                else:
+                    self.labelStatusGit.setText("●  Git: 없음")
+                    self.labelStatusGit.setStyleSheet(
+                        f"color: {p.text_faint}; font-size: 12.5px;"
+                    )
+                self.labelStatusGit.hide()
+            except RuntimeError:
+                self.labelStatusGit = None
+        else:
+            self.labelStatusGit = None
         if self.git_banner is not None:
-            self.git_banner.refresh_theme()
-            self.git_banner.setVisible(not self._git_ok)
+            try:
+                self.git_banner.refresh_theme()
+                self.git_banner.setVisible(not self._git_ok)
+            except RuntimeError:
+                pass
         home = getattr(self, "_home_shell", None)
         if home is not None:
             try:
                 home.sync_from_controller()
             except Exception:
                 pass
-        self.auth_status.refresh()
+        try:
+            self.auth_status.refresh()
+        except RuntimeError:
+            pass
         self._update_logout_button()
-        self._sync_clone_url_login_mode()
+        try:
+            self._sync_clone_url_login_mode()
+        except RuntimeError:
+            pass
 
     def _update_logout_button(self) -> None:
         """Logout lives in ⋯ (Phase A); keep legacy button hidden if present."""
-        if self.btnLogout is None:
+        if not self._qwidget_alive(self.btnLogout):
+            self.btnLogout = None
             return
-        self.btnLogout.hide()
+        try:
+            self.btnLogout.hide()
+        except RuntimeError:
+            self.btnLogout = None
 
     @Slot()
     def on_logout(self) -> None:
@@ -1202,6 +1320,43 @@ class MainController(QObject):
             "로그아웃이 완료되었습니다.\n"
             "저장된 GitHub 연결 정보가 삭제되었습니다.",
         )
+
+    def open_workspace_from_home(
+        self, folder: str, *, tab_substr: str | None = None
+    ) -> None:
+        """Home CTA → prefill tabs + show workspace stack (plan rev.4 Phase C)."""
+        path = str(folder or "").strip()
+        if not path:
+            return
+        if self.editFolder is not None:
+            _set_folder_path(self.editFolder, path)
+            try:
+                self._maybe_fill_repo_name()
+            except Exception:
+                pass
+        if self.editSyncFolder is not None:
+            _set_folder_path(self.editSyncFolder, path)
+        try:
+            from app.ui.settings_store import remember_folder
+
+            remember_folder(path)
+        except Exception:
+            pass
+        stack = getattr(self, "_ui_stack", None)
+        if stack is not None:
+            stack.setCurrentIndex(1)
+            try:
+                from app.ui.home_shell import ensure_home_back_button
+
+                ensure_home_back_button(self, stack)
+            except Exception:
+                pass
+        tw = self.tabWidget
+        if tw is not None and tab_substr:
+            for i in range(tw.count()):
+                if tab_substr in (tw.tabText(i) or ""):
+                    tw.setCurrentIndex(i)
+                    break
 
     # ----- publish -----
     @Slot()
@@ -1627,7 +1782,160 @@ class MainController(QObject):
                 self.on_login()
             return
 
+        # Stage B reactive: GH001 / 100 MB after commit already landed locally
+        from app.git.large_files import is_github_size_limit_error
+
+        if is_github_size_limit_error(message) and not self._busy():
+            if self._handle_large_file_history_trap(message):
+                return
+
         QMessageBox.critical(self.window, "실패", body)
+
+    def _handle_large_file_history_trap(self, message: str) -> bool:
+        """Stage B popup after GH001. Returns True if handled (no generic critical)."""
+        from app.git.large_files import LargeFileHit, LargeKind
+        from app.git.untrack import (
+            UntrackError,
+            count_commits_ahead_of_upstream,
+            untrack_after_soft_reset,
+            untrack_worktree,
+            upstream_has_commits,
+        )
+        from app.ui.large_file_dialog import (
+            LargeFileChoice,
+            show_external_hosting_guide,
+            show_large_file_dialog,
+        )
+
+        # Prefer sync folder, else publish folder
+        folder_s = _folder_path(self.editSyncFolder) or _folder_path(self.editFolder)
+        if not folder_s:
+            return False
+        folder = Path(folder_s).expanduser().resolve()
+        if not folder.is_dir():
+            return False
+
+        # Best-effort: parse filenames from stderr; else ask user via empty list + message
+        blocks: list[LargeFileHit] = []
+        for raw_line in (message or "").splitlines():
+            # "File foo/bar.bin is 123.00 MB"
+            low = raw_line.lower()
+            if "file " in low and "mb" in low:
+                try:
+                    # crude extract between File and is
+                    idx = low.index("file ")
+                    rest = raw_line[idx + 5 :]
+                    name = rest.split(" is ")[0].strip().strip("'\"")
+                    if name:
+                        blocks.append(
+                            LargeFileHit(
+                                rel=name.replace("\\", "/"),
+                                size=101 * 1024 * 1024,
+                                kind=LargeKind.BLOCK,
+                            )
+                        )
+                except (ValueError, IndexError):
+                    pass
+        if not blocks:
+            blocks = [
+                LargeFileHit(
+                    rel="(큰 파일 — 자세한 이름은 로그 참고)",
+                    size=101 * 1024 * 1024,
+                    kind=LargeKind.BLOCK,
+                )
+            ]
+
+        has_up = False
+        try:
+            has_up = upstream_has_commits(folder)
+        except Exception:
+            has_up = False
+        ahead = count_commits_ahead_of_upstream(folder) if has_up else None
+        offer_fresh = not has_up
+
+        choice = show_large_file_dialog(
+            self.window,
+            blocks=blocks,
+            mode="history_trap",
+            ahead_count=ahead,
+            offer_hist=has_up,
+            offer_fresh=offer_fresh,
+        )
+        if choice is LargeFileChoice.CANCEL:
+            return True
+        if choice is LargeFileChoice.EXTERNAL:
+            show_external_hosting_guide(self.window, blocks)
+            # Fall through to offer untrack
+            choice = (
+                LargeFileChoice.UNTRACK_HIST
+                if has_up
+                else LargeFileChoice.UNTRACK_WORKTREE
+            )
+        if choice is LargeFileChoice.RELEASES:
+            QMessageBox.information(
+                self.window,
+                "별도 다운로드로 공유",
+                "먼저 큰 파일을 기록에서 정리합니다.\n"
+                "코드 올리기 성공 후 다운로드 묶음 안내는 이어집니다.",
+            )
+            choice = (
+                LargeFileChoice.UNTRACK_HIST
+                if has_up
+                else LargeFileChoice.UNTRACK_WORKTREE
+            )
+        if choice is LargeFileChoice.FRESH:
+            if has_up:
+                QMessageBox.warning(
+                    self.window,
+                    "처음부터 다시 올리기",
+                    "이미 GitHub에 올린 기록이 있어 "
+                    "이 방법은 쓰지 않습니다.\n"
+                    "「큰 파일 빼고 다시 정리해 올리기」를 골라 주세요.",
+                )
+                return True
+            QMessageBox.information(
+                self.window,
+                "처음부터 다시 올리기",
+                "큰 파일을 폴더에서 옮기거나 뺀 뒤,\n"
+                "「만들고 올리기」로 다시 시작해 주세요.",
+            )
+            return True
+
+        rels = [h.rel for h in blocks if not h.rel.startswith("(")]
+        if not rels:
+            QMessageBox.information(
+                self.window,
+                "큰 파일",
+                "로그에 나온 파일 이름을 확인한 뒤 "
+                "해당 파일을 저장소에서 빼 주세요.",
+            )
+            return True
+        try:
+            if choice is LargeFileChoice.UNTRACK_HIST and has_up:
+                untrack_after_soft_reset(folder, rels)
+                self._log(
+                    "큰 파일 정리 완료 — 아직 안 올린 기록은 각각 그대로가 아니라 "
+                    "하나로 합쳐졌을 수 있습니다. "
+                    "이미 GitHub에 있는 기록은 그대로입니다. "
+                    "다시 「올리고 보내기」를 눌러 주세요."
+                )
+            else:
+                untrack_worktree(folder, rels, commit=True)
+                self._log("큰 파일 제외 완료 — 다시 올려 주세요.")
+        except UntrackError as e:
+            QMessageBox.warning(self.window, "정리 실패", str(e))
+            return True
+        QMessageBox.information(
+            self.window,
+            "정리됨",
+            "큰 파일을 저장소 기록에서 뺐습니다.\n"
+            "폴더 안의 원본 파일은 그대로 있습니다.\n"
+            "아직 GitHub에 안 올린 기록이 있었다면 "
+            "각각 그대로 올라간 것이 아니라 하나로 합쳐졌을 수 있습니다.\n"
+            "이미 GitHub에 있는 기록은 그대로입니다.\n\n"
+            "다시 올리기를 진행해 주세요.",
+        )
+        return True
 
     def _safety_scan_enabled(self) -> bool:
         """Settings → 안전 → 비밀·개인정보 점검 (default on)."""
@@ -1794,6 +2102,50 @@ class MainController(QObject):
             return False
         return True
 
+    def _gate_large_files_stage_a(self, folder: Path) -> bool:
+        """Stage A hard-gate before commit. Returns False if user cancelled."""
+        from app.git.large_files import (
+            find_working_tree_large_files,
+            format_warn_log_line,
+        )
+        from app.ui.large_file_dialog import (
+            LargeFileChoice,
+            apply_choice_worktree,
+            show_large_file_dialog,
+        )
+
+        warns, blocks = find_working_tree_large_files(folder)
+        for w in warns:
+            self._log(format_warn_log_line(w))
+        if not blocks:
+            return True
+        choice = show_large_file_dialog(
+            self.window,
+            blocks=blocks,
+            mode="working_tree",
+            offer_hist=False,
+            offer_fresh=False,
+        )
+        if choice is LargeFileChoice.CANCEL:
+            self._log("큰 파일 안내 — 사용자가 취소")
+            return False
+        ok = apply_choice_worktree(
+            folder, choice, blocks, parent=self.window
+        )
+        if not ok:
+            return False
+        # Re-scan: still blocked → abort
+        _w2, blocks2 = find_working_tree_large_files(folder)
+        if blocks2:
+            QMessageBox.warning(
+                self.window,
+                "큰 파일",
+                "아직 GitHub가 거절하는 큰 파일이 남아 있습니다.\n"
+                + "\n".join(f"· {h.rel}" for h in blocks2[:8]),
+            )
+            return False
+        return True
+
     @Slot()
     def on_publish(self) -> None:
         if self._busy() or not self.editFolder or not self.editRepoName:
@@ -1895,6 +2247,10 @@ class MainController(QObject):
             return
         if need_git_prep:
             self._log(f"안내: 이 폴더에 .git 준비를 마쳤습니다 (branch {branch}).")
+
+        # Stage A: block commit of files > 100 MiB (plan rev.3)
+        if not self._gate_large_files_stage_a(root):
+            return
 
         report = run_safety_checks(
             root,
@@ -2680,7 +3036,9 @@ class MainController(QObject):
     @Slot()
     def _sync_folder_maybe_refresh(self) -> None:
         """Auto status refresh when folder field settles (browse / paste / type)."""
-        if self._busy():
+        if getattr(self, "_closing", False) or self._busy():
+            return
+        if not self._qwidget_alive(self.editSyncFolder):
             return
         folder = _folder_path(self.editSyncFolder)
         if not folder:
@@ -2691,13 +3049,13 @@ class MainController(QObject):
             if not p.is_dir():
                 return  # incomplete path while typing
             if not (p / ".git").is_dir():
-                if self.labelSyncBranch is not None:
+                if self._qwidget_alive(self.labelSyncBranch):
                     self.labelSyncBranch.setText(
                         "(.git 없음 — 「받기」/「만들고 올리기」먼저)"
                     )
                 self._clear_sync_chips()
                 self._add_sync_chip("○  Git 폴더 아님", "muted")
-                if self.labelSyncStatus is not None:
+                if self._qwidget_alive(self.labelSyncStatus):
                     self.labelSyncStatus.hide()
                 return
         except OSError:
@@ -2866,7 +3224,9 @@ class MainController(QObject):
 
     @Slot()
     def on_sync_refresh(self, quiet: bool = False) -> None:
-        if self._busy():
+        if getattr(self, "_closing", False) or self._busy():
+            return
+        if not self._qwidget_alive(self.editSyncFolder):
             return
         folder = _folder_path(self.editSyncFolder)
         if not folder:
@@ -2970,8 +3330,11 @@ class MainController(QObject):
         if action == "push":
             path = Path(folder.strip()).expanduser()
             if path.is_dir():
+                resolved = path.resolve()
+                if not self._gate_large_files_stage_a(resolved):
+                    return
                 if not self._confirm_upload_g3(
-                    path.resolve(),
+                    resolved,
                     allow_secrets=allow,
                     private=None,
                     hide_real_email=hide_email,

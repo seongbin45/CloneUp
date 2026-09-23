@@ -259,6 +259,24 @@ def _has_staged_changes(folder: Path) -> bool:
     )
 
 
+def _has_commits(folder: Path) -> bool:
+    """True when HEAD resolves (at least one local commit)."""
+    r = run_git(
+        ["rev-parse", "--verify", "HEAD"], cwd=str(folder), check=False
+    )
+    return r.returncode == 0
+
+
+def _origin_url(folder: Path) -> str:
+    """Return origin URL if configured (non-empty), else \"\"."""
+    r = run_git(
+        ["remote", "get-url", "origin"], cwd=str(folder), check=False
+    )
+    if r.returncode != 0:
+        return ""
+    return (r.stdout or "").strip()
+
+
 def publish_local_to_existing_remote(
     folder: Path,
     *,
@@ -273,9 +291,13 @@ def publish_local_to_existing_remote(
     default_branch: str = "main",
 ) -> PublishResult:
     """
-    Init (if needed) → safety (git-aware) → add → commit → origin → push.
+    Init (if needed) → safety (git-aware) → add → commit (if needed) →
+    origin → push.
 
     Safety must run *after* ``.git`` exists so ``.gitignore`` is honored (H1).
+
+    Local-only repos (``.git`` present, no origin, existing commits, clean
+    tree) must still publish: skip a no-op commit and push HEAD as-is.
     """
     folder = folder.resolve()
     if not clone_url.startswith("https://github.com/"):
@@ -286,9 +308,8 @@ def publish_local_to_existing_remote(
 
     git_dir = folder / ".git"
     if git_dir.exists():
-        remotes = run_git(["remote"], cwd=str(folder), check=False)
-        names = {n.strip() for n in (remotes.stdout or "").splitlines() if n.strip()}
-        if "origin" in names:
+        # Block only when origin already has a real URL (empty remote name ≠ connected)
+        if _origin_url(folder):
             raise PublishError(
                 "이 폴더는 이미 GitHub와 연결되어 있습니다.\n"
                 "새로 만들려면 다른 폴더를 쓰거나, 「동기화」탭에서 올리고 보내기를 사용하세요."
@@ -315,22 +336,60 @@ def publish_local_to_existing_remote(
         print("작성자 정보: 이 PC Git 설정 사용")
     print(f"branch: {branch}")
 
+    # Stage A defense-in-depth (UI gates first)
+    from app.git.large_files import (
+        find_working_tree_large_files,
+        format_warn_log_line,
+    )
+
+    warns, blocks = find_working_tree_large_files(folder)
+    for w in warns:
+        print(format_warn_log_line(w))
+    if blocks:
+        listing = "\n".join(
+            f"· {h.rel} ({h.size_mib:.1f} MB)" for h in blocks[:12]
+        )
+        raise PublishError(
+            "GitHub가 거절하는 큰 파일(100 MB 초과)이 포함되어 있습니다.\n"
+            f"{listing}\n"
+            "저장소에서 뺀 뒤 다시 올려 주세요."
+        )
+
     run_git(["add", "-A"], cwd=str(folder), check=True)
-    if not _has_staged_changes(folder):
+    if _has_staged_changes(folder):
+        run_git(
+            ["commit", "-m", commit_message],
+            cwd=str(folder),
+            check=True,
+            config=identity or None,
+        )
+    elif _has_commits(folder):
+        # Remote-less local history (home 「원격 없는 Git」) — push as-is.
+        print("로컬 커밋이 이미 있어 그대로 GitHub에 올립니다…")
+    else:
         raise PublishError(
             "올릴 파일이 없습니다.\n"
             "폴더가 비었거나, 무시 목록(.gitignore) 때문에 제외됐을 수 있습니다."
         )
 
-    run_git(
-        ["commit", "-m", commit_message],
-        cwd=str(folder),
-        check=True,
-        config=identity or None,
-    )
-
     # Clean remote — never embed token
-    run_git(["remote", "add", "origin", clone_url], cwd=str(folder), check=True)
+    # If a broken empty `origin` exists, replace it; else add.
+    if "origin" in {
+        n.strip()
+        for n in (
+            run_git(["remote"], cwd=str(folder), check=False).stdout or ""
+        ).splitlines()
+        if n.strip()
+    }:
+        run_git(
+            ["remote", "set-url", "origin", clone_url],
+            cwd=str(folder),
+            check=True,
+        )
+    else:
+        run_git(
+            ["remote", "add", "origin", clone_url], cwd=str(folder), check=True
+        )
 
     cred_path: str | None = None
     try:
@@ -393,9 +452,17 @@ def publish_folder_to_new_repo(
     hide_real_email: bool = False,
     default_branch: str = "main",
 ) -> PublishResult:
-    """Create empty GitHub repo (public or private) then push local history."""
-    from app.github.api_client import GitHubAPIError
+    """Create empty GitHub repo (public or private) then push local history.
 
+    If create fails because the name already exists (typical after a previous
+    attempt created the remote but push never finished), reuse an **empty**
+    existing repo under the same login and push into it.
+    """
+    from app.github.api_client import GitHubAPIError, get_repo
+
+    login = str((user or {}).get("login") or "").strip()
+    repo: dict | None = None
+    reused = False
     try:
         repo = create_repo_fn(
             token,
@@ -405,18 +472,54 @@ def publish_folder_to_new_repo(
             auto_init=False,
         )
     except GitHubAPIError as e:
-        raise PublishError(f"저장소 생성 실패: {e}") from e
+        msg = f"{e}".lower()
+        body_s = str(getattr(e, "body", "") or "").lower()
+        already = getattr(e, "status", None) == 422 and (
+            "already exists" in msg
+            or "already exists" in body_s
+            or "같은 이름" in f"{e}"
+        )
+        if not already or not login:
+            raise PublishError(f"저장소 생성 실패: {e}") from e
+        existing = get_repo(login, repo_name, access_token=token)
+        if not existing:
+            raise PublishError(
+                f"저장소 생성 실패: {e}\n"
+                f"GitHub에 '{login}/{repo_name}'이 있는 것 같지만 "
+                "내용을 확인하지 못했습니다."
+            ) from e
+        # size==0 → empty remote (safe to push local history)
+        size = int(existing.get("size") or 0)
+        if size > 0:
+            raise PublishError(
+                f"GitHub에 이미 '{login}/{repo_name}' 저장소가 있고 "
+                "커밋도 있습니다.\n"
+                "저장소 이름을 바꾸거나, GitHub에서 저장소를 비운 뒤 "
+                "다시 시도하세요."
+            ) from e
+        repo = existing
+        reused = True
+        print(
+            f"이미 있는 빈 저장소를 이어서 사용합니다: "
+            f"{existing.get('full_name') or f'{login}/{repo_name}'}"
+        )
     except ValueError as e:
         raise PublishError(str(e)) from e
 
+    if not isinstance(repo, dict):
+        raise PublishError("저장소 정보를 받지 못했습니다.")
+
     clone_url = repo.get("clone_url") or ""
     html_url = repo.get("html_url") or ""
-    full_name = repo.get("full_name") or repo_name
+    full_name = repo.get("full_name") or (
+        f"{login}/{repo_name}" if login else repo_name
+    )
     if not clone_url:
         raise PublishError("API 응답에 clone_url 이 없습니다.")
 
-    vis = "private" if private else "public"
-    print(f"원격 저장소 생성됨: {full_name} ({vis}, auto_init 없음)")
+    if not reused:
+        vis = "private" if private else "public"
+        print(f"원격 저장소 생성됨: {full_name} ({vis}, auto_init 없음)")
     return publish_local_to_existing_remote(
         folder,
         token=token,

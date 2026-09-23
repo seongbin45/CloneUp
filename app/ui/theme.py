@@ -69,7 +69,7 @@ LIGHT = Palette(
     name="light",
     bg_app="#e8e6e1",
     bg_window="#fbfaf8",
-    bg_bar="#f2efe9",
+    bg_bar="#f0ede6",  # home SSOT sidebar/header
     bg_input="#ffffff",
     bg_muted="#f2efe9",
     bg_hint="#f4f1e8",
@@ -79,7 +79,7 @@ LIGHT = Palette(
     border_input="#cdc8bf",
     border_divider="#e6e1d8",
     border_outline="#b7b1a5",
-    text="#2f2b24",
+    text="#232019",  # home SSOT
     text_secondary="#4a453b",
     text_muted="#6d675c",
     text_faint="#8b8477",
@@ -91,12 +91,12 @@ LIGHT = Palette(
     text_log_err="#e0a3a3",
     text_log_warn="#c9ad5c",
     primary="#1f6f5c",
-    primary_hover="#185b4b",
+    primary_hover="#14503f",  # home SSOT
     primary_soft="#14503f",
     success_dot="#2f8f6d",
     warn_dot="#c4a94e",
     warn_border="#c4a94e",
-    warn_text="#9a6700",
+    warn_text="#8a6d12",  # home SSOT
     danger="#cf222e",
     danger_hover="#a40e26",
     danger_soft_bg="#fff5f5",
@@ -238,8 +238,51 @@ def system_color_scheme_is_dark() -> bool:
 
 
 def palette_from_system() -> Palette:
-    """Pick LIGHT or DARK from the current OS color scheme."""
+    """Pick LIGHT or DARK from the current OS color scheme.
+
+    QA override: ``CLONEUP_FORCE_THEME=dark|light`` (see scripts/_launch_home_theme.py).
+    """
+    import os
+
+    forced = (os.environ.get("CLONEUP_FORCE_THEME") or "").strip().lower()
+    if forced in ("dark", "d"):
+        return DARK
+    if forced in ("light", "l"):
+        return LIGHT
     return DARK if system_color_scheme_is_dark() else LIGHT
+
+
+def apply_tooltip_palette(app, palette: Palette | None = None) -> None:
+    """
+    Keep QToolTip surfaces on the app card color (bg_window).
+
+    On Windows, native ToolTipBase often stays system-black even when QSS
+    names a cream/dark panel; QPalette ToolTipBase/Text must match too.
+    """
+    if app is None:
+        return
+    p = palette or _active
+    try:
+        from PySide6.QtGui import QColor, QPalette
+        from PySide6.QtWidgets import QToolTip
+    except ImportError:
+        return
+
+    tip_bg = QColor(p.bg_window)
+    tip_fg = QColor(p.text)
+    qpal = app.palette()
+    qpal.setColor(QPalette.ColorRole.ToolTipBase, tip_bg)
+    qpal.setColor(QPalette.ColorRole.ToolTipText, tip_fg)
+    app.setPalette(qpal)
+
+    tip_pal = QToolTip.palette()
+    tip_pal.setColor(QPalette.ColorRole.ToolTipBase, tip_bg)
+    tip_pal.setColor(QPalette.ColorRole.ToolTipText, tip_fg)
+    tip_pal.setColor(QPalette.ColorRole.Window, tip_bg)
+    tip_pal.setColor(QPalette.ColorRole.WindowText, tip_fg)
+    tip_pal.setColor(QPalette.ColorRole.Base, tip_bg)
+    tip_pal.setColor(QPalette.ColorRole.Text, tip_fg)
+    QToolTip.setPalette(tip_pal)
 
 
 def apply_system_theme(app=None) -> Palette:
@@ -261,7 +304,36 @@ def apply_system_theme(app=None) -> Palette:
     apply_palette(palette)
     if app is not None:
         app.setStyleSheet(app_stylesheet(palette))
+        apply_tooltip_palette(app, palette)
+        # Per-widget setStyleSheet (home shell, etc.) makes Windows ignore
+        # app QToolTip QSS — intercept ToolTip events with a card-colored popup.
+        try:
+            from app.ui.themed_tooltip import install_themed_tooltips
+
+            install_themed_tooltips(app)
+        except Exception:
+            pass
+        try:
+            from app.ui.pill_scrollbar import install_pill_scrollbars
+
+            install_pill_scrollbars(app)
+        except Exception:
+            pass
         install_native_titlebar_theming(app)
+    # QA breadcrumb when forcing theme
+    import os
+    if os.environ.get("CLONEUP_FORCE_THEME"):
+        try:
+            from pathlib import Path
+
+            Path(os.environ.get("TEMP", ".")).joinpath(
+                "cloneup_theme_applied.txt"
+            ).write_text(
+                f"applied={palette.name} force={os.environ.get('CLONEUP_FORCE_THEME')}\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
     return palette
 
 
@@ -340,6 +412,79 @@ def install_native_titlebar_theming(app) -> None:
 
 # Initialize module-level aliases (light default until apply_system_theme)
 apply_palette(LIGHT)
+
+
+def scrollbar_qss(palette: Palette | None = None) -> str:
+    """Pill-shaped scrollbars (rounded handle + soft gray guide).
+
+    Dialogs/widgets that call ``setStyleSheet`` replace the app cascade —
+    append this string there too (home list, 이용약관, settings).
+    """
+    p = palette or _active
+    handle = p.border_outline
+    handle_hover = p.text_faint
+    handle_press = p.text_muted
+    # 10px track, full-round handle (radius ≈ half width) → soft capsule.
+    return f"""
+    QScrollBar:vertical {{
+        background: transparent;
+        width: 10px;
+        margin: 4px 2px 4px 0;
+        border: none;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {handle};
+        border-radius: 5px;
+        min-height: 28px;
+        margin: 0px;
+    }}
+    QScrollBar::handle:vertical:hover {{
+        background: {handle_hover};
+    }}
+    QScrollBar::handle:vertical:pressed {{
+        background: {handle_press};
+    }}
+    QScrollBar::add-line:vertical,
+    QScrollBar::sub-line:vertical {{
+        height: 0px;
+        width: 0px;
+        background: none;
+        border: none;
+    }}
+    QScrollBar::add-page:vertical,
+    QScrollBar::sub-page:vertical {{
+        background: none;
+    }}
+    QScrollBar:horizontal {{
+        background: transparent;
+        height: 10px;
+        margin: 0 4px 2px 4px;
+        border: none;
+    }}
+    QScrollBar::handle:horizontal {{
+        background: {handle};
+        border-radius: 5px;
+        min-width: 28px;
+        margin: 0px;
+    }}
+    QScrollBar::handle:horizontal:hover {{
+        background: {handle_hover};
+    }}
+    QScrollBar::handle:horizontal:pressed {{
+        background: {handle_press};
+    }}
+    QScrollBar::add-line:horizontal,
+    QScrollBar::sub-line:horizontal {{
+        height: 0px;
+        width: 0px;
+        background: none;
+        border: none;
+    }}
+    QScrollBar::add-page:horizontal,
+    QScrollBar::sub-page:horizontal {{
+        background: none;
+    }}
+    """
 
 
 def app_stylesheet(palette: Palette | None = None) -> str:
@@ -440,11 +585,14 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         selection-color: {TEXT_ON_PRIMARY};
         outline: 0;
     }}
+    /* Card surface (bg_window). Explicit border forces styled draw so
+       Windows native ToolTipBase (often black in dark OS) cannot win. */
     QToolTip {{
-        background-color: {BG_BAR};
+        background-color: {BG_WINDOW};
         color: {TEXT};
         border: 1px solid {BORDER_SOFT};
-        padding: 4px 8px;
+        border-radius: 9px;
+        padding: 5px 9px;
     }}
     QCheckBox, QRadioButton {{
         color: {TEXT_SECONDARY};
@@ -889,4 +1037,4 @@ def app_stylesheet(palette: Palette | None = None) -> str:
         font-size: 12.5px;
         font-weight: 500;
     }}
-    """
+    """ + scrollbar_qss(p)

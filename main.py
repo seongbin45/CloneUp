@@ -17,7 +17,18 @@ def _want_tray(argv: list[str]) -> bool:
     return any(a in ("--tray", "/tray") for a in argv[1:])
 
 
+def _want_scan_cache(argv: list[str]) -> bool:
+    return any(a in ("--scan-cache", "/scan-cache") for a in argv[1:])
+
+
 def main() -> int:
+    # Headless cache refresh (schtasks / frozen) — no Qt widgets.
+    if _want_scan_cache(sys.argv):
+        from app.scan_worker import run_scan_worker
+
+        force = any(a in ("--full", "--force-full") for a in sys.argv[1:])
+        return run_scan_worker(force_full=force)
+
     try:
         from PySide6.QtCore import QCoreApplication, Qt
         from PySide6.QtNetwork import QLocalServer, QLocalSocket
@@ -76,6 +87,15 @@ def main() -> int:
     except Exception:
         pass
 
+    # Background project-scan task (plan D2) — best-effort; UI scan still works.
+    try:
+        from app.ui.settings_store import load_bg_project_scan_enabled
+        from app.util.scan_task_win import ensure_scan_task
+
+        ensure_scan_task(enabled=load_bg_project_scan_enabled())
+    except Exception:
+        pass
+
     # --- single instance: second launch activates the first ---
     socket = QLocalSocket()
     socket.connectToServer(_INSTANCE_KEY)
@@ -108,8 +128,40 @@ def main() -> int:
         except Exception:
             pass
         win.show()
+        # Default (non-maximized) size fills the taskbar-safe work area.
+        try:
+            from app.util.screen_fit import apply_work_area_normal_fill
+
+            apply_work_area_normal_fill(win)
+        except Exception:
+            pass
         win.raise_()
         win.activateWindow()
+        # U-1b: legacy-seeded users — one-shot home offer (after show; env suppresses)
+        try:
+            from PySide6.QtCore import QTimer
+
+            def _refit_work_area() -> None:
+                # Chrome (title/borders) is accurate after the first map.
+                try:
+                    from app.util.screen_fit import apply_work_area_normal_fill
+
+                    apply_work_area_normal_fill(win)
+                except Exception:
+                    pass
+
+            def _maybe_home_offer() -> None:
+                try:
+                    from app.ui.ui_mode import maybe_offer_home_shell
+
+                    maybe_offer_home_shell(win)
+                except Exception:
+                    pass
+
+            QTimer.singleShot(0, _refit_work_area)
+            QTimer.singleShot(600, _maybe_home_offer)
+        except Exception:
+            pass
         if folder:
             try:
                 ctrl = getattr(win, "_cloneup_controller", None)

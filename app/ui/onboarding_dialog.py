@@ -167,19 +167,31 @@ class OnboardingDialog(QDialog):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # title bar
+        # title bar — 시안: traffic-light dots + title + step
         bar = QFrame()
         bar.setObjectName("obTitleBar")
         bar_l = QHBoxLayout(bar)
         bar_l.setContentsMargins(16, 12, 16, 12)
         bar_l.setSpacing(12)
+        dots = QHBoxLayout()
+        dots.setContentsMargins(0, 0, 0, 0)
+        dots.setSpacing(7)
+        dot_c = "#403c33" if p.name == "dark" else "#d9d4cb"
+        for _ in range(3):
+            dlab = QLabel()
+            dlab.setFixedSize(11, 11)
+            dlab.setStyleSheet(
+                f"background: {dot_c}; border-radius: 5px;"
+            )
+            dots.addWidget(dlab, 0, Qt.AlignmentFlag.AlignVCenter)
+        bar_l.addLayout(dots, 0)
         title = QLabel("클론업 시작하기")
         title.setObjectName("obTitle")
         self._step_lbl = QLabel(f"1 / {len(_STEPS)}")
         self._step_lbl.setObjectName("obStepMeta")
         self._fs_hint = QLabel("전체 화면 · Esc 닫기 · F11 창 모드")
         self._fs_hint.setObjectName("obStepMeta")
-        bar_l.addWidget(title)
+        bar_l.addWidget(title, 0, Qt.AlignmentFlag.AlignVCenter)
         bar_l.addStretch(1)
         bar_l.addWidget(self._fs_hint)
         bar_l.addWidget(self._step_lbl)

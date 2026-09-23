@@ -71,6 +71,32 @@ def test_preview_revert_reports_expected_kinds(tmp_path: Path) -> None:
 
 
 @requires_git
+def test_revert_allows_untracked_only_dirt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Untracked files must not block local revert (e.g. large MP4 left out)."""
+    folder = tmp_path / "repo"
+    folder.mkdir()
+    from app.git.runner import run_git
+
+    run_git(["init"], cwd=str(folder), check=True)
+    run_git(["config", "user.email", "t@t.com"], cwd=str(folder), check=True)
+    run_git(["config", "user.name", "t"], cwd=str(folder), check=True)
+    (folder / "a.txt").write_text("v1\n", encoding="utf-8")
+    run_git(["add", "a.txt"], cwd=str(folder), check=True)
+    run_git(["commit", "-m", "c1"], cwd=str(folder), check=True)
+    c1 = run_git(["rev-parse", "HEAD"], cwd=str(folder), check=True).stdout.strip()
+    (folder / "a.txt").write_text("v2\n", encoding="utf-8")
+    run_git(["add", "a.txt"], cwd=str(folder), check=True)
+    run_git(["commit", "-m", "c2"], cwd=str(folder), check=True)
+    (folder / "orphan.mp4").write_bytes(b"x")
+
+    result = revert_local_commit(folder, c1, user=_USER)
+    assert (folder / "a.txt").read_text(encoding="utf-8") == "v1\n"
+    assert (folder / "orphan.mp4").is_file()
+    assert result.pushed is False
+
+
 def test_revert_local_commit_restores_tree_and_keeps_history(
     tmp_path: Path,
 ) -> None:
@@ -113,7 +139,8 @@ def test_revert_rejects_self_revert(tmp_path: Path) -> None:
 @requires_git
 def test_revert_rejects_dirty_working_tree(tmp_path: Path) -> None:
     folder, c1, c2 = _init_two_commit_repo(tmp_path)
-    (folder / "c.txt").write_text("uncommitted\n", encoding="utf-8")
+    # Modify a *tracked* file — untracked-only dirt is allowed.
+    (folder / "a.txt").write_text("uncommitted edit\n", encoding="utf-8")
 
     branches_before = run_git(
         ["branch", "--list"], cwd=str(folder), check=True
@@ -121,12 +148,12 @@ def test_revert_rejects_dirty_working_tree(tmp_path: Path) -> None:
     with pytest.raises(RevertError, match="저장하지 않은"):
         revert_local_commit(folder, c1, user=_USER)
 
-    # Must fail before touching anything: no backup branch, file still there.
+    # Must fail before touching anything: no backup branch, file still dirty.
     branches_after = run_git(
         ["branch", "--list"], cwd=str(folder), check=True
     ).stdout
     assert branches_before == branches_after
-    assert (folder / "c.txt").exists()
+    assert "uncommitted edit" in (folder / "a.txt").read_text(encoding="utf-8")
 
 
 @requires_git

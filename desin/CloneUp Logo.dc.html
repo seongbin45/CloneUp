@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #e8e6e1; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 56px 48px; display: flex; flex-direction: column; align-items: center; gap: 28px;">
+
+  <div style="width: 880px; display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid #cdc8bf; padding-bottom: 14px;">
+    <div style="font-size: 15px; font-weight: 600; color: #3d382f;">클론업 · 아이덴티티</div>
+    <div style="font-size: 12px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">#1f6f5c · #46a685 · #f6f2e8 · #2b2821</div>
+  </div>
+
+  <div style="width: 880px; padding: 52px 48px; background: #fbfaf8; border: 1px solid #cdc8bf; border-radius: 10px; display: flex; align-items: center; gap: 26px;">
+    <img src="assets/icon-512.png" alt="CloneUp mark" style="width: 92px; height: 92px; border-radius: 21px; display: block;">
+    <div style="display: flex; flex-direction: column; gap: 3px;">
+      <div style="font-size: 44px; font-weight: 600; color: #232019; letter-spacing: -0.02em; line-height: 1;">CloneUp</div>
+      <div style="font-size: 17px; font-weight: 500; color: #1f6f5c; letter-spacing: 0.14em;">클론업</div>
+    </div>
+    <div style="margin-left: auto; align-self: flex-end; font-size: 12px; color: #6d675c;">기본 가로 조합</div>
+  </div>
+
+  <div style="width: 880px; display: flex; gap: 28px;">
+    <div style="flex: 1; padding: 44px 32px; background: #16150f; border-radius: 10px; display: flex; flex-direction: column; align-items: center; gap: 18px;">
+      <img src="assets/icon-512-dark.png" alt="CloneUp mark, dark" style="width: 76px; height: 76px; border-radius: 17px; display: block;">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+        <div style="font-size: 30px; font-weight: 600; color: #f6f2e8; letter-spacing: -0.015em; line-height: 1;">CloneUp</div>
+        <div style="font-size: 13px; font-weight: 500; color: #46a685; letter-spacing: 0.16em;">클론업</div>
+      </div>
+      <div style="font-size: 12px; color: #a39c8c;">세로 조합 · 다크</div>
+    </div>
+    <div style="flex: 1; padding: 44px 32px; background: #fbfaf8; border: 1px solid #cdc8bf; border-radius: 10px; display: flex; flex-direction: column; align-items: center; gap: 18px;">
+      <img src="assets/mark-glyph.png" alt="CloneUp glyph" style="width: 76px; height: 76px; display: block;">
+      <div style="font-size: 13px; color: #6d675c; text-align: center; text-wrap: pretty; line-height: 1.6;">타일 없는 단독 심볼<br>단색으로만 사용</div>
+      <div style="font-size: 12px; color: #6d675c;">심볼 단독</div>
+    </div>
+  </div>
+
+  <div style="width: 880px; padding: 34px 40px; background: #fbfaf8; border: 1px solid #cdc8bf; border-radius: 10px;">
+    <div style="font-size: 13px; font-weight: 600; color: #3d382f; margin-bottom: 22px;">아이콘 크기 (CloneUp.ico 수록 · 16–32px 는 단순화 버전)</div>
+    <div style="display: flex; align-items: flex-end; gap: 30px;">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 9px;">
+        <img src="assets/icon-16.png" alt="16px 아이콘" style="display: block; width: 16px; height: 16px;">
+        <div style="font-size: 11px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">16px</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 9px;">
+        <img src="assets/icon-24.png" alt="24px 아이콘" style="display: block; width: 24px; height: 24px;">
+        <div style="font-size: 11px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">24px</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 9px;">
+        <img src="assets/icon-32.png" alt="32px 아이콘" style="display: block; width: 32px; height: 32px;">
+        <div style="font-size: 11px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">32px</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 9px;">
+        <img src="assets/icon-48.png" alt="48px 아이콘" style="display: block; width: 48px; height: 48px;">
+        <div style="font-size: 11px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">48px</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 9px;">
+        <img src="assets/icon-64.png" alt="64px 아이콘" style="display: block; width: 64px; height: 64px;">
+        <div style="font-size: 11px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">64px</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 9px;">
+        <img src="assets/icon-128.png" alt="128px 아이콘" style="display: block; width: 128px; height: 128px;">
+        <div style="font-size: 11px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">128px</div>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 9px;">
+        <img src="assets/icon-256.png" alt="256px 아이콘" style="display: block; width: 256px; height: 256px;">
+        <div style="font-size: 11px; color: #6d675c; font-family: 'IBM Plex Mono', monospace;">256px</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="width: 880px; display: flex; gap: 12px;">
+    <div style="flex: 1; padding: 18px 20px; background: #fbfaf8; border: 1px solid #cdc8bf; border-radius: 8px;">
+      <div style="font-size: 12px; font-weight: 600; color: #3d382f; margin-bottom: 7px;">쓰는 법</div>
+      <div style="font-size: 12.5px; color: #6d675c; line-height: 1.7;">여백은 심볼 높이의 25% 이상. 워드마크는 IBM Plex Sans KR SemiBold.</div>
+    </div>
+    <div style="flex: 1; padding: 18px 20px; background: #f4f1e8; border: 1px solid #ddd8d0; border-radius: 8px;">
+      <div style="font-size: 12px; font-weight: 600; color: #3d382f; margin-bottom: 7px;">피할 것</div>
+      <div style="font-size: 12.5px; color: #6d675c; line-height: 1.7;">심볼 비율 변형, 그라디언트, 타일 위 그림자, 초록 외 다른 강조색.</div>
+    </div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:976,&quot;height&quot;:1180}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

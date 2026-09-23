@@ -405,7 +405,33 @@ class TrayController(QObject):
         mark_boot_notify_asked()
         if self._worker is not None and self._worker.isRunning():
             return
+        from pathlib import Path
+
+        from app.git.large_files import find_working_tree_large_files
         from app.ui.settings_store import load_hide_real_email
+        from PySide6.QtWidgets import QMessageBox
+
+        # Stage A: boot toast must not bypass the large-file gate
+        blocked: list[str] = []
+        for folder in folders:
+            try:
+                _w, blocks = find_working_tree_large_files(Path(folder))
+            except Exception:
+                continue
+            for h in blocks:
+                blocked.append(f"{Path(folder).name}/{h.rel} ({h.size_mib:.0f} MB)")
+        if blocked:
+            QMessageBox.warning(
+                None,
+                "큰 파일",
+                "GitHub가 거절하는 큰 파일(100 MB 초과)이 있어 "
+                "지금 바로 올릴 수 없습니다.\n\n"
+                + "\n".join(f"· {b}" for b in blocked[:8])
+                + "\n\n앱을 연 뒤 해당 폴더에서 빼고 다시 올려 주세요.",
+            )
+            if self._toast is not None:
+                self._toast.close()
+            return
 
         if self._toast is not None:
             self._toast.set_waiting("GitHub 연결 확인 · 준비 중")

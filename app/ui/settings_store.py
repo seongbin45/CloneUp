@@ -52,7 +52,9 @@ def load_scan_roots() -> list[str]:
     """
     User-registered folders to search for projects (홈 「찾을 위치」).
 
-    Empty means “use defaults” (Desktop/Documents + recent parents) at scan time.
+    Empty means scan uses hybrid defaults: recent folders (+ non-heavy
+    parents; heavy = Known Folder A-layer or child-count ≥ T), and only if
+    recent is empty, seed dirs. See ``app.git.project_scan`` / BENCH doc.
     """
     raw = _settings().value("scan_roots", [])
     if raw is None:
@@ -131,6 +133,20 @@ def save_last_github_login(login: str) -> None:
         _settings().setValue("last_github_login", login.strip())
 
 
+def load_github_avatar_url() -> str | None:
+    val = _settings().value("github_avatar_url", "")
+    s = str(val).strip() if val else ""
+    return s or None
+
+
+def save_github_avatar_url(url: str) -> None:
+    u = (url or "").strip()
+    if u:
+        _settings().setValue("github_avatar_url", u)
+    else:
+        _settings().remove("github_avatar_url")
+
+
 # --- Boot / tray: unpushed-changes notify ---------------------------------
 
 
@@ -193,6 +209,15 @@ def load_boot_autostart_enabled() -> bool:
 
 def save_boot_autostart_enabled(enabled: bool) -> None:
     _settings().setValue("boot_autostart_enabled", bool(enabled))
+
+
+def load_bg_project_scan_enabled() -> bool:
+    """Background scheduled project-list refresh (plan C-7; default ON)."""
+    return bool(_settings().value("bg_project_scan_enabled", True, type=bool))
+
+
+def save_bg_project_scan_enabled(enabled: bool) -> None:
+    _settings().setValue("bg_project_scan_enabled", bool(enabled))
 
 
 # --- Update manager health → auto GitHub diagnosis -----------------------
@@ -290,6 +315,58 @@ def load_onboarding_done() -> bool:
 
 def save_onboarding_done(done: bool = True) -> None:
     _settings().setValue("onboarding_done", bool(done))
+
+
+# ----- main shell IA (홈 vs 레거시 탭) — plan rev.4 Phase A -----
+MAIN_SHELL_HOME = "home"
+MAIN_SHELL_LEGACY = "legacy"
+_KEY_MAIN_SHELL = "ui/main_shell"
+_KEY_HOME_OFFER_PENDING = "ui/home_offer_pending"
+
+
+def load_main_shell_raw() -> str | None:
+    """Return stored shell mode or None if the key was never written."""
+    s = _settings()
+    if not s.contains(_KEY_MAIN_SHELL):
+        return None
+    raw = s.value(_KEY_MAIN_SHELL, "", type=str)
+    if raw is None:
+        return None
+    text = str(raw).strip().lower()
+    return text or None
+
+
+def save_main_shell(mode: str) -> str:
+    """Persist ``home`` or ``legacy``. Invalid values fall back to home."""
+    m = (mode or "").strip().lower()
+    if m not in (MAIN_SHELL_HOME, MAIN_SHELL_LEGACY):
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "ui/main_shell invalid value %r — correcting to home", mode
+        )
+        m = MAIN_SHELL_HOME
+    _settings().setValue(_KEY_MAIN_SHELL, m)
+    return m
+
+
+def load_home_offer_pending() -> bool:
+    return bool(_settings().value(_KEY_HOME_OFFER_PENDING, False, type=bool))
+
+
+def save_home_offer_pending(pending: bool) -> None:
+    _settings().setValue(_KEY_HOME_OFFER_PENDING, bool(pending))
+
+
+def has_existing_install_trace() -> bool:
+    """True if this QSettings store looks like a returning install (U-1b)."""
+    if load_recent_folders():
+        return True
+    if load_scan_roots():
+        return True
+    if load_onboarding_done():
+        return True
+    return False
 
 
 # ----- user glossary (설정 → 용어 안내) -----

@@ -73,6 +73,21 @@ def next_step_for_error(message: str) -> str | None:
             "권한이 있는 다른 폴더를 골라 보세요."
         )
 
+    # GitHub single-file size hard block (GH001 / 100 MB)
+    if (
+        "gh001" in low
+        or "file size limit of 100" in low
+        or ("exceeds github" in low and "100" in low and "mb" in low)
+        or ("100 MB 초과" in msg)
+        or ("거절하는 큰 파일" in msg)
+    ):
+        return (
+            "큰 파일을 저장소 기록에서 뺀 뒤 다시 올려 주세요. "
+            "안내 창에서 「빼기」를 고르면 됩니다. "
+            "(아직 안 올린 기록은 각각 그대로 올라가지 않고 하나로 합쳐질 수 있어요. "
+            "이미 GitHub에 있는 기록은 그대로입니다.)"
+        )
+
     # Missing repo scope on PAT
     if (
         "저장소(repo) 권한" in msg
@@ -222,6 +237,11 @@ def next_step_for_error(message: str) -> str | None:
             or "아니" in msg
         )
     ) or ("origin" in low and ("없" in msg or "없습니다" in msg or "읽을 수" in msg)):
+        if "되돌리" in msg:
+            return (
+                "이 PC에서만 되돌리려면 확인 창에 「이해했습니다」를 입력하세요. "
+                "GitHub에도 남기려면 「만들고 올리기」로 연결한 뒤 다시 시도하세요."
+            )
         return (
             "「만들고 올리기」로 먼저 올리거나, "
             "「받기」로 받아 둔 폴더를 선택하세요."

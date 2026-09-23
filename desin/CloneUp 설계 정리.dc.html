@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  doc-page:not(:defined) { visibility: hidden; }
+  body { margin: 0; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+<script src="./doc-page.js"></script>
+</helmet>
+<doc-page margin="0.85in">
+
+  <h1 style="font-size: 26px; font-weight: 700; color: #232019; letter-spacing: -0.01em; margin: 0 0 6px; line-height: 1.3;">클론업 설계 정리</h1>
+  <div style="display: flex; gap: 18px; font-size: 12px; color: #6d675c; font-family: 'IBM Plex Mono', monospace; padding-bottom: 14px; border-bottom: 2px solid #232019; margin-bottom: 24px;">
+    <span>2026년 8월 9일</span>
+    <span>화면 시안 8종</span>
+    <span>미결 2건</span>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 26px;">지금까지 만든 화면과 그 근거, 그리고 아직 정하지 못한 것을 한자리에 모았습니다. 화면 시안은 모두 실제 코드를 읽고 그 동작에 맞춰 그렸습니다. 코드가 바뀌면 이 문서의 해당 항목도 함께 검토해야 합니다.</p>
+
+  <h2 style="font-size: 16px; font-weight: 600; color: #232019; margin: 26px 0 10px;">1. 이 앱이 지키는 원칙</h2>
+  <p style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px;">작업하면서 반복해서 적용한 판단 기준입니다. 새 화면을 만들 때도 이 네 가지를 먼저 확인하면 됩니다.</p>
+  <ol style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px; padding-left: 22px;">
+    <li><strong style="color: #232019;">메뉴는 git 명령이 아니라 목적으로 나눕니다.</strong> 이용자는 <span style="font-family: 'IBM Plex Mono', monospace;">revert</span> 와 <span style="font-family: 'IBM Plex Mono', monospace;">reset</span> 을 구분하지 못합니다. 대신 무엇을 얻고 무엇을 잃는지로 나눕니다.</li>
+    <li><strong style="color: #232019;">겁을 주지 않고 겁낼 곳을 특정합니다.</strong> 대부분의 동작은 잃는 것이 없습니다. 되돌릴 수 없는 것은 공개로 올리기와 기록 삭제 둘뿐이며, 이 둘에만 경고색을 씁니다.</li>
+    <li><strong style="color: #232019;">안내는 한 번으로 끝내지 않습니다.</strong> 첫 실행 안내는 지도 역할만 하고, 위험한 동작은 실행 직전에 다시 확인합니다.</li>
+    <li><strong style="color: #232019;">한계를 숨기지 않습니다.</strong> 비밀 파일 점검이 파일 안쪽을 보지 못한다는 사실은 화면에도 약관에도 적었습니다.</li>
+  </ol>
+
+  <h2 style="font-size: 16px; font-weight: 600; color: #232019; margin: 26px 0 10px;">2. 만든 화면</h2>
+  <table style="width: 100%; border-collapse: collapse; font-size: 12.5px; color: #2f2b24; margin-bottom: 18px;">
+    <thead>
+      <tr>
+        <th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #232019; font-weight: 600; width: 165px;">화면</th>
+        <th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #232019; font-weight: 600;">담은 것</th>
+        <th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #232019; font-weight: 600; width: 62px;">상태</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.55;">메인 창<br><span style="color: #6d675c; font-size: 11.5px;">라이트 · 다크</span></td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">탭 3개(만들고 올리기 · 받기 · 동기화), 상단 상태 바, 하단 실행 로그. <span style="font-family: 'IBM Plex Mono', monospace;">main_window.ui</span> 의 위젯 순서와 한국어 라벨을 그대로 따랐습니다.</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; color: #1f6f5c;">완료</td>
+      </tr>
+      <tr>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.55;">첫 실행 안내</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">5단계. 폴더가 두 곳에 있다 → 커밋은 돌아올 지점이다 → 대가표 → 되돌리기는 쌓는다 → 실수해도 된다.</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; color: #1f6f5c;">완료</td>
+      </tr>
+      <tr>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.55;">커밋 내역</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">별도 창. 커밋 목록, 선택 시점의 변경 파일, 되돌리기 확인 창과 완료 창.</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; color: #1f6f5c;">완료</td>
+      </tr>
+      <tr>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.55;">설정<br><span style="color: #6d675c; font-size: 11.5px;">라이트 · 다크</span></td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">계정 · 올리기 기본값 · 안전 · 최근 폴더 · 정보. 항목은 <span style="font-family: 'IBM Plex Mono', monospace;">settings_store.py</span> 에 실제로 있는 값만 넣었습니다.</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; color: #1f6f5c;">완료</td>
+      </tr>
+      <tr>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.55;">아이덴티티</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">심볼, 워드마크, 다중 해상도 <span style="font-family: 'IBM Plex Mono', monospace;">CloneUp.ico</span>(7개 크기), 가이드 시트와 5장 덱.</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; color: #1f6f5c;">완료</td>
+      </tr>
+      <tr>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.55;">이용약관</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">19개 조항. 조항별 근거 파일을 부록에 표로 정리했습니다. 앱 내 표시용 <span style="font-family: 'IBM Plex Mono', monospace;">TERMS.md</span> 도 함께 있습니다.</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; color: #1f6f5c;">완료</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 style="font-size: 16px; font-weight: 600; color: #232019; margin: 26px 0 10px;">3. 되돌리기 기능의 설계</h2>
+  <p style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px;">가장 많이 고민한 부분입니다. 초보자가 말하는 되돌리기 하나에 위험도가 다른 작업 여럿이 섞여 있어, 무엇을 넣지 않을지가 설계의 대부분이었습니다.</p>
+
+  <div style="padding: 14px 16px; background: #f4f1e8; border: 1px solid #ddd8d0; border-radius: 6px; margin-bottom: 16px; break-inside: avoid;">
+    <div style="font-size: 13px; font-weight: 600; color: #232019; margin-bottom: 7px;">1차에 넣은 것</div>
+    <div style="font-size: 13px; color: #4a453b; line-height: 1.7;">이 시점 파일 보기 · 이 시점으로 되돌리기(기록을 남기는 방식) · 되돌리기 전 백업 브랜치 자동 생성 · 되돌린 뒤 자동 푸시</div>
+  </div>
+  <div style="padding: 14px 16px; background: #fbf6ee; border-left: 3px solid #c4a94e; border-radius: 0 6px 6px 0; margin-bottom: 18px; break-inside: avoid;">
+    <div style="font-size: 13px; font-weight: 600; color: #232019; margin-bottom: 7px;">넣지 않기로 한 것</div>
+    <div style="font-size: 13px; color: #4a453b; line-height: 1.7;">기록까지 지우고 되돌리기(강제 푸시). 남의 사본을 깨뜨릴 수 있는 유일한 동작이라 초보자용 앱에서 제외했습니다.</div>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px;">이 결정에 맞춰 첫 실행 안내도 고쳤습니다. 4단계는 두 방식을 비교하는 대신 되돌리기가 커밋을 쌓는 과정을 그림으로 보여주고, 대가표에서도 제외한 기능의 행을 없앴습니다. 앱에 없는 기능을 초보자에게 가르칠 이유가 없습니다.</p>
+
+  <p style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px;">되돌리기를 기록을 남기는 방식으로 정한 것이 이 기능 전체를 단순하게 만들었습니다. 아무것도 잃지 않으므로 목록에서 골라 바로 실행해도 안전하고, 되돌리기를 또 되돌릴 수 있습니다. 실행하면 목록 맨 위에 새 커밋이 쌓이는 것을 화면이 직접 보여줍니다.</p>
+  <p style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px;">다만 자동 푸시를 선택했기 때문에, 확인 창에서 <strong style="color: #232019;">공개 저장소라면 곧바로 공개된다</strong>는 점을 경고색으로 표시합니다. 되돌리기 자체는 안전해도 그 결과가 공개되는 것은 별개의 문제입니다.</p>
+
+  <h2 style="font-size: 16px; font-weight: 600; color: #232019; margin: 26px 0 10px; break-before: page; padding-top: 4px;">4. 초보자 안내를 넣는 방식</h2>
+  <p style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px;">안내를 한곳에 몰아넣지 않고 네 층으로 나눕니다. 층마다 목적이 다릅니다.</p>
+  <ol style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px; padding-left: 22px;">
+    <li><strong style="color: #232019;">탭 아래 한 줄 안내.</strong> 각 탭이 무엇을 하는지 한 문장. 항상 보입니다.</li>
+    <li><strong style="color: #232019;">입력란 옆 도움말.</strong> 오해가 실제로 발생하는 지점에만 답니다. 저장소 주소, 저장소 이름, 공개 범위, <span style="font-family: 'IBM Plex Mono', monospace;">.git</span> 없는 폴더.</li>
+    <li><strong style="color: #232019;">실행 전 확인.</strong> 비밀 파일 후보가 있을 때, 그리고 첫 커밋 전 공개될 이메일을 알릴 때.</li>
+    <li><strong style="color: #232019;">로그 창의 해석 한 줄.</strong> 이미 코드가 한국어 오류 메시지를 반환하므로, 그 문장 뒤에 다음 행동만 덧붙입니다.</li>
+  </ol>
+  <p style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px;">2번을 항상 보이게 할지 접을지, 그리고 첫 실행 안내를 어디까지 짧게 줄일지는 아직 정하지 않았습니다.</p>
+
+  <h2 style="font-size: 16px; font-weight: 600; color: #232019; margin: 26px 0 10px;">5. 코드를 읽다 발견한 것</h2>
+  <p style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px;">약관을 쓰기 위해 동작을 확인하는 과정에서 나온 사항입니다. 화면 설계에도 영향을 줍니다.</p>
+  <ol style="font-size: 14px; line-height: 1.75; color: #2f2b24; margin: 0 0 12px; padding-left: 22px;">
+    <li><strong style="color: #232019;">앱에 로그아웃이 없었습니다.</strong> 토큰 삭제는 재인증 경로에서만 일어납니다. 설정 창 계정 항목에 로그아웃 버튼을 넣어 두었습니다.</li>
+    <li><strong style="color: #232019;">권한 범위가 넓습니다.</strong> <span style="font-family: 'IBM Plex Mono', monospace;">repo</span> 는 비공개 저장소까지 포함합니다. 승인 화면 앞에 평이한 말로 설명하는 안내가 필요합니다.</li>
+    <li><strong style="color: #232019;">이메일 보호가 절반만 적용됩니다.</strong> Git 설정이 없을 때만 <span style="font-family: 'IBM Plex Mono', monospace;">noreply</span> 주소를 씁니다. 이미 설정해 둔 사람은 실제 이메일이 공개되므로, 첫 게시 전에 알려주는 편이 안전합니다.</li>
+    <li><strong style="color: #232019;">비밀 파일 점검은 파일 이름만 봅니다.</strong> 안쪽에 적힌 비밀번호는 찾지 못합니다. 이 한계를 화면과 약관 양쪽에 적었습니다.</li>
+  </ol>
+
+  <h2 style="font-size: 16px; font-weight: 600; color: #232019; margin: 26px 0 10px;">6. 남은 일</h2>
+  <table style="width: 100%; border-collapse: collapse; font-size: 12.5px; color: #2f2b24;">
+    <thead>
+      <tr>
+        <th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #232019; font-weight: 600; width: 175px;">할 일</th>
+        <th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #232019; font-weight: 600;">내용</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.55;">대괄호 항목 채우기</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">약관과 <span style="font-family: 'IBM Plex Mono', monospace;">TERMS.md</span> 의 운영자명, 연락처, 라이선스, 유·무상 여부, 관할 법원. 운영자만 채울 수 있고, 채운 뒤 법률 검토가 필요합니다.</td>
+      </tr>
+      <tr>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.55;">안내 문구 반영</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">4장의 네 층을 메인 창 시안에 실제로 넣습니다. 2번 표시 방식 결정이 선행되어야 합니다.</td>
+      </tr>
+      <tr>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.55;">올림 여부 배지</td>
+        <td style="padding: 9px 10px; border-bottom: 1px solid #e6e1d8; vertical-align: top; line-height: 1.6;">커밋 목록에 올린 커밋인지 표시합니다. 지금은 없어도 되지만, 위험한 동작을 나중에 추가한다면 판단 기준이 됩니다.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="margin: 22px 0 0; padding: 14px 16px; background: #f4f1e8; border: 1px solid #ddd8d0; border-radius: 6px; font-size: 12.5px; color: #4a453b; line-height: 1.7; break-inside: avoid;">
+    화면 시안은 모두 겉모습만 만든 것입니다. 실제 동작은 아직 연결되어 있지 않으며, 시안에 보이는 폴더 경로와 커밋 목록은 예시 값입니다.
+  </div>
+
+</doc-page>
+
+</x-dc>
+</body>
+</html>

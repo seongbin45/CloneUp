@@ -100,7 +100,7 @@
             <label style="font-size: 13px; color: #4a453b;">GitHub 주소</label>
             <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">https://github.com/owner/repo</div>
           </div>
-          <div style="padding: 11px 13px; background: #f4f1e8; border-left: 3px solid #c4a94e; border-radius: 0 5px 5px 0; font-size: 12.5px; color: #6d675c; line-height: 1.55;">저장소 <strong style="color: #4a453b;">루트 주소</strong>를 붙여넣으세요. <span style="font-family: 'IBM Plex Mono', monospace;">/tree/main</span> 이 붙은 주소는 자동으로 정리됩니다.</div>
+          <div style="padding: 11px 13px; background: #f4f1e8; border-left: 3px solid #c4a94e; border-radius: 0 5px 5px 0; font-size: 12.5px; color: #6d675c; line-height: 1.55;">저장소 <strong style="color: #4a453b;">루트 주소</strong>만 붙여넣으세요. <span style="font-family: 'IBM Plex Mono', monospace;">/tree/main</span> 같은 웹 주소는 무시하고 저장소 루트만 clone 합니다.</div>
           <div style="display: grid; grid-template-columns: 92px 1fr auto; gap: 10px; align-items: center;">
             <label style="font-size: 13px; color: #4a453b;">저장 위치</label>
             <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">C:\Users\seong\Desktop</div>
@@ -134,9 +134,9 @@
               <span style="font-size: 17px; font-weight: 600; color: #2f2b24;">3</span>
               <span style="font-size: 12px; color: #6d675c;">개 파일 변경</span>
             </div>
-            <div style="display: flex; align-items: center; gap: 7px; padding: 8px 13px; background: #f2efe9; border-radius: 5px; font-size: 12px; color: #6d675c;">
+            <div style="display: flex; align-items: center; gap: 7px; padding: 8px 13px; background: #f2efe9; border-radius: 5px; white-space: nowrap; font-size: 12px; color: #6d675c;">
               <span style="width: 6px; height: 6px; border-radius: 50%; background: #2f8f6d;"></span>
-              <span>원격 연결됨 · <span style="font-family: 'IBM Plex Mono', monospace; color: #4a453b;">origin/main</span></span>
+              <span>origin 연결됨 · 브랜치 <span style="font-family: 'IBM Plex Mono', monospace; color: #4a453b;">main</span><span> · ahead 1 / behind 0</span></span>
             </div>
           </div>
           <div style="display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center;">
@@ -163,12 +163,12 @@
         <span style="font-size: 12px; font-weight: 600; color: #4a453b;">실행 로그</span>
         <span style="font-size: 11.5px; color: #8b8477;">토큰은 마스킹됩니다</span>
       </div>
-      <div style="margin: 0 16px 16px; padding: 12px 14px; background: #2c2925; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; line-height: 1.75; height: 116px; overflow: hidden;">
-        <div style="color: #8f887c;">&gt; git clone https://x-access-token:***@github.com/owner/repo.git</div>
-        <div style="color: #d6d0c4;">Cloning into 'repo'...</div>
-        <div style="color: #7fc9a8;">✓ 성공 · Desktop\repo 에 저장됨</div>
-        <div style="color: #8f887c;">&gt; git push -u origin main</div>
-        <div style="color: #e0a3a3;">✗ 실패 · 로그인이 필요합니다 (권한 없음)</div>
+      <div style="margin: 0 16px 16px; padding: 12px 14px; background: #2c2925; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; line-height: 1.75; height: 140px; overflow: hidden;">
+        <div style="color: #8f887c;">&gt; clone: https://github.com/owner/repo.git → C:\Users\seong\Desktop\repo</div>
+        <div style="color: #c9ad5c;">안내: 웹 주소(/tree/main)는 무시합니다. 저장소 루트만 clone 합니다.</div>
+        <div style="color: #d6d0c4;">Cloning into 'C:\Users\seong\Desktop\repo'...</div>
+        <div style="color: #8f887c;">&gt; commit: Update</div>
+        <div style="color: #e0a3a3;">✗ push 실패: remote: Permission to owner/repo.git denied.</div>
       </div>
     </div>
 

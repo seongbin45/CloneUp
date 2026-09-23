@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #e8e6e1; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #1f6f5c; }
+  a:hover { color: #14503f; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 40px; display: flex; flex-direction: column; align-items: flex-start; gap: 18px; overflow-x: auto;">
+
+  <div style="width: 1000px; flex-shrink: 0; margin-inline: auto; display: flex; align-items: center; gap: 12px;">
+    <div style="font-size: 12px; color: #6d675c;">폴더 성격</div>
+    <div style="display: flex; gap: 6px;">
+      <sc-for list="{{ modes }}" as="m" hint-placeholder-count="3">
+        <div onClick="{{ m.go }}" style="padding: 7px 14px; border-radius: 5px; cursor: pointer; font-size: 12.5px; border: 1px solid {{ m.border }}; background: {{ m.bg }}; color: {{ m.fg }}; font-weight: {{ m.weight }};">{{ m.label }}</div>
+      </sc-for>
+    </div>
+    <div style="margin-left: auto; font-size: 11.5px; color: #6d675c;">동기화 탭이 폴더를 보고 스스로 판단합니다</div>
+  </div>
+
+  <div style="width: 1000px; flex-shrink: 0; margin-inline: auto; box-sizing: border-box; position: relative; background: #fbfaf8; border: 1px solid #c9c5bd; border-radius: 10px; box-shadow: 0 18px 48px rgba(40,36,30,.18); overflow: hidden; display: flex; flex-direction: column;">
+
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+      <div style="display: flex; gap: 7px;">
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4cb;"></div>
+      </div>
+      <div style="font-size: 13px; font-weight: 600; color: #3d382f;">클론업 (CloneUp)</div>
+    </div>
+
+    <div style="display: flex; gap: 2px; padding: 0 16px; background: #f2efe9; border-bottom: 1px solid #ddd8d0;">
+      <div style="padding: 10px 18px; font-size: 13px; color: #7c766a; border-radius: 6px 6px 0 0;">만들고 올리기</div>
+      <div style="padding: 10px 18px; font-size: 13px; color: #7c766a; border-radius: 6px 6px 0 0;">받기</div>
+      <div style="padding: 10px 18px; font-size: 13px; font-weight: 500; color: #1f6f5c; background: #fbfaf8; border: 1px solid #ddd8d0; border-bottom: none; border-radius: 6px 6px 0 0; margin-bottom: -1px;">동기화</div>
+    </div>
+
+    <div style="padding: 24px 24px 22px; display: flex; flex-direction: column; gap: 18px; min-height: 300px;">
+
+      <div style="display: grid; grid-template-columns: 92px 1fr auto auto; gap: 10px; align-items: center;">
+        <label style="font-size: 13px; color: #4a453b;">작업 폴더</label>
+        <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">{{ st.folder }}</div>
+        <div style="height: 32px; padding: 0 14px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #4a453b; cursor: pointer;" style-hover="background: #e9e5dd;">찾아보기…</div>
+        <div style="height: 32px; padding: 0 14px; display: flex; align-items: center; background: #f2efe9; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #4a453b; cursor: pointer;" style-hover="background: #e9e5dd;">상태 새로고침</div>
+      </div>
+
+      <div style="display: flex; align-items: flex-start; gap: 11px; padding: 13px 15px; background: {{ st.bannerBg }}; border-left: 3px solid {{ st.bannerBar }}; border-radius: 0 6px 6px 0;">
+        <div style="font-size: 13px; font-weight: 600; color: {{ st.bannerBar }}; flex-shrink: 0;">{{ st.bannerTag }}</div>
+        <div style="font-size: 12.5px; color: #4a453b; line-height: 1.65;">{{ st.bannerBody }}</div>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 10px; padding-left: 102px;">
+        <sc-for list="{{ st.chips }}" as="c" hint-placeholder-count="2">
+          <div style="display: flex; align-items: center; gap: 7px; padding: 8px 13px; background: #f2efe9; border-radius: 5px; white-space: nowrap; font-size: 12px; color: #6d675c;">
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: {{ c.dot }};"></span>
+            <span>{{ c.text }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ st.showCommit }}" hint-placeholder-val="{{ true }}">
+        <div style="display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center;">
+          <label style="font-size: 13px; color: #4a453b;">커밋 메시지</label>
+          <div style="height: 32px; padding: 0 11px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24;">{{ st.commitMsg }}</div>
+        </div>
+      </sc-if>
+
+      <div style="display: flex; gap: 10px; padding-top: 2px;">
+        <sc-for list="{{ st.buttons }}" as="b" hint-placeholder-count="2">
+          <div onClick="{{ b.act }}" style="height: 40px; padding: 0 20px; flex: {{ b.flex }}; display: flex; align-items: center; justify-content: center; cursor: {{ b.cursor }}; border-radius: 6px; font-size: 13px; font-weight: {{ b.weight }}; border: 1px solid {{ b.border }}; background: {{ b.bg }}; color: {{ b.fg }};">{{ b.label }}</div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ st.showHint }}" hint-placeholder-val="{{ false }}">
+        <div style="font-size: 11.5px; color: #6d675c; line-height: 1.65;">{{ st.hint }}</div>
+      </sc-if>
+
+    </div>
+
+    <div style="border-top: 1px solid #e6e1d8;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 20px 7px;">
+        <span style="font-size: 12px; font-weight: 600; color: #4a453b;">실행 로그</span>
+      </div>
+      <div style="margin: 0 16px 16px; padding: 12px 14px; background: #2c2925; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; line-height: 1.75; height: 84px; overflow: hidden;">
+        <sc-for list="{{ st.log }}" as="l" hint-placeholder-count="3">
+          <div style="color: {{ l.tone }};">{{ l.text }}</div>
+        </sc-for>
+      </div>
+    </div>
+
+    <sc-if value="{{ showFork }}" hint-placeholder-val="{{ false }}">
+      <div style="position: absolute; inset: 0; background: rgba(35,32,25,.42); display: flex; align-items: center; justify-content: center; padding: 32px;">
+        <div style="width: 540px; max-height: 100%; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 10px; box-shadow: 0 16px 40px rgba(40,36,30,.32); overflow: hidden; display: flex; flex-direction: column;">
+          <div style="flex-shrink: 0; padding: 20px 24px 16px; border-bottom: 1px solid #e6e1d8; display: flex; flex-direction: column; gap: 7px;">
+            <div style="font-size: 16px; font-weight: 600; color: #232019;">내 계정에 사본을 만듭니다</div>
+            <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">원본은 건드리지 않습니다. 내 계정 아래에 똑같은 저장소가 하나 생기고, 이 폴더가 그 사본을 바라보게 됩니다.</div>
+          </div>
+          <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <div style="flex: 1; padding: 13px 15px; background: #f2efe9; border: 1px solid #ddd8d0; border-radius: 6px;">
+                <div style="font-size: 11.5px; color: #6d675c; margin-bottom: 4px;">원본</div>
+                <div style="font-size: 12.5px; color: #232019; font-family: 'IBM Plex Mono', monospace;">octocat/Hello-World</div>
+              </div>
+              <div style="flex-shrink: 0; display: flex; align-items: center;">
+                <div style="width: 22px; height: 2px; background: #1f6f5c;"></div>
+                <div style="width: 0; height: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 8px solid #1f6f5c;"></div>
+              </div>
+              <div style="flex: 1; padding: 13px 15px; background: #f2efe9; border: 1px solid #1f6f5c; border-radius: 6px;">
+                <div style="font-size: 11.5px; color: #6d675c; margin-bottom: 4px;">내 사본</div>
+                <div style="font-size: 12.5px; color: #232019; font-family: 'IBM Plex Mono', monospace;">seong/Hello-World</div>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 9px; padding: 14px 16px; background: #f2efe9; border-radius: 6px;">
+              <div style="display: flex; gap: 10px;">
+                <div style="width: 6px; height: 6px; border-radius: 50%; background: #1f6f5c; margin-top: 6px; flex-shrink: 0;"></div>
+                <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">지금 고친 내용은 그대로 남습니다. 사본이 생긴 뒤 올리면 됩니다.</div>
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <div style="width: 6px; height: 6px; border-radius: 50%; background: #8a6d12; margin-top: 6px; flex-shrink: 0;"></div>
+                <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">원본이 공개 저장소이므로 <strong style="color: #232019;">내 사본도 공개됩니다.</strong> 개인 정보가 든 파일을 올리지 마세요.</div>
+              </div>
+            </div>
+          </div>
+          <div style="flex-shrink: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px; background: #f2efe9; border-top: 1px solid #e6e1d8;">
+            <div onClick="{{ close }}" style="height: 36px; padding: 0 18px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer;" style-hover="background: #f4f1e8;">취소</div>
+            <div onClick="{{ doFork }}" style="height: 36px; padding: 0 22px; display: flex; align-items: center; background: #1f6f5c; color: #fff; font-size: 13px; font-weight: 600; border-radius: 5px; cursor: pointer;" style-hover="background: #185b4b;">사본 만들기</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ showPr }}" hint-placeholder-val="{{ false }}">
+      <div style="position: absolute; inset: 0; background: rgba(35,32,25,.42); display: flex; align-items: center; justify-content: center; padding: 32px;">
+        <div style="width: 560px; max-height: 100%; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 10px; box-shadow: 0 16px 40px rgba(40,36,30,.32); overflow: hidden; display: flex; flex-direction: column;">
+          <div style="flex-shrink: 0; padding: 20px 24px 16px; border-bottom: 1px solid #e6e1d8; display: flex; flex-direction: column; gap: 7px;">
+            <div style="font-size: 16px; font-weight: 600; color: #232019;">원본에 제안합니다</div>
+            <div style="font-size: 12.5px; color: #4a453b; line-height: 1.6;">내 사본의 내용을 원본 만든 사람에게 보내 검토를 요청합니다. 받아들일지는 그쪽이 정합니다.</div>
+          </div>
+          <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px;">
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 62px; flex-shrink: 0; font-size: 12px; color: #6d675c;">보내는 곳</div>
+                <div style="flex: 1; font-size: 12.5px; color: #232019; font-family: 'IBM Plex Mono', monospace;">seong/Hello-World · main</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="width: 62px; flex-shrink: 0; font-size: 12px; color: #6d675c;">받는 곳</div>
+                <div style="flex: 1; font-size: 12.5px; color: #232019; font-family: 'IBM Plex Mono', monospace;">octocat/Hello-World · main</div>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="font-size: 12px; font-weight: 600; color: #4a453b;">제목</div>
+              <div style="height: 34px; padding: 0 12px; display: flex; align-items: center; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 13px; color: #2f2b24;">오타 수정</div>
+              <div style="font-size: 12px; font-weight: 600; color: #4a453b; margin-top: 4px;">설명</div>
+              <div style="min-height: 62px; padding: 10px 12px; background: #fff; border: 1px solid #cdc8bf; border-radius: 5px; font-size: 12.5px; color: #6d675c; line-height: 1.6;">무엇을 왜 고쳤는지 적으면 받아들여질 가능성이 높아집니다.</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 7px;">
+              <div style="font-size: 12px; font-weight: 600; color: #4a453b;">보낼 변경 2개</div>
+              <div style="display: flex; align-items: center; gap: 9px; padding: 7px 10px; background: #fff; border: 1px solid #e6e1d8; border-radius: 5px;">
+                <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; color: #fbfaf8; background: #8a6d12;">M</span>
+                <span style="font-size: 12px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">README.md</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 9px; padding: 7px 10px; background: #fff; border: 1px solid #e6e1d8; border-radius: 5px;">
+                <span style="width: 17px; height: 17px; flex-shrink: 0; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; color: #fbfaf8; background: #8a6d12;">M</span>
+                <span style="font-size: 12px; color: #2f2b24; font-family: 'IBM Plex Mono', monospace;">docs/guide.md</span>
+              </div>
+            </div>
+            <div style="padding: 13px 15px; background: #fbf6ee; border-left: 3px solid #c4a94e; border-radius: 0 6px 6px 0; font-size: 12.5px; color: #4a453b; line-height: 1.65;">제안한 내용과 여기 적은 글은 <strong style="color: #232019;">누구나 볼 수 있습니다.</strong> 만든 뒤에는 GitHub에서 이어서 진행하시면 됩니다.</div>
+          </div>
+          <div style="flex-shrink: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 14px 24px; background: #f2efe9; border-top: 1px solid #e6e1d8;">
+            <div onClick="{{ close }}" style="height: 36px; padding: 0 18px; display: flex; align-items: center; background: #fbfaf8; border: 1px solid #b7b1a5; border-radius: 5px; font-size: 12.5px; color: #3d382f; cursor: pointer;" style-hover="background: #f4f1e8;">취소</div>
+            <div onClick="{{ close }}" style="height: 36px; padding: 0 22px; display: flex; align-items: center; background: #1f6f5c; color: #fff; font-size: 13px; font-weight: 600; border-radius: 5px; cursor: pointer;" style-hover="background: #185b4b;">제안 만들고 열기</div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1088,&quot;height&quot;:760}}">
+class Component extends DCLogic {
+  state = { mode: 1, overlay: null };
+
+  btn(label, kind, act) {
+    const styles = {
+      primary: { bg: "#1f6f5c", fg: "#fff", border: "#1f6f5c", weight: "600", flex: "1.3" },
+      normal: { bg: "#fff", fg: "#3d382f", border: "#b7b1a5", weight: "500", flex: "1" },
+      quiet: { bg: "#f2efe9", fg: "#6d675c", border: "#cdc8bf", weight: "400", flex: "0" },
+      off: { bg: "#f2efe9", fg: "#b3ac9e", border: "#ddd8d0", weight: "400", flex: "0" },
+    };
+    const s = styles[kind];
+    return { label, ...s, cursor: kind === "off" ? "default" : "pointer", act: act || (() => {}) };
+  }
+
+  renderVals() {
+    const m = this.state.mode;
+    const open = (k) => () => this.setState({ overlay: k });
+
+    const states = [
+      {
+        folder: "C:\\Users\\seong\\Desktop\\my-project",
+        bannerTag: "내 저장소",
+        bannerBody: "내가 올린 저장소입니다. 고친 내용을 바로 올릴 수 있습니다.",
+        bannerBg: "#f4f1e8", bannerBar: "#1f6f5c",
+        chips: [
+          { dot: "#1f6f5c", text: "origin 연결됨 · 브랜치 main" },
+          { dot: "#8a6d12", text: "안 올린 변경 3개" },
+        ],
+        showCommit: true, commitMsg: "Update",
+        buttons: [
+          this.btn("올리기 (commit+push)", "primary"),
+          this.btn("받아오기 (pull)", "normal"),
+          this.btn("충돌 취소", "quiet"),
+        ],
+        showHint: false, hint: "",
+        log: [
+          { tone: "#8f887c", text: "> status: my-project" },
+          { tone: "#d6d0c4", text: "GitHub 주소와 연결되어 있습니다 · 컴퓨터에 아직 안 올린 변경이 있습니다" },
+        ],
+      },
+      {
+        folder: "C:\\Users\\seong\\Desktop\\Hello-World",
+        bannerTag: "남의 저장소",
+        bannerBody: "octocat 님의 저장소입니다. 여기에 직접 올릴 권한이 없습니다. 고친 내용을 전하려면 내 계정에 사본을 만들어 그쪽에 올린 뒤, 원본에 제안하면 됩니다.",
+        bannerBg: "#fbf6ee", bannerBar: "#8a6d12",
+        chips: [
+          { dot: "#8a6d12", text: "쓰기 권한 없음" },
+          { dot: "#8a6d12", text: "안 올린 변경 2개" },
+        ],
+        showCommit: false, commitMsg: "",
+        buttons: [
+          this.btn("내 사본 만들기", "primary", open("fork")),
+          this.btn("받아오기 (pull)", "normal"),
+          this.btn("올리기", "off"),
+        ],
+        showHint: true,
+        hint: "고친 내용은 그대로 있습니다. 사본을 만들면 그때 올릴 수 있습니다.",
+        log: [
+          { tone: "#8f887c", text: "> status: Hello-World" },
+          { tone: "#c9ad5c", text: "안내: 이 저장소에 쓰기 권한이 없습니다 (octocat/Hello-World)" },
+          { tone: "#d6d0c4", text: "받기만 가능합니다. 사본을 만들면 올릴 수 있습니다." },
+        ],
+      },
+      {
+        folder: "C:\\Users\\seong\\Desktop\\Hello-World",
+        bannerTag: "내 사본",
+        bannerBody: "octocat/Hello-World 의 사본입니다. 내 사본에는 마음껏 올릴 수 있고, 준비가 되면 원본에 제안할 수 있습니다.",
+        bannerBg: "#f4f1e8", bannerBar: "#1f6f5c",
+        chips: [
+          { dot: "#1f6f5c", text: "내 사본 seong/Hello-World" },
+          { dot: "#6d675c", text: "원본 octocat/Hello-World" },
+          { dot: "#8a6d12", text: "원본보다 앞선 저장 2개" },
+        ],
+        showCommit: true, commitMsg: "오타 수정",
+        buttons: [
+          this.btn("내 사본에 올리기", "primary"),
+          this.btn("원본에 제안하기", "normal", open("pr")),
+          this.btn("원본에서 받아오기", "quiet"),
+        ],
+        showHint: true,
+        hint: "제안하기 전에 먼저 내 사본에 올려야 합니다.",
+        log: [
+          { tone: "#8f887c", text: "> push: seong/Hello-World" },
+          { tone: "#7fc9a8", text: "GitHub로 보내기가 끝났습니다." },
+        ],
+      },
+    ];
+
+    const labels = ["내 저장소", "남의 저장소", "내 사본"];
+    return {
+      modes: labels.map((label, i) => ({
+        label,
+        bg: i === m ? "#fbfaf8" : "transparent",
+        fg: i === m ? "#1f6f5c" : "#6d675c",
+        border: i === m ? "#1f6f5c" : "#cdc8bf",
+        weight: i === m ? "600" : "400",
+        go: () => this.setState({ mode: i, overlay: null }),
+      })),
+      st: states[m],
+      showFork: this.state.overlay === "fork",
+      showPr: this.state.overlay === "pr",
+      doFork: () => this.setState({ mode: 2, overlay: null }),
+      close: () => this.setState({ overlay: null }),
+    };
+  }
+}
+</script>
+</body>
+</html>

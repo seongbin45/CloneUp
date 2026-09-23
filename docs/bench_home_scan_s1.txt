@@ -1,0 +1,25 @@
+=== CloneUp home scan S0 bench ===
+case:           live_settings
+n_roots:        12
+  root: C:\Users\seong\Desktop\ProJect\KT_AICE_Website_Analysis
+  root: C:\Users\seong\Desktop\ProJect
+  root: C:\Users\seong\Desktop\ProJect\File_sharing_using_Tailscale
+  root: C:\Users\seong\Desktop\ProJect\Codyssey_7_ProJect
+  root: C:\Users\seong\Downloads\new
+  root: C:\Users\seong\Desktop\ProJect\Automating_automatic_message_sending
+  root: C:\Users\seong\Downloads\CODYSSEY_6_ProJect
+  root: C:\Users\seong\Downloads\Videos_log
+  root: C:\Users\seong\Downloads\CODYSSEY_5_ProJect
+  root: C:\Users\seong\Downloads\CODYSSEY_4_ProJect
+  root: C:\Users\seong\Downloads\CODYSSEY_4_ProJect\other\Codyssey_3_ProJect
+  root: C:\Users\seong\Downloads\CODYSSEY_4_ProJect\other
+recent_count:   12
+phase1_ms:      46.1
+n_projects:     24
+n_git:          20
+enrich_all_ms:  6547.1  (n=20)
+enrich by cap:
+  K=8: 2487.9 ms  n=8  (38.0% of all)
+  K=12: 3950.2 ms  n=12  (60.3% of all)
+  K=16: 5087.5 ms  n=16  (77.7% of all)
+wrote docs\bench_home_scan_s1.json

@@ -124,7 +124,7 @@ def _card_stylesheet(p: Palette) -> str:
     }}
     QPushButton#btnGhost {{
         padding: 8px 12px;
-        border-radius: 8px;
+        border-radius: 10px;
         font-size: 13px;
         font-weight: 500;
         color: {p.text_muted};
@@ -135,6 +135,15 @@ def _card_stylesheet(p: Palette) -> str:
     QPushButton#btnGhost:hover {{
         color: {p.text};
         background: {p.hover_muted};
+        border-radius: 10px;
+    }}
+    /* Parent card QSS must not re-impose app QPushButton fill/padding on ← 뒤로 */
+    QPushButton#btnBack {{
+        background: transparent;
+        border: none;
+        padding: 0;
+        margin: 0;
+        min-height: 0;
     }}
     QProgressBar {{
         border: 1px solid {p.border_soft};
@@ -258,9 +267,20 @@ class GitSetupOverlay(QWidget):
             self._btn_winget.setEnabled(False)
             self._btn_winget.setToolTip("이 PC에서 winget을 찾지 못했습니다.")
 
-        self._btn_back = QPushButton("← 뒤로", card)
-        self._btn_back.setObjectName("btnGhost")
-        self._btn_back.setCursor(Qt.CursorShape.PointingHandCursor)
+        from app.ui.home_chrome import RoundedOutlineButton
+
+        pal = self._palette
+        self._btn_back = RoundedOutlineButton(
+            "← 뒤로", card, radius=18.0, pill=True
+        )
+        self._btn_back.setObjectName("btnBack")
+        self._btn_back.setMinimumHeight(36)
+        self._btn_back.set_chrome(
+            bg=pal.bg_window,
+            bg_hover=pal.hover_muted,
+            border=pal.border_outline,
+            fg=pal.text_secondary,
+        )
         self._btn_back.clicked.connect(self._show_home)
         self._btn_back.hide()
 

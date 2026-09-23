@@ -354,6 +354,80 @@ def apply_work_area_maximized(widget: Any, *, anchor: Any = None) -> None:
             )
 
 
+def apply_work_area_normal_fill(widget: Any, *, anchor: Any = None) -> None:
+    """
+    ``showNormal`` but size the frame to fill ``availableGeometry``.
+
+    Taskbar / off-screen margins are excluded via ``QScreen.availableGeometry``.
+    Unlike ``showMaximized``, the window stays in the normal (restorable)
+    state — the maximize control remains available.
+
+    On Windows ``setGeometry`` is the *client* rect; we measure frame chrome
+    after a probe place, then set the client so the outer frame matches the
+    work area.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    clear_size_locks(widget)
+    try:
+        st = widget.windowState()
+        if st & Qt.WindowState.WindowFullScreen:
+            widget.setWindowState(st & ~Qt.WindowState.WindowFullScreen)
+        if st & Qt.WindowState.WindowMaximized:
+            widget.setWindowState(
+                widget.windowState() & ~Qt.WindowState.WindowMaximized
+            )
+    except Exception:
+        pass
+    try:
+        widget.showNormal()
+    except Exception:
+        pass
+
+    screen = screen_for_widget(widget, anchor=anchor)
+    info = read_screen_info(screen)
+    if info is None:
+        widget.resize(1280, 720)
+        return
+
+    try:
+        mw = min(640, max(320, info.available_w - 48))
+        mh = min(360, max(240, info.available_h - 48))
+        widget.setMinimumSize(mw, mh)
+    except Exception:
+        pass
+
+    # Probe place to learn frame chrome (title + borders).
+    widget.setGeometry(
+        info.available_x,
+        info.available_y,
+        max(320, info.available_w),
+        max(240, info.available_h),
+    )
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
+
+    try:
+        fg = widget.frameGeometry()
+        geo = widget.geometry()
+        chrome_l = max(0, geo.x() - fg.x())
+        chrome_t = max(0, geo.y() - fg.y())
+        chrome_r = max(0, fg.right() - geo.right())
+        chrome_b = max(0, fg.bottom() - geo.bottom())
+    except Exception:
+        chrome_l = chrome_t = chrome_r = chrome_b = 0
+
+    cw = max(320, info.available_w - chrome_l - chrome_r)
+    ch = max(240, info.available_h - chrome_t - chrome_b)
+    client_x = info.available_x + chrome_l
+    client_y = info.available_y + chrome_t
+    widget.setGeometry(client_x, client_y, cw, ch)
+    if app is not None:
+        app.processEvents()
+
+
 def fit_client_in_available(
     widget: Any,
     width: int,

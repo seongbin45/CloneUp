@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #100f0a; font-family: "IBM Plex Sans KR", system-ui, sans-serif; }
+  a { color: #46a685; }
+  a:hover { color: #57bd99; }
+  input { font-family: inherit; }
+  input::placeholder { color: #a39c8c; }
+</style>
+</helmet>
+<div style="min-height: 100vh; padding: 30px; display: flex; flex-direction: column; align-items: flex-start; gap: 13px; overflow-x: auto;">
+
+  <div style="width: 1180px; flex-shrink: 0; margin-inline: auto; display: flex; align-items: center; gap: 10px;">
+    <div style="font-size: 12px; color: #bab3a3;">상태 확인용</div>
+    <div onClick="{{ toggleSigned }}" style="padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 12px; border: 1px solid {{ signedBorder }}; background: {{ signedBg }}; color: {{ signedFg }};">{{ signedLabel }}</div>
+    <div onClick="{{ toggleGit }}" style="padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 12px; border: 1px solid {{ gitBorder }}; background: {{ gitBg }}; color: {{ gitFg }};">{{ gitLabel }}</div>
+    <div onClick="{{ togglePhase2 }}" style="padding: 6px 12px; border-radius: 999px; cursor: pointer; font-size: 12px; border: 1px solid {{ phase2Border }}; background: {{ phase2Bg }}; color: {{ phase2Fg }};">{{ phase2Label }}</div>
+    <div style="margin-left: auto; font-size: 11.5px; color: #bab3a3;">Git 상태는 문제가 있을 때만 나타납니다</div>
+  </div>
+
+  <div style="width: 1180px; flex-shrink: 0; margin-inline: auto; box-sizing: border-box; height: 660px; background: #232019; border: 1px solid #3b372e; border-radius: 11px; box-shadow: 0 20px 52px rgba(0,0,0,.6); overflow: hidden; display: flex; flex-direction: column;">
+
+    <div style="flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 11px 14px; background: #1e1c16; border-bottom: 1px solid #333026;">
+      <div style="display: flex; gap: 7px; flex-shrink: 0;">
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #403c33;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #403c33;"></div>
+        <div style="width: 11px; height: 11px; border-radius: 50%; background: #403c33;"></div>
+      </div>
+      <div style="display: flex; gap: 4px; flex-shrink: 0;">
+        <div onClick="{{ goBack }}" style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 12px; cursor: {{ backCursor }}; color: {{ backFg }};" style-hover="background: #343128;">‹</div>
+        <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 12px; color: #6f6a5d;">›</div>
+      </div>
+      <div style="font-size: 13.5px; font-weight: 600; color: #efeade; flex-shrink: 0;">{{ heading }}</div>
+
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
+        <div style="display: flex; padding: 2px; background: #343128; border-radius: 7px; gap: 2px;">
+          <div onClick="{{ setList }}" style="padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: {{ listWeight }}; background: {{ listBg }}; color: {{ listFg }};">목록</div>
+          <div onClick="{{ setTime }}" style="padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: {{ timeWeight }}; background: {{ timeBg }}; color: {{ timeFg }};">시간순</div>
+        </div>
+        <div style="width: 216px; height: 28px; padding: 0 11px; display: flex; align-items: center; gap: 8px; background: #232019; border: 1px solid #443f35; border-radius: 999px;">
+          <span style="font-size: 12px; color: #a39c8c; flex-shrink: 0;">⌕</span>
+          <input type="text" value="{{ query }}" onChange="{{ onQuery }}" placeholder="폴더 이름으로 찾기" style="flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 12.5px; color: #efeade;">
+        </div>
+      </div>
+    </div>
+
+    <div style="flex: 1; min-height: 0; display: flex;">
+
+      <div style="width: 206px; flex-shrink: 0; position: relative; background: #1e1c16; border-right: 1px solid #333026; display: flex; flex-direction: column;">
+        <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 14px 0; display: flex; flex-direction: column; gap: 16px;">
+        <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <div style="padding: 0 16px 6px; font-size: 11px; font-weight: 600; color: #a39c8c; letter-spacing: 0.02em;">{{ g.title }}</div>
+            <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="4">
+              <div onClick="{{ it.go }}" style="margin: 0 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 9px; background: {{ it.bg }};" style-hover="background: #343128;">
+                <span style="width: 15px; flex-shrink: 0; text-align: center; font-size: 11px; color: {{ it.iconFg }};">{{ it.icon }}</span>
+                <span style="font-size: 12.5px; color: {{ it.fg }}; font-weight: {{ it.weight }}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ it.label }}</span>
+                <sc-if value="{{ it.showCount }}" hint-placeholder-val="{{ false }}">
+                  <span style="margin-left: auto; flex-shrink: 0; font-size: 11px; color: {{ it.countFg }};">{{ it.count }}</span>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+        <div style="margin: 0 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 9px;" style-hover="background: #343128;">
+          <span style="width: 15px; flex-shrink: 0; text-align: center; font-size: 12px; color: #a39c8c;">+</span>
+          <span style="font-size: 12.5px; color: #a39c8c;">찾을 위치 추가</span>
+        </div>
+        </div>
+
+        <div style="flex-shrink: 0; border-top: 1px solid #333026; padding: 8px; display: flex; align-items: center; gap: 6px;">
+          <sc-if value="{{ signed }}" hint-placeholder-val="{{ true }}">
+            <div onClick="{{ toggleMenu }}" style="flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 9px;" style-hover="background: #343128;">
+              <span style="width: 23px; height: 23px; flex-shrink: 0; border-radius: 50%; background: #2f4a41; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #efeade;">s</span>
+              <span style="font-size: 12.5px; color: #efeade; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">seong</span>
+              <span style="width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: #46a685;"></span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ signedOut }}" hint-placeholder-val="{{ false }}">
+            <div style="flex: 1; min-width: 0; height: 35px; padding: 0 10px; border: 1px solid #46a685; border-radius: 7px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; background: #232019;" style-hover="background: #2b2821;">
+              <span style="font-size: 12.5px; font-weight: 600; color: #46a685; white-space: nowrap;">GitHub 로그인</span>
+            </div>
+          </sc-if>
+          <div onClick="{{ toggleMenu }}" style="width: 31px; height: 31px; flex-shrink: 0; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #bab3a3; background: {{ menuBg }};" style-hover="background: #343128;">⋯</div>
+        </div>
+
+        <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position: absolute; left: 8px; right: 8px; bottom: 52px; background: #232019; border: 1px solid #3b372e; border-radius: 9px; box-shadow: 0 10px 26px rgba(0,0,0,.62); overflow: hidden; padding: 5px;">
+            <sc-for list="{{ menuItems }}" as="m" hint-placeholder-count="4">
+              <sc-if value="{{ m.isRule }}" hint-placeholder-val="{{ false }}">
+                <div style="height: 1px; margin: 4px 6px; background: #333026;"></div>
+              </sc-if>
+              <sc-if value="{{ m.isItem }}" hint-placeholder-val="{{ true }}">
+                <div onClick="{{ m.act }}" style="padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 9px;" style-hover="background: #2b2821;">
+                  <span style="font-size: 12.5px; color: {{ m.fg }};">{{ m.label }}</span>
+                  <sc-if value="{{ m.showHint }}" hint-placeholder-val="{{ false }}">
+                    <span style="margin-left: auto; flex-shrink: 0; font-size: 11px; color: #a39c8c; font-family: 'IBM Plex Mono', monospace;">{{ m.hint }}</span>
+                  </sc-if>
+                </div>
+              </sc-if>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; background: #232019;">
+
+        <sc-if value="{{ gitMissing }}" hint-placeholder-val="{{ false }}">
+          <div style="flex-shrink: 0; display: flex; align-items: center; gap: 13px; padding: 12px 16px; background: #2e2a1e; border-bottom: 1px solid #d3b862;">
+            <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0;">
+              <div style="font-size: 12.5px; font-weight: 600; color: #efeade;">Git이 설치되어 있지 않습니다</div>
+              <div style="font-size: 12px; color: #bab3a3; line-height: 1.55;">받기와 올리기가 동작하지 않습니다. 설치하고 클론업을 다시 열어 주세요.</div>
+            </div>
+            <div style="margin-left: auto; flex-shrink: 0; height: 32px; padding: 0 14px; display: flex; align-items: center; background: #232019; border: 1px solid #d3b862; border-radius: 7px; font-size: 12.5px; color: #eae5d9; cursor: pointer; white-space: nowrap;" style-hover="background: #343128;">설치 방법 보기</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+          <div style="flex-shrink: 0; display: grid; grid-template-columns: 1fr 118px 108px 92px; gap: 12px; padding: 8px 16px; background: #26241d; border-bottom: 1px solid #333026;">
+            <div onClick="{{ sortName }}" style="font-size: 11.5px; font-weight: 600; color: {{ nameHeadFg }}; cursor: pointer; display: flex; align-items: center; gap: 5px;">이름 <span style="font-size: 8px;">{{ nameArrow }}</span></div>
+            <div onClick="{{ sortTime }}" style="font-size: 11.5px; font-weight: 600; color: {{ timeHeadFg }}; cursor: pointer; display: flex; align-items: center; gap: 5px;">마지막 작업 <span style="font-size: 8px;">{{ timeArrow }}</span></div>
+            <div style="font-size: 11.5px; font-weight: 600; color: #a39c8c;">안 올린 변경</div>
+            <div style="font-size: 11.5px; font-weight: 600; color: #a39c8c;">브랜치</div>
+          </div>
+        </sc-if>
+
+        <div style="flex: 1; min-height: 0; overflow-y: auto;">
+
+          <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; flex-direction: column;">
+              <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+                <div style="display: flex; flex-direction: column; border-bottom: 1px solid #2b2821;">
+                  <div onClick="{{ r.select }}" style="display: grid; grid-template-columns: 1fr 118px 108px 92px; gap: 12px; padding: 10px 16px; cursor: pointer; background: {{ r.bg }};" style-hover="background: #2c2921;">
+                    <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+                      <span onClick="{{ r.toggle }}" style="width: 14px; flex-shrink: 0; text-align: center; font-size: 10px; color: {{ r.twistFg }}; cursor: pointer;">{{ r.twist }}</span>
+                      <span style="width: 17px; height: 15px; flex-shrink: 0; border-radius: 3px; background: {{ r.folderBg }}; border-top: 3px solid {{ r.folderTop }};"></span>
+                      <span style="font-size: 13px; font-weight: 500; color: #efeade; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.name }}</span>
+                      <sc-if value="{{ r.showBadge }}" hint-placeholder-val="{{ false }}">
+                        <span style="flex-shrink: 0; padding: 2px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: {{ r.badgeBg }}; color: {{ r.badgeFg }};">{{ r.badge }}</span>
+                      </sc-if>
+                    </div>
+                    <div style="font-size: 12px; color: #bab3a3; display: flex; align-items: center;">{{ r.when }}</div>
+                    <div style="font-size: 12px; color: {{ r.changeFg }}; font-weight: {{ r.changeWeight }}; display: flex; align-items: center;">{{ r.change }}</div>
+                    <div style="font-size: 12px; color: #a39c8c; font-family: 'IBM Plex Mono', monospace; display: flex; align-items: center;">{{ r.branch }}</div>
+                  </div>
+                  <sc-if value="{{ r.expanded }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding: 4px 0 12px; display: flex; flex-direction: column; gap: 2px; background: #201e18;">
+                      <div style="padding: 4px 16px 6px 54px; font-size: 11px; color: #a39c8c;">이 안에서 최근에 손댄 곳</div>
+                      <sc-for list="{{ r.subs }}" as="sb" hint-placeholder-count="3">
+                        <div style="display: grid; grid-template-columns: 1fr 118px 108px 92px; gap: 12px; padding: 6px 16px;">
+                          <div style="padding-left: 38px; display: flex; align-items: center; gap: 8px; min-width: 0;">
+                            <span style="width: 13px; height: 11px; flex-shrink: 0; border-radius: 2px; background: #35322a; border-top: 2px solid #443f35;"></span>
+                            <span style="font-size: 12px; color: #bab3a3; font-family: 'IBM Plex Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ sb.path }}</span>
+                          </div>
+                          <div style="font-size: 11.5px; color: #a39c8c; display: flex; align-items: center;">{{ sb.when }}</div>
+                          <div></div>
+                          <div></div>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isTime }}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 6px 0 14px;">
+              <sc-for list="{{ buckets }}" as="b" hint-placeholder-count="3">
+                <div style="display: flex; flex-direction: column;">
+                  <div style="padding: 13px 16px 7px; font-size: 11.5px; font-weight: 600; color: #a39c8c;">{{ b.label }}</div>
+                  <sc-for list="{{ b.items }}" as="e" hint-placeholder-count="2">
+                    <div onClick="{{ e.select }}" style="display: flex; align-items: center; gap: 12px; padding: 10px 16px; cursor: pointer; border-bottom: 1px solid #2b2821; background: {{ e.bg }};" style-hover="background: #2c2921;">
+                      <span style="width: 52px; flex-shrink: 0; font-size: 11.5px; color: #a39c8c; font-family: 'IBM Plex Mono', monospace;">{{ e.clock }}</span>
+                      <span style="width: 17px; height: 15px; flex-shrink: 0; border-radius: 3px; background: {{ e.folderBg }}; border-top: 3px solid {{ e.folderTop }};"></span>
+                      <span style="flex-shrink: 0; font-size: 13px; font-weight: 500; color: #efeade;">{{ e.name }}</span>
+                      <span style="font-size: 12px; color: #a39c8c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ e.what }}</span>
+                      <sc-if value="{{ e.showFlag }}" hint-placeholder-val="{{ false }}">
+                        <span style="margin-left: auto; flex-shrink: 0; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: #2e2a1e; color: #d3b862;">안 올림</span>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 70px 24px; display: flex; flex-direction: column; align-items: center; gap: 11px;">
+              <div style="font-size: 14px; font-weight: 600; color: #bab3a3;">{{ emptyTitle }}</div>
+              <div style="font-size: 12.5px; color: #a39c8c; text-align: center; line-height: 1.65; max-width: 300px;">{{ emptyBody }}</div>
+            </div>
+          </sc-if>
+
+        </div>
+      </div>
+
+      <div style="width: 286px; flex-shrink: 0; background: #26241d; border-left: 1px solid #333026; overflow-y: auto;">
+        <sc-if value="{{ hasPick }}" hint-placeholder-val="{{ true }}">
+          <div style="padding: 20px 18px; display: flex; flex-direction: column; gap: 16px;">
+
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
+              <div style="width: 62px; height: 52px; border-radius: 7px; background: {{ pick.folderBg }}; border-top: 8px solid {{ pick.folderTop }};"></div>
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                <div style="font-size: 15px; font-weight: 600; color: #efeade; text-align: center;">{{ pick.name }}</div>
+                <div style="font-size: 11.5px; color: #a39c8c; text-align: center;">{{ pick.kind }}</div>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 1px;">
+              <sc-for list="{{ pick.facts }}" as="f" hint-placeholder-count="4">
+                <div style="display: flex; align-items: baseline; gap: 10px; padding: 7px 0; border-bottom: 1px solid #302d25;">
+                  <span style="width: 74px; flex-shrink: 0; font-size: 11.5px; color: #a39c8c;">{{ f.key }}</span>
+                  <span style="font-size: 12px; color: {{ f.fg }}; font-weight: {{ f.weight }}; line-height: 1.5; word-break: break-all;">{{ f.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 7px;">
+              <sc-for list="{{ pick.actions }}" as="a" hint-placeholder-count="3">
+                <div style="height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: {{ a.weight }}; border: 1px solid {{ a.border }}; background: {{ a.bg }}; color: {{ a.fg }};" style-hover="opacity: 0.9">{{ a.label }}</div>
+              </sc-for>
+            </div>
+
+            <sc-if value="{{ pick.showNote }}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 11px 13px; background: #2e2a1e; border-radius: 8px; font-size: 11.5px; color: #bab3a3; line-height: 1.6;">{{ pick.note }}</div>
+            </sc-if>
+
+          </div>
+        </sc-if>
+        <sc-if value="{{ noPick }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 60px 22px; display: flex; flex-direction: column; align-items: center; gap: 9px;">
+            <div style="font-size: 12.5px; color: #a39c8c; text-align: center; line-height: 1.65;">폴더를 하나 고르면 여기에서 바로 올리고 받을 수 있습니다.</div>
+          </div>
+        </sc-if>
+      </div>
+
+    </div>
+
+    <div style="flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 8px 16px; background: #1e1c16; border-top: 1px solid #333026;">
+      <sc-for list="{{ crumbs }}" as="c" hint-placeholder-count="3">
+        <span style="font-size: 11.5px; color: {{ c.fg }}; cursor: pointer; white-space: nowrap;" style-hover="color: #efeade">{{ c.label }}</span>
+        <sc-if value="{{ c.sep }}" hint-placeholder-val="{{ false }}">
+          <span style="font-size: 10px; color: #6f6a5d;">›</span>
+        </sc-if>
+      </sc-for>
+      <div style="margin-left: auto; flex-shrink: 0; font-size: 11.5px; color: #a39c8c;">{{ tally }}</div>
+    </div>
+
+  </div>
+
+  <div style="width: 1180px; flex-shrink: 0; margin-inline: auto; box-sizing: border-box; padding: 16px 20px; background: #232019; border: 1px solid #3b372e; border-radius: 10px; display: flex; flex-direction: column; gap: 10px;">
+    <div style="font-size: 12.5px; font-weight: 600; color: #efeade;">탭을 없애고 이렇게 바꿨습니다</div>
+    <div style="font-size: 12.5px; color: #bab3a3; line-height: 1.7;">탭은 동작을 먼저 고르게 합니다. 이 화면은 폴더를 먼저 고르고 동작이 따라옵니다. 고른 폴더 오른쪽에 그때 할 수 있는 일만 나오므로, 받기·올리기·동기화를 구분해 기억할 필요가 없습니다.</div>
+    <div style="font-size: 12.5px; color: #bab3a3; line-height: 1.7;">경로를 입력하지 않습니다. 앱이 미리 찾아 목록으로 보여주고, 검색은 이름만으로 됩니다. <strong style="color: #efeade;">마지막 작업</strong> 열을 누르면 최근 순으로 정렬되고, 삼각형을 펼치면 그 안에서 언제 어디를 손댔는지 보입니다. <strong style="color: #efeade;">시간순</strong>으로 바꾸면 모든 폴더가 하루 단위로 묶여 나옵니다.</div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1260,&quot;height&quot;:940}}">
+class Component extends DCLogic {
+  state = { nav: "all", view: "list", query: "", pick: "my-project", open: {}, sort: "time", desc: true,
+    signed: true, gitOk: true, menu: false, phase2: true };
+
+  data() {
+    return [
+      { name: "CloneUp", git: true, mine: true, dirty: 8, branch: "main", when: "오늘 오후 2:40", ts: 26, clock: "14:40",
+        root: "C:\\Users\\seong\\Downloads\\Codyssey_2+1_ProJect", remote: "seong/CloneUp", visibility: "비공개",
+        what: "8개 파일을 고쳤어요", subs: [
+          { path: "app/ui", when: "오늘 오후 2:40" },
+          { path: "app/git", when: "오늘 오후 1:12" },
+          { path: "app/auth", when: "어제 오후 6:05" },
+        ] },
+      { name: "my-project", git: true, mine: true, dirty: 3, branch: "main", when: "오늘 오전 9:14", ts: 25, clock: "09:14",
+        root: "C:\\Users\\seong\\Desktop", remote: "seong/my-project", visibility: "비공개",
+        what: "3개 파일을 고쳤어요", subs: [
+          { path: "app/ui", when: "오늘 오전 9:12" },
+          { path: "app/git", when: "어제 오후 4:30" },
+          { path: "assets", when: "지난주 목요일" },
+        ] },
+      { name: "codyssey", git: true, mine: true, dirty: 1, branch: "main", when: "어제 오후 6:22", ts: 18, clock: "18:22",
+        root: "C:\\Users\\seong\\Documents", remote: "seong/codyssey", visibility: "공개",
+        what: "메모를 하나 고쳤어요", subs: [
+          { path: "week-03", when: "어제 오후 6:22" },
+          { path: "week-02", when: "지난주 화요일" },
+        ] },
+      { name: "Hello-World", git: true, mine: false, dirty: 0, branch: "main", when: "지난주 금요일", ts: 8, clock: "11:02",
+        root: "C:\\Users\\seong\\Desktop", remote: "octocat/Hello-World", visibility: "공개 · 남의 저장소",
+        what: "받아만 두었어요", subs: [
+          { path: "docs", when: "지난주 금요일" },
+        ] },
+      { name: "portfolio-site", git: true, mine: true, dirty: 0, branch: "main", when: "3일 전", ts: 12, clock: "20:41",
+        root: "D:\\work", remote: "seong/portfolio-site", visibility: "공개",
+        what: "올리기까지 끝냈어요", subs: [
+          { path: "src/pages", when: "3일 전" },
+          { path: "public", when: "2주 전" },
+        ] },
+      { name: "study-notes", git: false, mine: true, dirty: 0, branch: "", when: "어제 오후 2:08", ts: 17, clock: "14:08",
+        root: "C:\\Users\\seong\\Documents", remote: "", visibility: "Git 연결 안 됨",
+        what: "아직 GitHub와 연결되지 않았어요", subs: [
+          { path: "2026-08", when: "어제 오후 2:08" },
+        ] },
+      { name: "old-backup", git: false, mine: true, dirty: 0, branch: "", when: "2개월 전", ts: 2, clock: "09:30",
+        root: "D:\\work", remote: "", visibility: "Git 연결 안 됨",
+        what: "아직 GitHub와 연결되지 않았어요", subs: [] },
+    ];
+  }
+
+  renderVals() {
+    const s = this.state;
+    const all = this.data();
+    const q = s.query.trim().toLowerCase();
+
+    const navFilter = {
+      all: (p) => p.git,
+      dirty: (p) => s.phase2 && p.git && p.dirty > 0,
+      nogit: (p) => !p.git,
+      recent: () => true,
+      time: () => true,
+    };
+    let rows = all.filter(navFilter[s.nav] || (() => true));
+    if (s.nav === "recent") rows = [...all].sort((a, b) => b.ts - a.ts).slice(0, 4);
+    if (q) rows = rows.filter((p) => p.name.toLowerCase().includes(q));
+
+    if (s.nav !== "recent") {
+      rows = [...rows].sort((a, b) => {
+        const v = s.sort === "name" ? a.name.localeCompare(b.name) : a.ts - b.ts;
+        return s.desc ? -v : v;
+      });
+    }
+
+    const folderTone = (p) => p.git
+      ? { folderBg: "#2f4a41", folderTop: "#46a685" }
+      : { folderBg: "#35322a", folderTop: "#6f6a5d" };
+
+    const isTime = s.view === "timeline";
+    const pickObj = all.find((p) => p.name === s.pick);
+
+    const navItems = (list) => list.map((it) => ({
+      label: it.label, icon: it.icon, count: it.count, showCount: it.count !== undefined,
+      bg: s.nav === it.key ? "#3b372e" : "transparent",
+      fg: s.nav === it.key ? "#efeade" : "#bab3a3",
+      weight: s.nav === it.key ? "600" : "400",
+      iconFg: s.nav === it.key ? "#46a685" : "#a39c8c",
+      countFg: it.warn ? "#d3b862" : "#a39c8c",
+      go: () => this.setState({ nav: it.key, view: it.key === "time" ? "timeline" : "list" }),
+    }));
+
+    const dirtyCount = s.phase2 ? all.filter((p) => p.git && p.dirty > 0).length : undefined;
+
+    const groups = [
+      { title: "내 작업", items: navItems([
+        { key: "all", icon: "◧", label: "모든 프로젝트", count: all.filter((p) => p.git).length },
+        { key: "recent", icon: "◔", label: "최근 작업" },
+        { key: "dirty", icon: "●", label: "안 올린 변경", count: dirtyCount, warn: true },
+        { key: "time", icon: "☰", label: "시간순 보기" },
+      ]) },
+      { title: "아직 연결 안 됨", items: navItems([
+        { key: "nogit", icon: "◌", label: "Git 없는 폴더", count: all.filter((p) => !p.git).length },
+      ]) },
+    ];
+
+    const buckets = [
+      { label: "오늘", keys: [25, 26] },
+      { label: "어제", keys: [17, 18] },
+      { label: "이번 주", keys: [12] },
+      { label: "지난주", keys: [8] },
+      { label: "더 오래 전", keys: [2] },
+    ].map((b) => ({
+      label: b.label,
+      items: all
+        .filter((p) => b.keys.includes(p.ts))
+        .filter((p) => !q || p.name.toLowerCase().includes(q))
+        .sort((a, b2) => b2.ts - a.ts)
+        .map((p) => ({
+          name: p.name, clock: p.clock, what: p.what,
+          showFlag: p.dirty > 0,
+          bg: s.pick === p.name ? "#2b2821" : "transparent",
+          ...folderTone(p),
+          select: () => this.setState({ pick: p.name }),
+        })),
+    })).filter((b) => b.items.length > 0);
+
+    const headings = { all: "모든 프로젝트", recent: "최근 작업", dirty: "안 올린 변경", nogit: "Git 없는 폴더", time: "시간순 보기" };
+
+    const act = (label, kind) => {
+      const kinds = {
+        primary: { bg: "#46a685", fg: "#232019", border: "#46a685", weight: "600" },
+        normal: { bg: "#232019", fg: "#eae5d9", border: "#6f6a5d", weight: "500" },
+        quiet: { bg: "transparent", fg: "#bab3a3", border: "#443f35", weight: "400" },
+      };
+      return { label, ...kinds[kind] };
+    };
+
+    let pick = null;
+    if (pickObj) {
+      const facts = [
+        { key: "위치", value: pickObj.root, fg: "#bab3a3", weight: "400" },
+        { key: "마지막 작업", value: pickObj.when, fg: "#bab3a3", weight: "400" },
+      ];
+      if (pickObj.git) {
+        facts.push({ key: "GitHub", value: pickObj.remote, fg: "#bab3a3", weight: "400" });
+        facts.push({ key: "공개 범위", value: pickObj.visibility, fg: "#bab3a3", weight: "400" });
+        facts.push({
+          key: "안 올린 변경",
+          value: !s.phase2 ? "확인 중" : (pickObj.dirty > 0 ? "파일 " + pickObj.dirty + "개" : "없음"),
+          fg: s.phase2 && pickObj.dirty > 0 ? "#d3b862" : "#bab3a3",
+          weight: s.phase2 && pickObj.dirty > 0 ? "600" : "400",
+        });
+      }
+
+      let actions;
+      let note = "", showNote = false;
+      if (!pickObj.git) {
+        actions = [act("GitHub에 올리기 시작", "primary"), act("폴더 열기", "normal")];
+        note = "이 폴더는 아직 GitHub와 연결되지 않았습니다. 처음 올릴 때 공개 여부를 고르시게 됩니다.";
+        showNote = true;
+      } else if (!pickObj.mine) {
+        actions = [act("내 사본 만들기", "primary"), act("원본에서 받아오기", "normal"), act("작업 내역 보기", "quiet")];
+        note = "다른 사람의 저장소입니다. 여기에 직접 올릴 수는 없고, 사본을 만들어 제안할 수 있습니다.";
+        showNote = true;
+      } else if (!s.phase2) {
+        actions = [act("올리기", "primary"), act("받아오기", "normal"), act("작업 내역 보기", "quiet")];
+      } else if (pickObj.dirty > 0) {
+        actions = [act("올리기", "primary"), act("받아오기", "normal"), act("작업 내역 보기", "quiet")];
+      } else {
+        actions = [act("받아오기", "primary"), act("작업 내역 보기", "normal"), act("폴더 열기", "quiet")];
+      }
+
+      if (!s.signed && actions.length) {
+        const need = ["올리기", "받아오기", "내 사본 만들기"];
+        if (need.includes(actions[0].label)) {
+          actions = [act("로그인하고 " + actions[0].label, "primary"), ...actions.slice(1)];
+        }
+      }
+
+      pick = {
+        name: pickObj.name,
+        kind: pickObj.git ? (pickObj.mine ? "내 프로젝트" : "받아온 프로젝트") : "Git 없는 폴더",
+        ...folderTone(pickObj),
+        facts, actions, note, showNote,
+      };
+    }
+
+    const crumbs = [
+      { label: "이 컴퓨터", fg: "#a39c8c", sep: true },
+      { label: headings[s.nav] || "모든 프로젝트", fg: "#a39c8c", sep: !!pickObj },
+    ];
+    if (pickObj) crumbs.push({ label: pickObj.name, fg: "#efeade", sep: false });
+
+    const shown = isTime ? buckets.reduce((n, b) => n + b.items.length, 0) : rows.length;
+
+    return {
+      groups,
+      heading: headings[s.nav] || "모든 프로젝트",
+      query: s.query,
+      onQuery: (e) => this.setState({ query: e.target.value }),
+      isList: !isTime && shown > 0,
+      isTime: isTime && shown > 0,
+      isEmpty: shown === 0,
+      emptyTitle: s.nav === "dirty" && !s.phase2 ? "아직 확인 중이에요" : "찾는 폴더가 없어요",
+      emptyBody: s.nav === "dirty" && !s.phase2
+        ? "각 폴더에 안 올린 변경이 있는지 살펴보고 있습니다. 끝나면 여기에 나옵니다."
+        : "이름을 다르게 적어 보시거나, 왼쪽 아래 찾을 위치 추가로 폴더를 알려 주세요.",
+      setList: () => this.setState({ view: "list", nav: s.nav === "time" ? "all" : s.nav }),
+      setTime: () => this.setState({ view: "timeline" }),
+      listBg: isTime ? "transparent" : "#232019",
+      listFg: isTime ? "#a39c8c" : "#efeade",
+      listWeight: isTime ? "400" : "600",
+      timeBg: isTime ? "#232019" : "transparent",
+      timeFg: isTime ? "#efeade" : "#a39c8c",
+      timeWeight: isTime ? "600" : "400",
+      sortName: () => this.setState({ sort: "name", desc: s.sort === "name" ? !s.desc : false }),
+      sortTime: () => this.setState({ sort: "time", desc: s.sort === "time" ? !s.desc : true }),
+      nameHeadFg: s.sort === "name" ? "#efeade" : "#a39c8c",
+      timeHeadFg: s.sort === "time" ? "#efeade" : "#a39c8c",
+      nameArrow: s.sort === "name" ? (s.desc ? "▼" : "▲") : "",
+      timeArrow: s.sort === "time" ? (s.desc ? "▼" : "▲") : "",
+      rows: rows.map((p) => ({
+        name: p.name, when: p.when, branch: p.git ? p.branch : "—",
+        change: !p.git ? "—" : (!s.phase2 ? "확인 중" : (p.dirty > 0 ? "파일 " + p.dirty + "개" : "없음")),
+        changeFg: p.git && s.phase2 && p.dirty > 0 ? "#d3b862" : "#a39c8c",
+        changeWeight: p.git && s.phase2 && p.dirty > 0 ? "600" : "400",
+        showBadge: !p.git || !p.mine,
+        badge: !p.git ? "Git 없음" : "남의 저장소",
+        badgeBg: !p.git ? "#302d25" : "#2e2a1e",
+        badgeFg: !p.git ? "#a39c8c" : "#d3b862",
+        bg: s.pick === p.name ? "#2b2821" : "transparent",
+        ...folderTone(p),
+        expanded: !!s.open[p.name],
+        twist: s.open[p.name] ? "▼" : "▶",
+        twistFg: p.subs.length ? "#a39c8c" : "transparent",
+        subs: p.subs,
+        select: () => this.setState({ pick: p.name }),
+        toggle: () => this.setState({ pick: p.name, open: { ...s.open, [p.name]: !s.open[p.name] } }),
+      })),
+      buckets,
+      hasPick: !!pick,
+      noPick: !pick,
+      pick: pick || { name: "", kind: "", facts: [], actions: [], folderBg: "#35322a", folderTop: "#6f6a5d", note: "", showNote: false },
+      crumbs,
+      tally: shown + "개 폴더",
+      signed: s.signed,
+      signedOut: !s.signed,
+      gitMissing: !s.gitOk,
+      menuOpen: s.menu,
+      menuBg: s.menu ? "#3b372e" : "transparent",
+      toggleMenu: () => this.setState({ menu: !s.menu }),
+      menuItems: [
+        { isItem: true, label: "설정", fg: "#efeade", showHint: false, act: () => this.setState({ menu: false }) },
+        { isItem: true, label: "도움말 · 시작 안내", fg: "#efeade", showHint: false, act: () => this.setState({ menu: false }) },
+        { isItem: true, label: "이용약관", fg: "#efeade", showHint: false, act: () => this.setState({ menu: false }) },
+        { isRule: true },
+        { isItem: true, label: "Git", fg: "#bab3a3", showHint: true, hint: s.gitOk ? "2.45.1" : "없음", act: () => this.setState({ menu: false }) },
+        { isRule: true },
+        { isItem: true, label: s.signed ? "로그아웃" : "GitHub 로그인", fg: s.signed ? "#d98d88" : "#46a685", showHint: false,
+          act: () => this.setState({ menu: false, signed: !s.signed }) },
+      ],
+      toggleSigned: () => this.setState({ signed: !s.signed, menu: false }),
+      toggleGit: () => this.setState({ gitOk: !s.gitOk, menu: false }),
+      togglePhase2: () => this.setState({ phase2: !s.phase2, menu: false }),
+      phase2Label: s.phase2 ? "변경 확인 끝" : "변경 확인 중",
+      phase2Bg: s.phase2 ? "#232019" : "#1e1c16",
+      phase2Fg: s.phase2 ? "#efeade" : "#bab3a3",
+      phase2Border: s.phase2 ? "#3b372e" : "#3b372e",
+      signedLabel: s.signed ? "로그인됨" : "로그인 안 됨",
+      signedBg: s.signed ? "#232019" : "#2e2a1e",
+      signedFg: s.signed ? "#efeade" : "#d3b862",
+      signedBorder: s.signed ? "#3b372e" : "#d3b862",
+      gitLabel: s.gitOk ? "Git 설치됨" : "Git 없음",
+      gitBg: s.gitOk ? "#232019" : "#2e2a1e",
+      gitFg: s.gitOk ? "#efeade" : "#d3b862",
+      gitBorder: s.gitOk ? "#3b372e" : "#d3b862",
+      goBack: () => this.setState({ nav: "all", view: "list", query: "", menu: false }),
+      backFg: s.nav === "all" && !s.query ? "#6f6a5d" : "#bab3a3",
+      backCursor: s.nav === "all" && !s.query ? "default" : "pointer",
+    };
+  }
+}
+</script>
+</body>
+</html>

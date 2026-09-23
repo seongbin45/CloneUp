@@ -48,6 +48,7 @@ class RevertResult:
     new_commit: str
     backup_branch: str
     files: list[ChangedFile] = field(default_factory=list)
+    pushed: bool = False  # True when also pushed to origin
 
 
 def _ensure_git_repo(folder: Path) -> Path:
@@ -104,11 +105,22 @@ def revert_local_commit(
     root = _ensure_git_repo(Path(folder))
 
     status = run_git(["status", "--porcelain"], cwd=str(root), check=True)
-    if (status.stdout or "").strip():
-        raise RevertError(
-            "저장하지 않은 변경이 있습니다.\n"
-            "동기화 탭에서 먼저 올리거나 정리한 뒤 다시 시도하세요."
-        )
+    porcelain = (status.stdout or "").strip()
+    if porcelain:
+        # Untracked-only (??) is OK — read-tree leaves those files alone.
+        # Modified/staged/deleted tracked files would be lost → block.
+        blocking = [
+            ln
+            for ln in porcelain.splitlines()
+            if ln.strip() and not ln.startswith("??") and not ln.startswith("!!")
+        ]
+        if blocking:
+            sample = "\n".join(f"· {ln[3:].strip()}" for ln in blocking[:6])
+            raise RevertError(
+                "저장하지 않은 변경이 있어 되돌리면 그 내용이 사라질 수 있습니다.\n"
+                "동기화 탭에서 먼저 올리거나, 변경을 정리한 뒤 다시 시도하세요.\n"
+                + (f"\n{sample}" if sample else "")
+            )
 
     head = run_git(["rev-parse", "HEAD"], cwd=str(root), check=True).stdout.strip()
     try:
@@ -165,20 +177,37 @@ def revert_local_commit(
         new_commit=new_commit,
         backup_branch=backup_branch,
         files=files,
+        pushed=False,
     )
+
+
+def has_pushable_github_origin(folder: Path | str) -> bool:
+    """True when origin is a clean GitHub HTTPS remote (safe to push)."""
+    try:
+        assert_safe_github_origin(Path(folder))
+        return True
+    except SyncError:
+        return False
+
+
+def _has_pushable_github_origin(folder: Path) -> bool:
+    return has_pushable_github_origin(folder)
 
 
 def revert_to_commit(
     folder: str | Path,
     target_rev: str,
     *,
-    token: str,
+    token: str | None,
     user: dict,
     hide_real_email: bool = False,
     push_backup_branch: bool = False,
 ) -> RevertResult:
     """
-    Revert *folder* to *target_rev*'s tree as one new commit, then push.
+    Revert *folder* to *target_rev*'s tree as one new commit, then push if possible.
+
+    Local-only repos (no origin / not logged in) still get a successful
+    ``revert_local_commit`` — push is skipped rather than blocking the revert.
 
     Requires a clean working tree first, so the tree swap can't silently
     discard unsaved work — callers should point the user at the sync tab.
@@ -190,16 +219,17 @@ def revert_to_commit(
     "백업 브랜치를 자동으로 만듭니다" promise would be broken.
     """
     root = _ensure_git_repo(Path(folder))
-    try:
-        assert_safe_github_origin(root)
-    except SyncError as e:
-        raise RevertError(str(e)) from e
+    can_push = bool(token) and _has_pushable_github_origin(root)
 
     result = revert_local_commit(
         root, target_rev, user=user, hide_real_email=hide_real_email
     )
 
-    cred_path = write_credential_file(token)
+    if not can_push:
+        # Local revert succeeded; caller may show "동기화에서 보내기" tip.
+        return result
+
+    cred_path = write_credential_file(str(token))
     try:
         r = run_git(
             ["push", "origin", "HEAD"],
@@ -231,11 +261,20 @@ def revert_to_commit(
         delete_credential_file(cred_path)
 
     try:
-        assert_git_config_has_no_token(root, token)
+        assert_git_config_has_no_token(root, str(token))
     except PublishError as e:
         raise RevertError(str(e)) from e
 
-    return result
+    return RevertResult(
+        folder=result.folder,
+        target_full_hash=result.target_full_hash,
+        target_short_hash=result.target_short_hash,
+        target_message=result.target_message,
+        new_commit=result.new_commit,
+        backup_branch=result.backup_branch,
+        files=list(result.files),
+        pushed=True,
+    )
 
 
 def revert_remote_commit(

@@ -1,6 +1,6 @@
 """Settings dialog — desin/CloneUp 설정.dc.html (+ Settings Dark.dc.html).
 
-Sidebar tabs: 계정 · 올리기 기본값 · 안전 · 최근 폴더 · 용어 안내 · 정보.
+Sidebar tabs: 계정 · 올리기 기본값 · 안전 · 최근 폴더 · 화면 · 용어 안내 · 정보.
 Prefs save immediately (footer: 바꾸면 바로 저장됩니다).
 Colors follow active_palette() (OS light/dark).
 
@@ -25,6 +25,7 @@ from PySide6.QtGui import (
     QPaintEvent,
 )
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSizePolicy,
     QStackedWidget,
@@ -77,6 +79,7 @@ from app.ui.settings_store import (
     USER_GLOSSARY_TERM_MAX,
     add_user_glossary_entry,
     clear_recent_folders,
+    load_bg_project_scan_enabled,
     load_boot_autostart_enabled,
     load_boot_notify_enabled,
     load_um_diag_report_enabled,
@@ -90,6 +93,7 @@ from app.ui.settings_store import (
     load_secret_pii_scan_enabled,
     load_user_glossary,
     remove_user_glossary_entry,
+    save_bg_project_scan_enabled,
     save_boot_autostart_enabled,
     save_boot_notify_enabled,
     save_um_diag_report_enabled,
@@ -108,9 +112,10 @@ from app.util.autostart_win import (
     set_autostart_registered,
 )
 from app.ui.git_terms_ko import GLOSSARY_ENTRIES
+from app.ui.pill_scrollbar import wire_pill_scrollbars
 from app.ui.theme import Palette, active_palette
 
-_NAV = ("계정", "올리기 기본값", "안전", "최근 폴더", "용어 안내", "정보")
+_NAV = ("계정", "올리기 기본값", "안전", "최근 폴더", "화면", "용어 안내", "정보")
 
 # Exact phrase required to disable secret/PII scan (user must type it).
 SECRET_SCAN_OFF_PHRASE = "나는 위의 안내, 경고 사항을 모두 읽고 이해했습니다"
@@ -272,26 +277,39 @@ class SettingsDialog(QDialog):
         self._secret_scan_block = False  # ignore toggle while reverting UI
         p = active_palette()
 
+        # 시안 CloneUp 설정.dc.html / Settings Dark: 880×~520 content card.
+        # Prefer 880×620, but clamp into availableGeometry so the footer is
+        # never hidden under the Windows taskbar.
         self.setWindowTitle("설정")
         self.setModal(True)
-        # Wide enough for account card: meta + 「다시 로그인」「로그아웃」「권한 다시 확인」
-        # in one horizontal row (do not stack buttons).
-        self.setMinimumSize(960, 560)
-        self.resize(1020, 660)
         self.setStyleSheet(self._dialog_qss(p))
+        self._fit_to_work_area(prefer_w=880, prefer_h=620)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # title bar
+        # title bar — 시안: traffic-light dots + 「설정」
         bar = QFrame()
         bar.setObjectName("setTitleBar")
         bar_l = QHBoxLayout(bar)
         bar_l.setContentsMargins(16, 12, 16, 12)
+        bar_l.setSpacing(12)
+        dots = QHBoxLayout()
+        dots.setContentsMargins(0, 0, 0, 0)
+        dots.setSpacing(7)
+        dot_color = "#403c33" if p.name == "dark" else "#d9d4cb"
+        for _ in range(3):
+            dot = QLabel()
+            dot.setFixedSize(11, 11)
+            dot.setStyleSheet(
+                f"background: {dot_color}; border-radius: 5px;"
+            )
+            dots.addWidget(dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        bar_l.addLayout(dots, 0)
         title = QLabel("설정")
         title.setObjectName("setTitle")
-        bar_l.addWidget(title)
+        bar_l.addWidget(title, 0, Qt.AlignmentFlag.AlignVCenter)
         bar_l.addStretch(1)
         root.addWidget(bar)
 
@@ -324,6 +342,7 @@ class SettingsDialog(QDialog):
         self._page_defaults = self._build_defaults(p)
         self._page_safety = self._build_safety(p)
         self._page_folders = self._build_folders(p)
+        self._page_main_shell = self._build_main_shell(p)
         self._page_terms = self._build_terms(p)
         self._page_about = self._build_about(p)
         for page in (
@@ -331,6 +350,7 @@ class SettingsDialog(QDialog):
             self._page_defaults,
             self._page_safety,
             self._page_folders,
+            self._page_main_shell,
             self._page_terms,
             self._page_about,
         ):
@@ -356,6 +376,44 @@ class SettingsDialog(QDialog):
         self._go_tab(tab)
         self._refresh_account()
         self._refresh_folders()
+        # After layout, re-clamp once (title bar / DPI chrome known).
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, lambda: self._fit_to_work_area(prefer_w=880, prefer_h=620))
+
+    def _fit_to_work_area(self, *, prefer_w: int = 880, prefer_h: int = 620) -> None:
+        """Size and center inside the taskbar-safe work area."""
+        from app.util.screen_fit import (
+            center_client_in_available,
+            read_screen_info,
+            screen_for_widget,
+        )
+
+        info = read_screen_info(screen_for_widget(self, anchor=self.parentWidget()))
+        if info is None:
+            self.setMinimumSize(min(880, prefer_w), 420)
+            self.resize(prefer_w, prefer_h)
+            return
+        margin = 24
+        max_w = max(480, info.available_w - margin)
+        max_h = max(360, info.available_h - margin)
+        # Soft mins — shrink on short / scaled displays so footer stays visible.
+        min_w = min(880, max_w)
+        min_h = min(480, max_h)
+        self.setMinimumSize(min(640, min_w), min(360, min_h))
+        cw = min(prefer_w, max_w)
+        ch = min(prefer_h, max_h)
+        cw = max(min_w, cw)
+        ch = max(min_h, ch)
+        x, y, cw, ch = center_client_in_available(
+            info.available_x,
+            info.available_y,
+            info.available_w,
+            info.available_h,
+            cw,
+            ch,
+        )
+        self.setGeometry(x, y, cw, ch)
 
     # ----- navigation -----
     def _go_tab(self, index: int) -> None:
@@ -469,7 +527,8 @@ class SettingsDialog(QDialog):
             "(키 문자열 자체는 보안상 다시 볼 수 없습니다.)"
         )
         self._btn_pat_list.clicked.connect(self._open_github_pat_list)
-        # Keep horizontal actions; wider dialog fits labels.
+        # 시안 account card: primary actions only (다시 로그인 / 로그아웃).
+        # Extra tools sit on a second row under the card (not cramped in-card).
         btn_policy = QSizePolicy(
             QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed
         )
@@ -482,20 +541,27 @@ class SettingsDialog(QDialog):
         ):
             b.setSizePolicy(btn_policy)
             b.setMinimumWidth(0)
+            b.setFixedHeight(32)
         self._acct_title.setWordWrap(True)
         self._acct_meta.setWordWrap(True)
-        # Logged-in: 다시 로그인 · 권한 다시 확인 · 키 목록 · 로그아웃
-        # Logged-out: GitHub 연결 · 키 목록
+        # Logged-in primary (시안): 다시 로그인 · 로그아웃
+        # Logged-out primary: GitHub 연결
         btns = QHBoxLayout()
         btns.setSpacing(8)
         btns.setContentsMargins(0, 0, 0, 0)
         btns.addWidget(self._btn_relogin, 0)
-        btns.addWidget(self._btn_refresh_scopes, 0)
-        btns.addWidget(self._btn_pat_list, 0)
         btns.addWidget(self._btn_logout, 0)
         btns.addWidget(self._btn_connect, 0)
         card_l.addLayout(btns, 0)
         lay.addWidget(self._acct_card)
+
+        extra = QHBoxLayout()
+        extra.setContentsMargins(0, 0, 0, 0)
+        extra.setSpacing(8)
+        extra.addWidget(self._btn_refresh_scopes, 0)
+        extra.addWidget(self._btn_pat_list, 0)
+        extra.addStretch(1)
+        lay.addLayout(extra)
 
         hint = QLabel(
             "로그아웃하면 이 컴퓨터에 저장된 토큰이 지워집니다. "
@@ -615,6 +681,7 @@ class SettingsDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setObjectName("setScroll")
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        wire_pill_scrollbars(scroll)
 
         w = QWidget()
         lay = QVBoxLayout(w)
@@ -976,6 +1043,7 @@ class SettingsDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setObjectName("setScroll")
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        wire_pill_scrollbars(scroll)
         self._folders_host = QWidget()
         self._folders_layout = QVBoxLayout(self._folders_host)
         self._folders_layout.setContentsMargins(0, 0, 0, 0)
@@ -997,6 +1065,188 @@ class SettingsDialog(QDialog):
         row.addWidget(self._btn_clear_recent)
         row.addWidget(note, 1)
         lay.addLayout(row)
+
+        # Background project-list scan (plan C-7 / D3) — 최근 폴더 탭
+        self._bg_scan_on = load_bg_project_scan_enabled()
+        self._sw_bg_scan = _ToggleSwitch(checked=self._bg_scan_on)
+        self._sw_bg_scan.toggled.connect(self._on_bg_project_scan_toggled)
+        lay.addWidget(
+            self._safety_toggle_card(
+                switch=self._sw_bg_scan,
+                title="백그라운드에서 프로젝트 목록 갱신",
+                body=(
+                    "앱을 닫아 두어도 Windows 예약 작업이 약 1시간마다 "
+                    "찾을 위치·최근 폴더를 살펴 목록 캐시를 갱신합니다. "
+                    "끄면 예약 작업을 제거합니다."
+                ),
+            )
+        )
+        btn_scan_now = QPushButton("지금 목록 갱신")
+        btn_scan_now.setObjectName("setSecondaryBtn")
+        btn_scan_now.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_scan_now.clicked.connect(self._on_bg_scan_now)
+        lay.addWidget(btn_scan_now, 0, Qt.AlignmentFlag.AlignLeft)
+        return w
+
+    def _on_bg_project_scan_toggled(self, checked: bool) -> None:
+        self._bg_scan_on = bool(checked)
+        save_bg_project_scan_enabled(self._bg_scan_on)
+        try:
+            from app.util.scan_task_win import ensure_scan_task
+
+            ok, msg = ensure_scan_task(enabled=self._bg_scan_on)
+        except Exception as e:  # noqa: BLE001
+            ok, msg = False, str(e)
+        if not ok and not self._bg_scan_on:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self,
+                "예약 작업",
+                "예약 작업 제거에 실패했습니다.\n"
+                "작업 스케줄러에서 「CloneUpProjectScan」을 "
+                "직접 지워 주세요.\n\n"
+                f"{msg}",
+            )
+        elif not ok and self._bg_scan_on:
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self,
+                "예약 작업",
+                "백그라운드 갱신 예약 등록에 실패했습니다.\n"
+                "홈을 열 때와 「지금 목록 갱신」으로는 계속 갱신됩니다.\n\n"
+                f"{msg}",
+            )
+        # Do not force home full-refresh on toggle alone
+        self._notify_prefs("scan_task")
+
+    def _on_bg_scan_now(self) -> None:
+        """C-9: force full scan into cache (non-blocking thread)."""
+        from PySide6.QtCore import QThread, Signal
+        from PySide6.QtWidgets import QMessageBox
+
+        class _FullScan(QThread):
+            done = Signal(bool, str)
+
+            def run(self) -> None:  # noqa: N802
+                try:
+                    from app.git.project_scan import scan_projects_incremental
+                    from app.git.scan_cache import ScanCacheLock, save_scan_cache
+
+                    lock = ScanCacheLock(timeout_sec=2.0)
+                    if not lock.acquire():
+                        self.done.emit(False, "다른 갱신이 진행 중입니다.")
+                        return
+                    try:
+                        entries, partial, cache = scan_projects_incremental(
+                            force_full=True,
+                            probe_dirty=False,
+                            skip_unc=True,
+                        )
+                        cache.generator = "ui"
+                        ok = save_scan_cache(cache)
+                        msg = f"{len(entries)}개 저장"
+                        if partial:
+                            msg += " (일부만)"
+                        self.done.emit(ok, msg if ok else "캐시 저장 실패")
+                    finally:
+                        lock.release()
+                except Exception as e:  # noqa: BLE001
+                    self.done.emit(False, str(e))
+
+        def _finished(ok: bool, msg: str) -> None:
+            if ok:
+                QMessageBox.information(self, "목록 갱신", f"완료: {msg}")
+            else:
+                QMessageBox.warning(self, "목록 갱신", msg)
+            self._notify_prefs("scan")
+
+        w = _FullScan(self)
+        w.done.connect(_finished)
+        w.start()
+        # Keep ref so thread isn't GC'd
+        self._bg_scan_thread = w
+
+    def _build_main_shell(self, p: Palette) -> QWidget:
+        """시작 화면: 홈 셸 vs 기존 탭 (plan rev.4 Phase B)."""
+        from app.ui.settings_store import MAIN_SHELL_HOME, MAIN_SHELL_LEGACY, save_main_shell
+        from app.ui.ui_mode import legacy_tabs_env_active, resolve_main_shell
+
+        w, lay = self._page_shell()
+        lay.addWidget(
+            self._heading(
+                "화면",
+                "앱을 열 때 먼저 보일 화면을 고릅니다. 바꾼 뒤에는 앱을 다시 시작해야 합니다.",
+            )
+        )
+
+        current = resolve_main_shell()
+        env_lock = legacy_tabs_env_active()
+
+        self._radio_shell_home = QRadioButton("홈 화면 (폴더를 먼저 고름)")
+        self._radio_shell_legacy = QRadioButton(
+            "기존 탭 화면 (만들고 올리기 · 받기 · 동기화)"
+        )
+        self._radio_shell_home.setObjectName("setRadioHome")
+        self._radio_shell_legacy.setObjectName("setRadioLegacy")
+        self._shell_group = QButtonGroup(self)
+        self._shell_group.addButton(self._radio_shell_home, 0)
+        self._shell_group.addButton(self._radio_shell_legacy, 1)
+        if current == MAIN_SHELL_LEGACY:
+            self._radio_shell_legacy.setChecked(True)
+        else:
+            self._radio_shell_home.setChecked(True)
+
+        card = QFrame()
+        card.setObjectName("setCard")
+        card_l = QVBoxLayout(card)
+        card_l.setContentsMargins(16, 16, 16, 16)
+        card_l.setSpacing(12)
+        card_l.addWidget(self._radio_shell_home)
+        card_l.addWidget(self._radio_shell_legacy)
+        lay.addWidget(card)
+
+        self._shell_env_note = QLabel("")
+        self._shell_env_note.setObjectName("setMeta")
+        self._shell_env_note.setWordWrap(True)
+        if env_lock:
+            self._radio_shell_home.setEnabled(False)
+            self._radio_shell_legacy.setEnabled(False)
+            self._shell_env_note.setText(
+                "환경 변수 CLONEUP_LEGACY_TABS 로 화면이 고정되어 있습니다. "
+                "설정을 바꿔도 적용되지 않습니다."
+            )
+        else:
+            self._shell_env_note.setText(
+                "바꾸면 바로 저장됩니다. 적용하려면 클론업을 종료한 뒤 다시 열어 주세요."
+            )
+        lay.addWidget(self._shell_env_note)
+        lay.addStretch(1)
+
+        self._shell_block = False
+
+        def _on_shell_toggled(checked: bool) -> None:
+            # Only handle the radio that just became checked (avoid double fire).
+            if self._shell_block or env_lock or not checked:
+                return
+            new_mode = (
+                MAIN_SHELL_LEGACY
+                if self._radio_shell_legacy.isChecked()
+                else MAIN_SHELL_HOME
+            )
+            prev = resolve_main_shell()
+            save_main_shell(new_mode)
+            if new_mode != prev:
+                QMessageBox.information(
+                    self,
+                    "화면",
+                    "시작 화면 설정이 저장되었습니다.\n"
+                    "적용하려면 클론업을 종료한 뒤 다시 열어 주세요.",
+                )
+
+        self._radio_shell_home.toggled.connect(_on_shell_toggled)
+        self._radio_shell_legacy.toggled.connect(_on_shell_toggled)
         return w
 
     def _build_terms(self, p: Palette) -> QWidget:
@@ -1032,6 +1282,7 @@ class SettingsDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setObjectName("setScroll")
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        wire_pill_scrollbars(scroll)
         self._terms_scroll = scroll
         self._terms_host = QWidget()
         self._terms_host_l = QVBoxLayout(self._terms_host)
@@ -1386,9 +1637,11 @@ class SettingsDialog(QDialog):
         after_raw = (scope or load_scope() or "").strip()
         after = format_scopes_display(after_raw) or after_raw or "(없음)"
         if user and user.get("login"):
+            from app.ui.home_avatar import persist_avatar_from_user
             from app.ui.settings_store import save_last_github_login
 
             save_last_github_login(str(user["login"]))
+            persist_avatar_from_user(user)
             self._acct_title.setText(f"{user['login']} 으로 로그인됨")
 
         issued = format_connected_at_display(load_connected_at_raw())
@@ -1638,20 +1891,9 @@ class SettingsDialog(QDialog):
         return None
 
     def _show_text_document(self, title: str, text: str) -> None:
-        dlg = QDialog(self)
-        dlg.setWindowTitle(title)
-        dlg.setMinimumSize(560, 480)
-        dlg.resize(640, 560)
-        vl = QVBoxLayout(dlg)
-        view = QPlainTextEdit()
-        view.setReadOnly(True)
-        view.setPlainText(text)
-        view.setFont(_mono(view.font()))
-        vl.addWidget(view, 1)
-        close = QPushButton("닫기")
-        close.clicked.connect(dlg.accept)
-        vl.addWidget(close, 0, Qt.AlignmentFlag.AlignRight)
-        dlg.exec()
+        from app.ui.text_document_dialog import show_text_document_dialog
+
+        show_text_document_dialog(self, title, text)
 
     def _open_legal_file(
         self,
@@ -1849,25 +2091,29 @@ class SettingsDialog(QDialog):
             background: {p.bg_window};
             color: {title_fg};
             border: 1px solid {p.border_outline};
-            border-radius: 5px;
-            padding: 6px 14px;
+            border-radius: 10px;
+            padding: 0 14px;
             font-size: 12.5px;
-            min-height: 20px;
+            min-height: 32px;
+            max-height: 32px;
         }}
         QPushButton#setSecondary:hover {{
             background: {p.bg_hint};
+            border-radius: 10px;
         }}
         QPushButton#setDangerOutline {{
             background: {p.bg_window};
             color: {danger_fg};
             border: 1px solid {p.border_outline};
-            border-radius: 5px;
-            padding: 6px 14px;
+            border-radius: 10px;
+            padding: 0 14px;
             font-size: 12.5px;
-            min-height: 20px;
+            min-height: 32px;
+            max-height: 32px;
         }}
         QPushButton#setDangerOutline:hover {{
             background: {danger_hover};
+            border-radius: 10px;
         }}
         """
 
@@ -1893,11 +2139,13 @@ def prompt_master_password_enable(parent: QWidget | None = None) -> str | None:
     dlg.setWindowTitle("마스터 비밀번호 설정")
     dlg.setModal(True)
     dlg.setMinimumWidth(440)
+    dlg.setStyleSheet(SettingsDialog._dialog_qss(p))
     root = QVBoxLayout(dlg)
+    root.setContentsMargins(18, 16, 18, 14)
     root.setSpacing(12)
 
     title = QLabel("보호에 쓸 마스터 비밀번호")
-    title.setStyleSheet(f"font-size: 15px; font-weight: 600; color: {p.text};")
+    title.setObjectName("setHeading")
     root.addWidget(title)
 
     info = QLabel(

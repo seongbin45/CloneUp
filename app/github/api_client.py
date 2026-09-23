@@ -597,6 +597,26 @@ def export_remote_commit_snapshot(
     return dest
 
 
+def get_repo(
+    owner: str,
+    repo: str,
+    *,
+    access_token: str | None = None,
+) -> dict[str, Any] | None:
+    """GET /repos/{owner}/{repo} → full JSON, or None on failure."""
+    try:
+        resp = requests.get(
+            f"{API_BASE}/repos/{owner}/{repo}",
+            headers=_repo_headers(access_token),
+            timeout=30,
+        )
+        _raise_for_status(resp)
+        data = resp.json()
+    except (requests.RequestException, GitHubAPIError, ValueError, TypeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def create_repo(
     access_token: str,
     name: str,
@@ -630,6 +650,27 @@ def create_repo(
         json=payload,
         timeout=30,
     )
+    if resp.status_code == 422:
+        # Name collision is common after a failed first publish (repo created,
+        # local push never finished). Surface a clear Korean message; callers
+        # may recover by reusing an empty existing repo.
+        text = resp.text or ""
+        low = text.lower()
+        body: dict[str, Any] | None = None
+        try:
+            parsed = resp.json()
+            if isinstance(parsed, dict):
+                body = parsed
+                text = str(parsed.get("message") or text)
+                low = text.lower()
+        except ValueError:
+            pass
+        if "already exists" in low:
+            raise GitHubAPIError(
+                422,
+                f"같은 이름({name})의 저장소가 이미 GitHub에 있습니다.",
+                body=body,
+            )
     _raise_for_status(resp)
     return resp.json()
 

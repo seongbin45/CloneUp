@@ -1,0 +1,80 @@
+{
+  "case": "live_settings",
+  "recent": [
+    "C:\\Users\\seong\\Desktop\\ProJect\\KT_AICE_Website_Analysis",
+    "C:\\Users\\seong\\Desktop\\ProJect\\File_sharing_using_Tailscale",
+    "C:\\Users\\seong\\Desktop\\ProJect\\Codyssey_7_ProJect",
+    "C:\\Users\\seong\\Desktop\\ProJect\\이노베이션아카데미_사업화_창업 지원_프로그램_Round_1\\other\\transcribe_app",
+    "C:\\Users\\seong\\Downloads\\new",
+    "C:\\Users\\seong\\Desktop\\ProJect\\Automating_automatic_message_sending",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_6_ProJect",
+    "C:\\Users\\seong\\Desktop\\[핀핏] 전체 아카이브\\금융 정보 플랫폼 (데모22)",
+    "C:\\Users\\seong\\Downloads\\Videos_log",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_5_ProJect",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_4_ProJect",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_4_ProJect\\other\\Codyssey_3_ProJect"
+  ],
+  "scan_roots_setting": [],
+  "roots": [
+    "C:\\Users\\seong\\Desktop",
+    "C:\\Users\\seong\\Documents",
+    "C:\\Users\\seong\\source",
+    "C:\\Users\\seong\\Desktop\\ProJect\\KT_AICE_Website_Analysis",
+    "C:\\Users\\seong\\Desktop\\ProJect",
+    "C:\\Users\\seong\\Desktop\\ProJect\\File_sharing_using_Tailscale",
+    "C:\\Users\\seong\\Desktop\\ProJect\\Codyssey_7_ProJect",
+    "C:\\Users\\seong\\Downloads\\new",
+    "C:\\Users\\seong\\Downloads",
+    "C:\\Users\\seong\\Desktop\\ProJect\\Automating_automatic_message_sending",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_6_ProJect",
+    "C:\\Users\\seong\\Downloads\\Videos_log",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_5_ProJect",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_4_ProJect",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_4_ProJect\\other\\Codyssey_3_ProJect",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_4_ProJect\\other"
+  ],
+  "n_roots": 16,
+  "default_scan_roots_preview": [
+    "C:\\Users\\seong\\Desktop",
+    "C:\\Users\\seong\\Documents",
+    "C:\\Users\\seong\\source",
+    "C:\\Users\\seong\\Desktop\\ProJect\\KT_AICE_Website_Analysis",
+    "C:\\Users\\seong\\Desktop\\ProJect",
+    "C:\\Users\\seong\\Desktop\\ProJect\\File_sharing_using_Tailscale",
+    "C:\\Users\\seong\\Desktop\\ProJect\\Codyssey_7_ProJect",
+    "C:\\Users\\seong\\Downloads\\new",
+    "C:\\Users\\seong\\Downloads",
+    "C:\\Users\\seong\\Desktop\\ProJect\\Automating_automatic_message_sending",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_6_ProJect",
+    "C:\\Users\\seong\\Downloads\\Videos_log",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_5_ProJect",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_4_ProJect",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_4_ProJect\\other\\Codyssey_3_ProJect",
+    "C:\\Users\\seong\\Downloads\\CODYSSEY_4_ProJect\\other"
+  ],
+  "phase1_ms": 842.3,
+  "n_projects": 46,
+  "n_git": 29,
+  "enrich_all_ms": 9517.3,
+  "enrich_all_n": 29,
+  "enrich_caps": [
+    {
+      "k": 8,
+      "n": 8,
+      "ms": 2415.6,
+      "vs_all_pct": 25.4
+    },
+    {
+      "k": 12,
+      "n": 12,
+      "ms": 4595.5,
+      "vs_all_pct": 48.3
+    },
+    {
+      "k": 16,
+      "n": 16,
+      "ms": 7485.3,
+      "vs_all_pct": 78.6
+    }
+  ]
+}

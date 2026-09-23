@@ -54,6 +54,24 @@
 | **H-A** | ⋯ 메뉴 · Git 노란 띠 · Ctrl+, / F1 (구 탭 셸 위) | 완료 |
 | **H-B** | 홈 셸 + 스캔 + dirty 있음/없음 + 내역 연결 + 구 status 위젯 제거 | 완료 |
 | **H-C** | 하위 펼침 정렬 · 시간순 묶음 · porcelain 숫자 | 완료 |
+| **H-S0** | 홈 스캔 비용 기준선 (`bench_home_scan`, K/TTL/debounce 확정) | 완료 |
+| **H-S1** | 하이브리드 allowlist + 광역 parent 차단 + recent 핀 우선 | 완료 |
+| **H-S2** | dirty 예산 K=8 + 선택 debounce 300ms + TTL 90s | 완료 |
+| **H-S3** | 홈 스캔 비용 검증 (bench + verify_home_scan_s12 + UI) | 완료 |
+| **H-S4** | heavy-root rev.7.1: A=`SHGetKnownFolderPath`(Profile+Desktop/Docs/Downloads) fail-closed · B T=48 · Pass A=`MAX_RECENT` | 완료 |
+| **H-S4 ops** | 형제 누락/목록 과다 이슈 반복 시 S0b 재측정·T 재검토; fail-closed면 DEBUG 로그 우선 | 상시 |
+| **H-UI-G0** | 홈 시안 Already-done 실측 (`docs/HOME_G0_AUDIT.md`) | 완료 |
+| **H-UI-P1** | 홈 토큰·그리드·폰트 상수 (`home_tokens`, LIGHT 정렬) | 완료 |
+| **H-UI-P4a** | CTA 판정 순수함수 (`home_cta`, X-1 접두) | 완료 |
+| **H-UI-P2** | 정적 UI 시안 맞춤 (우패널·아이콘·사이드 IA·브레드크럼) | 완료 |
+| **H-UI-P2fix** | P2 결함 F-1~F-13 정리 (CTA 단일화·T-3·hc 통일) | 완료 |
+| **H-UI-P3** | 인터랙션 폴리시 (정렬▲▼·세그먼트·noPick·배너 카피) | 완료 |
+| **H-UI-P4b** | is_mine/공개범위 실데이터 + CTA→탭 배선 | 완료 |
+| **H-UI-T1b** | 홈 테마 OS 연동(`home_chrome_colors`)·배너/⋯ 주입·글리프 폴백 | 완료 |
+| **H-UI-T1b-fix** | FactRow/FolderGlyph colors 주입·QStyle 화살표·clearLayout detach | 완료 |
+| **H-UI-A** | ui/main_shell store + resolve + use_legacy_tabs (rev.4 Phase A) | 완료 |
+| **H-UI-B** | 설정「화면」탭 + home offer 1회 (Phase B) | 완료 |
+| **H-UI-C** | open_workspace_from_home + CTA 라우팅 통일 (Phase C) | 완료 |
 
 ### 다크모드 전용 단계 (한 번에 하지 않음)
 

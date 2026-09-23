@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -272,7 +273,7 @@ class _RevertPreviewWorker(QThread):
 
 class _RevertWorker(QThread):
     """
-    Local: backup branch → reset to target tree → new commit → push.
+    Local: backup branch → reset to target tree → new commit → optional push.
     Remote: clone to a throwaway temp folder first, then the same.
     """
 
@@ -286,6 +287,7 @@ class _RevertWorker(QThread):
         folder: str = "",
         clone_url: str = "",
         rev: str,
+        local_only: bool = False,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -293,15 +295,37 @@ class _RevertWorker(QThread):
         self._folder = folder
         self._clone_url = clone_url
         self._rev = rev
+        # True when user typed 「이해했습니다」— never touch origin/push.
+        self._local_only = bool(local_only)
 
     def run(self) -> None:  # noqa: N802
         try:
-            token, user = ensure_valid_token()
+            from app.git.revert import revert_local_commit
+
+            token: str | None = None
+            user: dict = {"login": "local", "id": 0, "email": ""}
+            try:
+                token, user = ensure_valid_token()
+            except AuthError:
+                if self._remote:
+                    raise
             if self._remote:
+                if not token:
+                    raise RevertError(
+                        "먼저 GitHub에 연결해야 원격 저장소를 되돌릴 수 있습니다."
+                    )
                 result = revert_remote_commit(
                     self._clone_url,
                     self._rev,
                     token=token,
+                    user=user,
+                    hide_real_email=load_hide_real_email(),
+                )
+            elif self._local_only:
+                # Explicit PC-only path — no origin check, no push.
+                result = revert_local_commit(
+                    self._folder,
+                    self._rev,
                     user=user,
                     hide_real_email=load_hide_real_email(),
                 )
@@ -320,6 +344,9 @@ class _RevertWorker(QThread):
             self.failed.emit(mask_secrets_in_text(f"예상치 못한 오류: {e}"))
 
 
+_ACK_PHRASE = "이해했습니다"
+
+
 class _RevertConfirmDialog(QDialog):
     """되돌리기 확인 — files that will change + backup-branch / auto-push notice."""
 
@@ -331,6 +358,7 @@ class _RevertConfirmDialog(QDialog):
         backup_branch: str,
         files: list[ChangedFile],
         remote: bool = False,
+        local_only: bool = False,
     ) -> None:
         super().__init__(parent)
         p = active_palette()
@@ -408,21 +436,24 @@ class _RevertConfirmDialog(QDialog):
         info_l = QVBoxLayout(info)
         info_l.setContentsMargins(14, 12, 14, 12)
         info_l.setSpacing(6)
-        info_lines = [
-            f"백업 브랜치 {backup_branch} 를 먼저 만듭니다.",
-            "지금까지의 커밋은 하나도 지워지지 않습니다. "
-            "되돌린 내용이 새 커밋으로 쌓입니다.",
-        ]
         if remote:
-            info_lines.append(
-                "받은 폴더가 없으니 임시로 잠깐 받아서 되돌린 뒤 GitHub로 보내고, "
-                "임시 폴더는 자동으로 정리합니다. 백업 브랜치도 GitHub에 함께 올립니다."
-            )
+            info_lines = [
+                f"백업: {backup_branch}",
+                "커밋은 지우지 않고 새 커밋으로 되돌립니다.",
+                "임시로 받은 뒤 GitHub에 올리고, 임시 폴더는 정리합니다.",
+            ]
+        elif local_only:
+            # Keep short — GitHub 백업 경고는 아래 ack 박스가 담당
+            info_lines = [
+                f"백업: {backup_branch} (이 PC)",
+                "커밋은 지우지 않고, 되돌린 내용이 새 커밋으로 쌓입니다.",
+            ]
         else:
-            info_lines.append(
-                "끝나면 GitHub에도 자동으로 올라갑니다. "
-                "공개 저장소라면 이 시점의 내용이 곧바로 공개됩니다."
-            )
+            info_lines = [
+                f"백업: {backup_branch}",
+                "커밋은 지우지 않고 새 커밋으로 되돌립니다.",
+                "끝나면 GitHub에도 올립니다.",
+            ]
         for line in info_lines:
             lab = QLabel(line)
             lab.setWordWrap(True)
@@ -430,10 +461,7 @@ class _RevertConfirmDialog(QDialog):
             info_l.addWidget(lab)
         root.addWidget(info)
 
-        btn_row = QHBoxLayout()
-        btn_row.addStretch(1)
-        btn_cancel = QPushButton("취소")
-        btn_cancel.clicked.connect(self.reject)
+        self._ack_edit: QLineEdit | None = None
         btn_go = QPushButton("되돌리기")
         btn_go.setDefault(True)
         btn_go.setStyleSheet(
@@ -441,7 +469,47 @@ class _RevertConfirmDialog(QDialog):
             f"border: 1px solid {p.primary}; border-radius: 5px; padding: 7px 18px; "
             f"font-size: 12.5px; font-weight: 600; }}"
             f"QPushButton:hover {{ background: {p.primary_hover}; }}"
+            f"QPushButton:disabled {{ background: {p.bg_muted}; color: {p.text_muted}; "
+            f"border-color: {p.border_soft}; }}"
         )
+        if local_only and not remote:
+            warn = QFrame()
+            warn.setStyleSheet(
+                f"background: {p.bg_hint}; border: none; border-radius: 6px;"
+            )
+            wl = QVBoxLayout(warn)
+            wl.setContentsMargins(14, 12, 14, 12)
+            wl.setSpacing(8)
+            wtitle = QLabel("GitHub 백업 없이 진행합니다")
+            wtitle.setStyleSheet(
+                f"font-size: 12.5px; font-weight: 600; color: {p.warn_text};"
+            )
+            wbody = QLabel(
+                f"이 PC에만 적용됩니다. 「{_ACK_PHRASE}」를 입력하세요."
+            )
+            wbody.setWordWrap(True)
+            wbody.setStyleSheet(f"font-size: 12px; color: {p.text_secondary};")
+            self._ack_edit = QLineEdit()
+            self._ack_edit.setPlaceholderText(_ACK_PHRASE)
+            self._ack_edit.setStyleSheet(
+                f"QLineEdit {{ background: {p.bg_input}; border: 1px solid {p.border_outline};"
+                f" border-radius: 5px; padding: 6px 10px; font-size: 12.5px; }}"
+            )
+            wl.addWidget(wtitle)
+            wl.addWidget(wbody)
+            wl.addWidget(self._ack_edit)
+            root.addWidget(warn)
+            btn_go.setEnabled(False)
+
+            def _on_ack(text: str, b=btn_go) -> None:
+                b.setEnabled(text.strip() == _ACK_PHRASE)
+
+            self._ack_edit.textChanged.connect(_on_ack)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        btn_cancel = QPushButton("취소")
+        btn_cancel.clicked.connect(self.reject)
         btn_go.clicked.connect(self.accept)
         btn_row.addWidget(btn_cancel)
         btn_row.addWidget(btn_go)
@@ -1143,6 +1211,15 @@ class CommitHistoryDialog(QDialog):
         self._btn_revert.setText(
             "지금 이 상태입니다" if is_current else "이 시점으로 되돌리기"
         )
+        if is_current:
+            self._btn_revert.setToolTip(
+                "목록에서 더 아래(예전) 커밋을 고르면 되돌릴 수 있습니다."
+            )
+        else:
+            self._btn_revert.setToolTip(
+                "이 시점의 내용으로 새 커밋을 만듭니다. "
+                "기록은 지우지 않습니다."
+            )
 
     def _clear_files(self) -> None:
         while self._files_layout.count():
@@ -1329,12 +1406,14 @@ class CommitHistoryDialog(QDialog):
     def _on_revert_clicked(self) -> None:
         if self._selected is None or not self._can_revert_selected():
             return
-        if not load_token():
+        # Remote history always needs a token. Local can revert without login;
+        # push happens later only when origin + token are available.
+        if self._remote and not load_token():
             QMessageBox.information(
                 self,
                 "이 시점으로 되돌리기",
-                "먼저 GitHub에 연결해야 되돌리고 다시 올릴 수 있습니다.\n"
-                "메인 창 위쪽의 「GitHub: 연결」에서 로그인한 뒤 다시 시도하세요.",
+                "먼저 GitHub에 연결해야 원격 저장소를 되돌릴 수 있습니다.\n"
+                "메인 창에서 로그인한 뒤 다시 시도하세요.",
             )
             return
         self._stop_worker()
@@ -1366,6 +1445,7 @@ class CommitHistoryDialog(QDialog):
                 self, "이 시점으로 되돌리기", "바뀌는 파일이 없습니다."
             )
             return
+        local_only = False
         if self._remote:
             # No local folder to inspect for name collisions — the real
             # name (deduped) is picked inside the temp clone at revert time.
@@ -1377,31 +1457,48 @@ class CommitHistoryDialog(QDialog):
                 backup_branch = pick_backup_branch_name(Path(self._folder))
             except _REVERT_ERRORS:
                 backup_branch = "cloneup-backup-…"  # real name chosen at commit time
+            from app.git.revert import has_pushable_github_origin
+
+            local_only = not (
+                bool(load_token()) and has_pushable_github_origin(self._folder)
+            )
         dlg = _RevertConfirmDialog(
             self,
             target_label=f"{self._selected.abs_time} · {self._selected.message}",
             backup_branch=backup_branch,
             files=files,
             remote=self._remote,
+            local_only=local_only,
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        self._execute_revert(self._selected.full_hash)
+        # Honor 「이해했습니다」: force PC-only execute (never require origin).
+        self._execute_revert(self._selected.full_hash, local_only=local_only)
 
     @Slot(str)
     def _on_revert_preview_fail(self, msg: str) -> None:
         from app.util.error_popup import format_error_popup_body
 
+        # Origin/login issues must not block preview — surface a clearer tip.
+        tip = msg
+        if "origin" in (msg or "").lower() or "연결 주소" in (msg or ""):
+            tip = (
+                "미리보기에 원격 연결이 필요하지는 않습니다.\n"
+                "앱을 완전히 종료한 뒤 다시 열어 시도해 보세요.\n"
+                "계속되면 동기화 탭에서 저장하지 않은 변경을 정리한 뒤 "
+                "다시 「이 시점으로 되돌리기」를 눌러 주세요.\n\n"
+                f"(참고)\n{msg}"
+            )
         QMessageBox.warning(
             self,
             "이 시점으로 되돌리기",
             format_error_popup_body(
-                msg,
+                tip,
                 lead="되돌리기 전에 바뀌는 파일을 확인하지 못했어요.",
             ),
         )
 
-    def _execute_revert(self, rev: str) -> None:
+    def _execute_revert(self, rev: str, *, local_only: bool = False) -> None:
         self._stop_worker()
         self._set_busy(True)
         w = _RevertWorker(
@@ -1409,6 +1506,7 @@ class CommitHistoryDialog(QDialog):
             folder=self._folder,
             clone_url=self._clone_url,
             rev=rev,
+            local_only=local_only,
             parent=self,
         )
         self._worker = w
@@ -1421,14 +1519,24 @@ class CommitHistoryDialog(QDialog):
     def _on_revert_ok(self, result: object) -> None:
         if not isinstance(result, RevertResult):
             return
-        QMessageBox.information(
-            self,
-            "되돌렸습니다",
-            f"{result.target_message!r} 시점의 내용으로 되돌렸고, GitHub에도 올렸습니다.\n\n"
-            f"새로 만든 커밋: {result.new_commit[:7]}\n"
-            f"백업 브랜치: {result.backup_branch}\n\n"
-            "이 되돌리기가 마음에 들지 않으면 목록 맨 위 커밋을 골라 다시 되돌리면 됩니다.",
-        )
+        if result.pushed:
+            body = (
+                f"{result.target_message!r} 시점의 내용으로 되돌렸고, "
+                "GitHub에도 올렸습니다.\n\n"
+                f"새로 만든 커밋: {result.new_commit[:7]}\n"
+                f"백업 브랜치: {result.backup_branch}\n\n"
+                "마음에 들지 않으면 목록 맨 위 커밋을 골라 다시 되돌리면 됩니다."
+            )
+        else:
+            body = (
+                f"{result.target_message!r} 시점의 내용으로 "
+                "이 PC 폴더에 되돌렸습니다.\n\n"
+                f"새로 만든 커밋: {result.new_commit[:7]}\n"
+                f"백업 브랜치: {result.backup_branch}\n\n"
+                "GitHub에도 반영하려면 동기화 탭에서 「올리고 보내기」를 하세요.\n"
+                "(원격이 없거나 로그인이 없으면 로컬에만 남습니다.)"
+            )
+        QMessageBox.information(self, "되돌렸습니다", body)
         self._reload_from_start()
 
     @Slot(str)

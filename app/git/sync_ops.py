@@ -337,6 +337,23 @@ def commit_and_push(
             )
         )
 
+    # Stage A defense (UI should gate first; boot toast / CLI still hit this)
+    from app.git.large_files import (
+        find_working_tree_large_files,
+        format_warn_log_line,
+    )
+
+    warns, blocks = find_working_tree_large_files(folder)
+    for w in warns:
+        print(format_warn_log_line(w))
+    if blocks:
+        listing = "\n".join(f"· {h.rel} ({h.size_mib:.1f} MB)" for h in blocks[:12])
+        raise SyncError(
+            "GitHub가 거절하는 큰 파일(100 MB 초과)이 포함되어 있습니다.\n"
+            f"{listing}\n"
+            "저장소에서 뺀 뒤 다시 올려 주세요."
+        )
+
     run_git(["add", "-A"], cwd=str(folder), check=True)
     # anything staged?
     diff = run_git(["diff", "--cached", "--quiet"], cwd=str(folder), check=False)
