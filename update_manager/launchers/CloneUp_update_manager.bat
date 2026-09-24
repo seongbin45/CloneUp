@@ -1,10 +1,7 @@
 @echo off
-REM CloneUp update manager — console-friendly fallback.
-REM Login / Scheduled Task should use CloneUp_update_manager_hidden.vbs instead
-REM so no black console window appears.
+REM Manual/fallback only. Do NOT point Scheduled Task /TR at this .bat —
+REM cmd.exe can still flash. Prefer CloneUp_update_manager_hidden.vbs.
 set "DIR=%~dp0"
-if exist "%DIR%CloneUp_update_manager.exe" (
-  start "" /B "%DIR%CloneUp_update_manager.exe" %*
-) else (
-  exit /b 1
-)
+if not exist "%DIR%CloneUp_update_manager_hidden.vbs" exit /b 1
+REM Re-enter via VBS (window style 0) even if someone double-clicks this .bat.
+wscript //B //Nologo "%DIR%CloneUp_update_manager_hidden.vbs" %*

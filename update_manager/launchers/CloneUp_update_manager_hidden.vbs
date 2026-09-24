@@ -2,12 +2,12 @@
 ' WScript.Shell Run window-style 0 = fully hidden (no black console flash).
 Option Explicit
 
-Dim sh, fso, dir, exe, bat, args, i, cmd
+Dim sh, fso, dir, exe, args, i, cmd
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh = CreateObject("WScript.Shell")
 dir = fso.GetParentFolderName(WScript.ScriptFullName)
 exe = dir & "\CloneUp_update_manager.exe"
-bat = dir & "\CloneUp_update_manager.bat"
+' Do not fall back to .bat here — bat re-enters this VBS (loop risk).
 
 args = ""
 If WScript.Arguments.Count > 0 Then
@@ -18,9 +18,6 @@ End If
 
 If fso.FileExists(exe) Then
   cmd = QuoteArg(exe) & args
-  sh.Run cmd, 0, False
-ElseIf fso.FileExists(bat) Then
-  cmd = QuoteArg(bat) & args
   sh.Run cmd, 0, False
 Else
   WScript.Quit 1

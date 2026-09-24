@@ -55,17 +55,22 @@ def ensure_dir_acl(path: Path, *, mode: str) -> None:
         ["icacls", str(path), "/grant", *acl_grant_args(mode)],
     ]
     # Hide console: windowed UM still flashes a black terminal per icacls without this.
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
+    run_kw: dict = {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "check": False,
+    }
+    if sys.platform == "win32":
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+        run_kw["creationflags"] = flags
+        run_kw["startupinfo"] = si
     for cmd in cmds:
-        r = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            creationflags=flags,
-        )
+        r = subprocess.run(cmd, **run_kw)
         if r.returncode != 0:
             err = (r.stderr or r.stdout or "").strip()
             log.error("icacls failed (%s): %s", " ".join(cmd[2:4]), err)
