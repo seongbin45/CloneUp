@@ -879,6 +879,10 @@ def _list_chromium_browser_pids_uncached() -> set[int]:
                 timeout=8,
             )
         else:
+            # Fallback must still hide console (tasklist is a console subsystem).
+            from app.util.winproc import hidden_run_kwargs
+            import subprocess
+
             proc = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -886,6 +890,7 @@ def _list_chromium_browser_pids_uncached() -> set[int]:
                 encoding="utf-8",
                 errors="replace",
                 timeout=8,
+                **hidden_run_kwargs(),
             )
         raw = proc.stdout or ""
     except Exception:
