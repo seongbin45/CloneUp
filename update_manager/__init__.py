@@ -1,3 +1,3 @@
 """CloneUp Update Manager — independent of the CloneUp GUI app."""
 
-__version__ = "0.1.17"
+__version__ = "0.1.18"
