@@ -314,6 +314,8 @@ def _harden_acl(directory: Path) -> None:
     try:
         # Reset inherited ACLs, grant current user full control only.
         # encoding=locale-safe: icacls on Korean Windows emits CP949, not UTF-8.
+        from app.util.winproc import hidden_run_kwargs
+
         subprocess.run(
             [
                 "icacls",
@@ -328,6 +330,7 @@ def _harden_acl(directory: Path) -> None:
             encoding="mbcs",
             errors="replace",
             timeout=15,
+            **hidden_run_kwargs(),
         )
     except (OSError, subprocess.SubprocessError) as e:
         logger.debug("icacls harden failed for %s: %s", directory, e)

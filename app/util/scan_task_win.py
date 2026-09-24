@@ -14,15 +14,29 @@ log = logging.getLogger("cloneup.scan_task")
 TASK_NAME = "CloneUpProjectScan"
 
 
-def _launcher_cmd_path() -> Path:
+def _hidden_kwargs() -> dict:
+    from app.util.winproc import hidden_run_kwargs
+
+    return hidden_run_kwargs()
+
+
+def _launcher_dir() -> Path:
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("TMP") or "."
     d = Path(base) / "CloneUp" / "scan_cache"
     d.mkdir(parents=True, exist_ok=True)
-    return d / "run_scan.cmd"
+    return d
+
+
+def _launcher_cmd_path() -> Path:
+    return _launcher_dir() / "run_scan.cmd"
+
+
+def _launcher_vbs_path() -> Path:
+    return _launcher_dir() / "run_scan_hidden.vbs"
 
 
 def write_launcher_cmd() -> Path:
-    """Write a tiny .cmd the task runs (sets cwd / PYTHONPATH for -m)."""
+    """Write a tiny .cmd (legacy); prefer ``write_launcher_vbs`` for the task TR."""
     path = _launcher_cmd_path()
     if getattr(sys, "frozen", False):
         body = f'@echo off\r\n"{sys.executable}" --scan-cache\r\n'
@@ -38,11 +52,52 @@ def write_launcher_cmd() -> Path:
     return path
 
 
+def write_launcher_vbs() -> Path:
+    """Hidden VBS launcher for schtasks (no black console when scan fires)."""
+    path = _launcher_vbs_path()
+    if getattr(sys, "frozen", False):
+        target = str(Path(sys.executable).resolve())
+        args = "--scan-cache"
+        # Optional working directory = install dir
+        work = str(Path(sys.executable).resolve().parent)
+    else:
+        root = Path(__file__).resolve().parents[2]
+        target = str(Path(sys.executable).resolve())
+        args = f'-m app.scan_worker'
+        work = str(root)
+
+    # Escape for VBScript string literals
+    def _vq(s: str) -> str:
+        return s.replace('"', '""')
+
+    body = (
+        "Option Explicit\r\n"
+        "Dim sh, cmd\r\n"
+        "Set sh = CreateObject(\"WScript.Shell\")\r\n"
+        f'sh.CurrentDirectory = "{_vq(work)}"\r\n'
+        f'cmd = """{_vq(target)}"" {_vq(args)}"\r\n'
+        "sh.Run cmd, 0, False\r\n"
+    )
+    path.write_text(body, encoding="utf-8")
+    # Keep .cmd in sync for diagnostics / older docs
+    write_launcher_cmd()
+    return path
+
+
+def _task_tr() -> str:
+    """schtasks /TR: wscript //B //Nologo <run_scan_hidden.vbs>."""
+    vbs = write_launcher_vbs()
+    windir = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+    wscript = str(Path(windir) / "System32" / "wscript.exe")
+    return f'"{wscript}" //B //Nologo "{vbs}"'
+
+
 def task_exists() -> bool:
     r = subprocess.run(
         ["schtasks", "/Query", "/TN", TASK_NAME],
         capture_output=True,
         check=False,
+        **_hidden_kwargs(),
     )
     return r.returncode == 0
 
@@ -57,6 +112,7 @@ def remove_scan_task() -> tuple[bool, str]:
         encoding="utf-8",
         errors="replace",
         check=False,
+        **_hidden_kwargs(),
     )
     if r.returncode == 0:
         return True, "deleted"
@@ -64,22 +120,70 @@ def remove_scan_task() -> tuple[bool, str]:
     return False, msg
 
 
+def _current_task_tr() -> str:
+    if not task_exists():
+        return ""
+    r = subprocess.run(
+        ["schtasks", "/Query", "/TN", TASK_NAME, "/FO", "LIST", "/V"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        **_hidden_kwargs(),
+    )
+    for line in (r.stdout or "").splitlines():
+        low = line.lower()
+        if "task to run" in low or "실행할 작업" in line or "실행할 프로그램" in line:
+            _, _, rest = line.partition(":")
+            return rest.strip().strip('"')
+    return ""
+
+
 def ensure_scan_task(*, enabled: bool) -> tuple[bool, str]:
-    """Create hourly + logon(+5m) task, or remove when disabled."""
+    """Create hourly + logon(+5m) task, or remove when disabled.
+
+    Avoids delete+recreate on every app launch when the task already points at
+    the current hidden VBS launcher (was causing 3–4 black console flashes).
+    """
     if not enabled:
         return remove_scan_task()
 
-    launcher = write_launcher_cmd()
-    tr = str(launcher)
+    desired_tr = _task_tr()
+    # Normalize for compare: strip outer quotes / whitespace
+    def _norm(s: str) -> str:
+        return " ".join(s.replace('"', "").split()).lower()
+
+    if task_exists() and _norm(_current_task_tr()) == _norm(desired_tr):
+        return True, "already-current"
+
     remove_scan_task()
 
-    # XML: LOGON +5m and hourly repetition
-    tr_esc = (
-        tr.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
+    # XML: LOGON +5m and hourly repetition — Command=wscript, Arguments=//B …
+    # Split TR into Command + Arguments for Task Scheduler XML.
+    # desired_tr like: "C:\Windows\System32\wscript.exe" //B //Nologo "C:\...\run_scan_hidden.vbs"
+    import re
+
+    m = re.match(r'^"([^"]+)"\s+(.*)$', desired_tr.strip())
+    if m:
+        command, arguments = m.group(1), m.group(2)
+    else:
+        parts = desired_tr.split(None, 1)
+        command = parts[0]
+        arguments = parts[1] if len(parts) > 1 else ""
+
+    def _xml_esc(s: str) -> str:
+        return (
+            s.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+    args_xml = ""
+    if arguments:
+        args_xml = f"\n      <Arguments>{_xml_esc(arguments)}</Arguments>"
+
     xml = f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <Triggers>
@@ -117,7 +221,7 @@ def ensure_scan_task(*, enabled: bool) -> tuple[bool, str]:
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>{tr_esc}</Command>
+      <Command>{_xml_esc(command)}</Command>{args_xml}
     </Exec>
   </Actions>
 </Task>
@@ -134,9 +238,10 @@ def ensure_scan_task(*, enabled: bool) -> tuple[bool, str]:
             encoding="utf-8",
             errors="replace",
             check=False,
+            **_hidden_kwargs(),
         )
         if r.returncode != 0:
-            # Fallback: simple hourly task
+            # Fallback: simple hourly task with full TR string
             r2 = subprocess.run(
                 [
                     "schtasks",
@@ -144,7 +249,7 @@ def ensure_scan_task(*, enabled: bool) -> tuple[bool, str]:
                     "/TN",
                     TASK_NAME,
                     "/TR",
-                    tr,
+                    desired_tr,
                     "/SC",
                     "HOURLY",
                     "/MO",
@@ -156,6 +261,7 @@ def ensure_scan_task(*, enabled: bool) -> tuple[bool, str]:
                 encoding="utf-8",
                 errors="replace",
                 check=False,
+                **_hidden_kwargs(),
             )
             if r2.returncode != 0:
                 msg = (r.stderr or r.stdout or r2.stderr or r2.stdout or "").strip()
