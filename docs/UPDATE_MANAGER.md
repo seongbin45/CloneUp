@@ -43,6 +43,7 @@ Inno Setup **GUI 마법사**가 뜰 수 있습니다. 자동 업데이트는 사
 |------|------|
 | **파일** | Setup이 **항상** `%PROGRAMDATA%\CloneUp\UpdateManager\CloneUp_update_manager.exe` 를 설치합니다. (작업 항목과 무관, **관리자 Setup**) |
 | **자동시작** | Setup 작업 **「로그인 시 자동 업데이트 관리자 실행」** (기본 선택) → **작업 스케줄러** `CloneUpUpdateManager` (`SYSTEM` + `HIGHEST` + ONLOGON + **Parallel**) |
+| **로그인 TR** | `wscript.exe //B //Nologo …\CloneUp_update_manager_hidden.vbs` (VBS window-style 0). `.bat`는 폴백. **exe를 TR에 직접 넣지 않음** (검은 콘솔 방지) |
 | **수동 확인** | 트레이 「업데이트 한 번 확인」→ `schtasks /Run` 우선 (Parallel 원샷) → `status/runs/{run_id}.json` 폴링 (15초 시작 대기 / 최대 15분) |
 | 트레이 | CloneUp 트레이 자동시작(`CloneUpTray`)과는 **별개** |
 

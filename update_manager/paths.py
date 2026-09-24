@@ -24,6 +24,11 @@ def _program_data() -> Path:
     return Path(r"C:\ProgramData")
 
 
+UM_EXE_NAME = "CloneUp_update_manager.exe"
+UM_BAT_NAME = "CloneUp_update_manager.bat"
+UM_VBS_NAME = "CloneUp_update_manager_hidden.vbs"
+
+
 def manager_install_dir() -> Path:
     """
     Where CloneUp_update_manager.exe lives (separate from the app onedir).
@@ -37,11 +42,31 @@ def manager_install_dir() -> Path:
     )
     for c in candidates:
         try:
-            if (c / "CloneUp_update_manager.exe").is_file():
+            if (c / UM_EXE_NAME).is_file():
                 return c
         except OSError:
             continue
     return candidates[0]
+
+
+def manager_hidden_vbs_path() -> Path:
+    """Login / schtasks should run this VBS (window style 0), not the exe."""
+    return manager_install_dir() / UM_VBS_NAME
+
+
+def manager_task_tr() -> str:
+    """
+    Scheduled Task ``/TR`` string: wscript //B //Nologo <hidden.vbs>.
+
+    Falls back to the exe path if VBS is missing (legacy installs).
+    """
+    vbs = manager_hidden_vbs_path()
+    if vbs.is_file():
+        windir = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+        wscript = str(Path(windir) / "System32" / "wscript.exe")
+        return f'"{wscript}" //B //Nologo "{vbs}"'
+    exe = manager_install_dir() / UM_EXE_NAME
+    return f'"{exe}"'
 
 
 def _is_under(path: Path, root: Path) -> bool:

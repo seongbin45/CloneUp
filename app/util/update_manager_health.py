@@ -426,9 +426,22 @@ def try_start_manager(exe: Path, *, once: bool = False) -> bool:
         flags = int(kw.get("creationflags", 0)) | getattr(
             subprocess, "DETACHED_PROCESS", 0
         )
-        cmd = [str(exe)]
-        if once:
-            cmd.append("--once")
+        # Prefer hidden VBS launcher (no black console) when installed beside exe.
+        vbs = exe.parent / "CloneUp_update_manager_hidden.vbs"
+        if vbs.is_file():
+            windir = (
+                os.environ.get("SystemRoot")
+                or os.environ.get("WINDIR")
+                or r"C:\Windows"
+            )
+            wscript = str(Path(windir) / "System32" / "wscript.exe")
+            cmd = [wscript, "//B", "//Nologo", str(vbs)]
+            if once:
+                cmd.append("--once")
+        else:
+            cmd = [str(exe)]
+            if once:
+                cmd.append("--once")
         subprocess.Popen(  # noqa: S603
             cmd,
             cwd=str(exe.parent),

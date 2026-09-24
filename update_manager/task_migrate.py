@@ -102,6 +102,9 @@ def migrate_update_manager_task(logger: logging.Logger | None = None) -> bool:
     Best-effort: re-register task as ONLOGON SYSTEM HIGHEST with Parallel instances
     and grant interactive users permission to /Run.
 
+    Task action prefers ``wscript //B …_hidden.vbs`` so login never flashes a
+    black console (direct .exe / .bat TR is rewritten when VBS is present).
+
     Safe to call every tick; no-op if task missing (user-mode install).
     """
     lg = logger or log
@@ -109,6 +112,9 @@ def migrate_update_manager_task(logger: logging.Logger | None = None) -> bool:
         return False
     if not _task_exists():
         return False
+
+    from update_manager.paths import UM_VBS_NAME, manager_hidden_vbs_path, manager_task_tr
+
     r = subprocess.run(
         ["schtasks", "/Query", "/TN", TASK_NAME, "/FO", "LIST", "/V"],
         capture_output=True,
@@ -119,15 +125,30 @@ def migrate_update_manager_task(logger: logging.Logger | None = None) -> bool:
         creationflags=_no_window_flags(),
     )
     tr = _parse_task_to_run(r.stdout or "")
-    if not tr or "CloneUp_update_manager" not in tr.lower():
+    if not tr or "cloneup_update_manager" not in tr.lower():
         lg.warning("task migrate: could not parse TR")
         return False
 
-    command, arguments = _split_command_args(tr)
+    # Prefer hidden VBS launcher next to the installed exe.
+    vbs = manager_hidden_vbs_path()
+    desired_tr = manager_task_tr()
+    if vbs.is_file():
+        command, arguments = _split_command_args(desired_tr)
+    else:
+        command, arguments = _split_command_args(tr)
+        # If TR still points at bare exe/bat, keep it but log.
+        if command.lower().endswith(".exe") or command.lower().endswith(".bat"):
+            lg.info(
+                "task migrate: %s missing — keeping TR=%s",
+                UM_VBS_NAME,
+                tr[:160],
+            )
+
     if not command:
         lg.warning("task migrate: empty command")
         return False
 
+    # Already on hidden VBS with Parallel — still refresh ACL / settings via recreate.
     args_xml = ""
     if arguments:
         args_xml = f"\n      <Arguments>{_xml_escape(arguments)}</Arguments>"
@@ -135,7 +156,7 @@ def migrate_update_manager_task(logger: logging.Logger | None = None) -> bool:
     xml = f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>CloneUp silent update manager (SYSTEM)</Description>
+    <Description>CloneUp silent update manager (SYSTEM, hidden VBS)</Description>
   </RegistrationInfo>
   <Principals>
     <Principal id="Author">

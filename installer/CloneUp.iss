@@ -81,6 +81,9 @@ Source: "..\assets\icons\{#MyAppIcoName}"; DestDir: "{app}"; DestName: "{#MyAppI
 ; ProgramData (not {app}) so zip onedir updates never overwrite the manager.
 ; With PrivilegesRequired=admin this is machine-wide for every user.
 Source: "..\dist\CloneUp_update_manager.exe"; DestDir: "{commonappdata}\CloneUp\UpdateManager"; Flags: ignoreversion
+; Hidden login launchers (VBS window-style 0) — schtasks must not TR the .exe directly
+Source: "..\update_manager\launchers\CloneUp_update_manager.bat"; DestDir: "{commonappdata}\CloneUp\UpdateManager"; Flags: ignoreversion
+Source: "..\update_manager\launchers\CloneUp_update_manager_hidden.vbs"; DestDir: "{commonappdata}\CloneUp\UpdateManager"; Flags: ignoreversion
 ; Per-PC diagnosis script (also copied by build_exe.ps1 into dist\CloneUp\scripts)
 Source: "..\scripts\diagnose_update_manager.ps1"; DestDir: "{app}\scripts"; Flags: ignoreversion
 ; Individual PNG sizes (optional consumers / shell thumbnails if needed)
@@ -110,14 +113,15 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 Filename: "{tmp}\tesseract-ocr-w64-setup-5.4.0.20240606.exe"; Parameters: "/S"; StatusMsg: "Tesseract OCR 설치 중…"; Flags: waituntilterminated; Tasks: tesseractocr
 ; Register update manager as a Scheduled Task: SYSTEM + highest privileges
 ; (not HKLM Run). ONLOGON so it starts when any user signs in.
-Filename: "schtasks"; Parameters: "/Create /F /RL HIGHEST /SC ONLOGON /RU SYSTEM /TN ""CloneUpUpdateManager"" /TR """"{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"""""; StatusMsg: "자동 업데이트 작업 등록 중…"; Flags: runhidden waituntilterminated; Tasks: autoupdatemanager
+; TR = wscript //B //Nologo hidden.vbs (not the .exe — avoids black console on logon)
+Filename: "schtasks"; Parameters: "/Create /F /RL HIGHEST /SC ONLOGON /RU SYSTEM /TN ""CloneUpUpdateManager"" /TR ""wscript.exe //B //Nologo \""{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager_hidden.vbs\"""""""; StatusMsg: "자동 업데이트 작업 등록 중…"; Flags: runhidden waituntilterminated; Tasks: autoupdatemanager
 ; Battery / wake settings (same idea as enterprise reboot tasks)
 ; Parallel = tray 「한 번 확인」 schtasks /Run can start while daemon lives.
 ; ACL = Authenticated Users may /Run (otherwise only Admin/SYSTEM can trigger).
-Filename: "powershell"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""$ErrorActionPreference='Stop'; $n='CloneUpUpdateManager'; $t=Get-ScheduledTask -TaskName $n; $s=$t.Settings; $s.WakeToRun=$true; $s.DisallowStartIfOnBatteries=$false; $s.StopIfGoingOnBatteries=$false; $s.AllowStartIfOnBatteries=$true; $s.MultipleInstances=0; Set-ScheduledTask -TaskName $n -Settings $s; $svc=New-Object -ComObject Schedule.Service; $svc.Connect(); $task=$svc.GetFolder('\').GetTask($n); $task.SetSecurityDescriptor('D:AR(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;AU)',0)"""; StatusMsg: "자동 업데이트 작업 설정 중…"; Flags: runhidden waituntilterminated; Tasks: autoupdatemanager
+Filename: "powershell"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command ""$ErrorActionPreference='Stop'; $n='CloneUpUpdateManager'; $t=Get-ScheduledTask -TaskName $n; $s=$t.Settings; $s.WakeToRun=$true; $s.DisallowStartIfOnBatteries=$false; $s.StopIfGoingOnBatteries=$false; $s.AllowStartIfOnBatteries=$true; $s.MultipleInstances=0; Set-ScheduledTask -TaskName $n -Settings $s; $svc=New-Object -ComObject Schedule.Service; $svc.Connect(); $task=$svc.GetFolder('\').GetTask($n); $task.SetSecurityDescriptor('D:AR(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;AU)',0)"""; StatusMsg: "자동 업데이트 작업 설정 중…"; Flags: runhidden waituntilterminated; Tasks: autoupdatemanager
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-; Also start once now (task will own subsequent logons)
-Filename: "{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager.exe"; Description: "자동 업데이트 관리자 시작"; Flags: nowait postinstall skipifsilent unchecked; Tasks: autoupdatemanager
+; Also start once now via hidden VBS (task will own subsequent logons)
+Filename: "{sys}\wscript.exe"; Parameters: "//B //Nologo ""{commonappdata}\CloneUp\UpdateManager\CloneUp_update_manager_hidden.vbs"""; Description: "자동 업데이트 관리자 시작"; Flags: nowait postinstall skipifsilent unchecked; Tasks: autoupdatemanager
 
 [UninstallRun]
 ; Remove scheduled task on uninstall (admin Setup)

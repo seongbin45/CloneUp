@@ -29,6 +29,16 @@ if (-not (Test-Path $out)) {
 Write-Host "OK: $out"
 Get-Item $out | Format-List FullName, Length, LastWriteTime
 
+# Hidden launchers beside the exe (manual copy / diagnose); Setup also ships them.
+$launchSrc = Join-Path $Root "update_manager\launchers"
+foreach ($name in @("CloneUp_update_manager.bat", "CloneUp_update_manager_hidden.vbs")) {
+    $src = Join-Path $launchSrc $name
+    if (Test-Path $src) {
+        Copy-Item -Force $src (Join-Path $Root "dist\$name")
+        Write-Host "OK: dist\$name"
+    }
+}
+
 if ($ZipApp) {
     $appDir = Join-Path $Root "dist\CloneUp"
     $exe = Join-Path $appDir "CloneUp.exe"
