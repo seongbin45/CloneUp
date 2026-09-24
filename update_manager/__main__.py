@@ -81,13 +81,15 @@ def run_once(log: logging.Logger) -> str:
     Returns: no_install | no_version | no_release | up_to_date | deferred_ui
              | killed_failed | updated | error | pending_busy | pending_acl_failed
     """
+    # ACL before any status write — otherwise user-started UM hits
+    # PermissionError on runs/*.tmp under ProgramData (Users were Read-only).
+    try:
+        status_io.ensure_status_acl()
+    except Exception as e:
+        log.warning("status ACL: %s", e)
+
     run_id = status_io.start_run(pid=os.getpid())
     try:
-        try:
-            status_io.ensure_status_acl()
-        except Exception as e:
-            log.warning("status ACL: %s", e)
-
         install_dir = find_cloneup_install_dir()
         if install_dir is None:
             log.info("CloneUp install dir not found — skip")

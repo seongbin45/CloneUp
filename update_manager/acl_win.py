@@ -10,58 +10,52 @@ from pathlib import Path
 log = logging.getLogger("cloneup_update_manager")
 
 
+def acl_grant_args(mode: str) -> list[str]:
+    """icacls ``/grant`` principals for *mode* (unit-testable without icacls)."""
+    if mode == "machine":
+        # Pending zip: no Users write.
+        return [
+            "NT AUTHORITY\\SYSTEM:(OI)(CI)M",
+            "BUILTIN\\Administrators:(OI)(CI)M",
+        ]
+    if mode == "machine_status":
+        # Status/runs: Users need Modify. Tray or HKCU Run may start UM as the
+        # interactive user; Read-only caused PermissionError on ``*.tmp``
+        # (GitHub auto-issues #4–#10, Errno 13).
+        return [
+            "NT AUTHORITY\\SYSTEM:(OI)(CI)M",
+            "BUILTIN\\Administrators:(OI)(CI)M",
+            "BUILTIN\\Users:(OI)(CI)M",
+        ]
+    # user mode — grant current user Modify
+    import os
+
+    user = os.environ.get("USERNAME") or os.environ.get("USER") or ""
+    if not user:
+        raise RuntimeError("cannot determine USERNAME for pending ACL")
+    return [
+        f"{user}:(OI)(CI)M",
+        "NT AUTHORITY\\SYSTEM:(OI)(CI)M",
+    ]
+
+
 def ensure_dir_acl(path: Path, *, mode: str) -> None:
     """
     Apply Tier-2 ACL. Raises RuntimeError on failure (hard-fail tick).
 
-    machine: SYSTEM + Administrators Modify (no Users write)
-    user: grant current user Modify via icacls %USERNAME%
-    status machine: additionally Users Read
+    machine: SYSTEM + Administrators Modify (pending zip; no Users write)
+    machine_status: SYSTEM + Admins + Users Modify (status JSON writable)
+    user: current user + SYSTEM Modify
     """
     path.mkdir(parents=True, exist_ok=True)
     if sys.platform != "win32":
         return
-    # Reset inheritance then grant required principals.
     cmds: list[list[str]] = [
         ["icacls", str(path), "/inheritance:r"],
+        ["icacls", str(path), "/grant", *acl_grant_args(mode)],
     ]
-    if mode == "machine":
-        cmds.append(
-            [
-                "icacls",
-                str(path),
-                "/grant",
-                "NT AUTHORITY\\SYSTEM:(OI)(CI)M",
-                "BUILTIN\\Administrators:(OI)(CI)M",
-            ]
-        )
-    elif mode == "machine_status":
-        cmds.append(
-            [
-                "icacls",
-                str(path),
-                "/grant",
-                "NT AUTHORITY\\SYSTEM:(OI)(CI)M",
-                "BUILTIN\\Administrators:(OI)(CI)M",
-                "BUILTIN\\Users:(OI)(CI)R",
-            ]
-        )
-    else:
-        # user mode — grant current user full modify on the tree
-        import os
-
-        user = os.environ.get("USERNAME") or os.environ.get("USER") or ""
-        if not user:
-            raise RuntimeError("cannot determine USERNAME for pending ACL")
-        cmds.append(
-            [
-                "icacls",
-                str(path),
-                "/grant",
-                f"{user}:(OI)(CI)M",
-                "NT AUTHORITY\\SYSTEM:(OI)(CI)M",
-            ]
-        )
+    # Hide console: windowed UM still flashes a black terminal per icacls without this.
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
     for cmd in cmds:
         r = subprocess.run(
             cmd,
@@ -70,6 +64,7 @@ def ensure_dir_acl(path: Path, *, mode: str) -> None:
             encoding="utf-8",
             errors="replace",
             check=False,
+            creationflags=flags,
         )
         if r.returncode != 0:
             err = (r.stderr or r.stdout or "").strip()

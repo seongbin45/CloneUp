@@ -12,10 +12,17 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 log = logging.getLogger("cloneup.um_health")
+
+# Hard/soft log hits older than this do not set problems (GitHub #4–#10 spam:
+# one PermissionError stayed in the tail for days and re-filed forever).
+_LOG_FRESH_SEC = 48 * 3600
+_LOG_TS_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:,\d+)?"
+)
 
 UM_EXE_NAME = "CloneUp_update_manager.exe"
 UM_RUN_VALUE = "CloneUpUpdateManager"
@@ -107,8 +114,20 @@ class UpdateManagerHealth:
 
     @property
     def signature(self) -> str:
-        """Stable id for rate-limiting duplicate reports."""
-        raw = "|".join(sorted(self.problems)) + "|" + ("run" if self.process_running else "stop")
+        """Stable id for rate-limiting duplicate reports.
+
+        Includes Windows username so ADMIN vs DiCiA on one PC do not share
+        the same signature string in issue titles (rate-limit store is already
+        per-user; this keeps GitHub signatures distinct too).
+        """
+        user = (os.environ.get("USERNAME") or os.environ.get("USER") or "").strip().lower()
+        raw = (
+            "|".join(sorted(self.problems))
+            + "|"
+            + ("run" if self.process_running else "stop")
+            + "|"
+            + user
+        )
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
@@ -216,6 +235,40 @@ def _log_error_hits(tail: str) -> list[str]:
         if h not in out:
             out.append(h)
     return out
+
+
+def _parse_log_timestamp(line: str) -> datetime | None:
+    """Parse leading ``YYYY-MM-DD HH:MM:SS`` from a UM log line (local naive)."""
+    m = _LOG_TS_RE.match(line.strip())
+    if not m:
+        return None
+    try:
+        return datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def _filter_fresh_log_hits(
+    hits: list[str],
+    *,
+    now: datetime | None = None,
+    max_age_sec: int = _LOG_FRESH_SEC,
+) -> list[str]:
+    """Drop hits with no parseable ts or older than *max_age_sec*."""
+    if not hits:
+        return []
+    anchor = now or datetime.now()
+    cutoff = anchor - timedelta(seconds=max_age_sec)
+    fresh: list[str] = []
+    for h in hits:
+        ts = _parse_log_timestamp(h)
+        if ts is None:
+            # No timestamp — keep (conservative) only if window unused; drop
+            # unparseable stale-looking lines to avoid infinite re-file.
+            continue
+        if ts >= cutoff:
+            fresh.append(h)
+    return fresh
 
 
 def _drop_superseded_apply_failures(
@@ -584,6 +637,7 @@ def probe_update_manager(*, attempt_restart: bool = True) -> UpdateManagerHealth
             lines = text.splitlines()
             h.log_tail = "\n".join(lines[-40:])
             recent_lines = lines[-120:]
+            # UI may still show last hits; problems use freshness-filtered set.
             h.log_error_hits = _log_error_hits("\n".join(recent_lines))
         except OSError as e:
             h.log_tail = f"(read failed: {e})"
@@ -603,15 +657,16 @@ def probe_update_manager(*, attempt_restart: bool = True) -> UpdateManagerHealth
         h.problems.append("process_not_running")
     if h.exe_present and not h.run_key_present:
         h.problems.append("run_key_missing")
+    fresh_hits = _filter_fresh_log_hits(h.log_error_hits)
     hard_hits = [
         x
-        for x in h.log_error_hits
+        for x in fresh_hits
         if _HARD_LOG_RE.search(x) and not _SOFT_LOG_RE.search(x)
     ]
     hard_hits = _drop_superseded_apply_failures(recent_lines, hard_hits)
     soft_hits = [
         x
-        for x in h.log_error_hits
+        for x in fresh_hits
         if _SOFT_LOG_RE.search(x) and not _HARD_LOG_RE.search(x)
     ]
     if hard_hits:

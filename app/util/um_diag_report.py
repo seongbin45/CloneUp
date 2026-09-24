@@ -45,6 +45,13 @@ class DiagSendResult:
     issue_url: str = ""
 
 
+def _running_unpackaged() -> bool:
+    """True for ``python main.py --tray`` (no frozen Setup install)."""
+    import sys
+
+    return not bool(getattr(sys, "frozen", False))
+
+
 def should_consider_report(health: UpdateManagerHealth) -> bool:
     if health.ok:
         return False
@@ -54,6 +61,16 @@ def should_consider_report(health: UpdateManagerHealth) -> bool:
     # Transient GitHub/network log noise while stopped — do not auto-file.
     if health.problems == ["log_network"]:
         return False
+    # Source / unpackaged tray: Setup has not placed UM — do not spam toasts.
+    # Install-related probes alone are expected until CloneUp-Setup is run.
+    if _running_unpackaged():
+        install_related = {
+            "exe_missing",
+            "run_key_missing",
+            "process_not_running",
+        }
+        if set(health.problems).issubset(install_related):
+            return False
     return True
 
 
@@ -143,6 +160,8 @@ def run_um_diag_cycle(*, attempt_restart: bool = True) -> DiagSendResult:
     token = (load_token() or "").strip()
     if not token:
         url = new_issue_browser_url(title, body)
+        # Still stamp rate-limit — otherwise tray re-saves/toasts every hour.
+        _mark_sent(health.signature)
         return DiagSendResult(
             "saved_local",
             f"no GitHub token; wrote {pending}",
@@ -158,6 +177,7 @@ def run_um_diag_cycle(*, attempt_restart: bool = True) -> DiagSendResult:
     except Exception as e:
         log.warning("could not file GitHub issue: %s", e)
         url = new_issue_browser_url(title, body)
+        _mark_sent(health.signature)
         return DiagSendResult(
             "saved_local",
             f"API failed ({e}); wrote {pending}",

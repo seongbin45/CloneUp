@@ -14,11 +14,19 @@ log = logging.getLogger("cloneup_update_manager")
 TASK_NAME = "CloneUpUpdateManager"
 
 
+def _no_window_flags() -> int:
+    """Suppress black console flashes for schtasks/powershell children."""
+    if sys.platform != "win32":
+        return 0
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+
 def _task_exists() -> bool:
     r = subprocess.run(
         ["schtasks", "/Query", "/TN", TASK_NAME],
         capture_output=True,
         check=False,
+        creationflags=_no_window_flags(),
     )
     return r.returncode == 0
 
@@ -64,6 +72,8 @@ def _grant_interactive_run(lg: logging.Logger) -> None:
             [
                 "powershell",
                 "-NoProfile",
+                "-WindowStyle",
+                "Hidden",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
@@ -74,6 +84,7 @@ def _grant_interactive_run(lg: logging.Logger) -> None:
             encoding="utf-8",
             errors="replace",
             check=False,
+            creationflags=_no_window_flags(),
         )
         if r.returncode != 0:
             lg.warning(
@@ -105,6 +116,7 @@ def migrate_update_manager_task(logger: logging.Logger | None = None) -> bool:
         encoding="utf-8",
         errors="replace",
         check=False,
+        creationflags=_no_window_flags(),
     )
     tr = _parse_task_to_run(r.stdout or "")
     if not tr or "CloneUp_update_manager" not in tr.lower():
@@ -166,6 +178,7 @@ def migrate_update_manager_task(logger: logging.Logger | None = None) -> bool:
             encoding="utf-8",
             errors="replace",
             check=False,
+            creationflags=_no_window_flags(),
         )
         Path(xml_path).unlink(missing_ok=True)
         if r2.returncode != 0:
@@ -201,6 +214,7 @@ def run_scheduled_task() -> tuple[bool, str]:
         encoding="utf-8",
         errors="replace",
         check=False,
+        creationflags=_no_window_flags(),
     )
     detail = ((r.stdout or "") + (r.stderr or "")).strip()
     if r.returncode != 0:

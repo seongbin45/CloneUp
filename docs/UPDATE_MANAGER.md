@@ -24,6 +24,7 @@ Inno Setup **GUI 마법사**가 뜰 수 있습니다. 자동 업데이트는 사
 | 이후 | HKCU `CloneUpTray`가 있으면 `CloneUp.exe --tray` 재실행 |
 | UI | 트레이/설정 **업데이트 관리자 확인** + 상태 폴링 (`status/current.json`) |
 | pending | `%PROGRAMDATA%\CloneUp\UpdateManager\pending\` (machine) / LocalAppData (user) |
+| status ACL | machine `status/`·`runs/`: SYSTEM+Admins+**Users Modify** (트레이/HKCU로 유저 기동 시 `PermissionError` 방지). pending zip은 Users 쓰기 없음 |
 
 ## 설치 경로 찾는 순서
 
@@ -78,6 +79,8 @@ CloneUp 트레이(`--tray`)가 주기적으로 `CloneUp_update_manager` 상태�
 | 항목 | 내용 |
 |------|------|
 | 시점 | 시작 ~2분 후 1회, 이후 **1시간**마다 (백그라운드·조용히, 터미널 창 없음) |
+| 로그 신선도 | `log_errors`는 **48시간 이내** 로그만 (오래된 PermissionError 반복 이슈 방지) |
+| 시그니처 | problems + 실행여부 + **Windows 사용자명** (계정별 구분) |
 | 관리 UI | 트레이 **업데이트 관리자 확인** 또는 설정 → 안전 → 같은 이름 버튼 → 상태·시작·1회 확인·로그 |
 | 이상 조건 | exe 없음 / 프로세스 없음 / 로그에 apply·install-dir·GitHub 실패 등 |
 | 복구 시도 | exe는 있는데 프로세스가 없으면 **한 번 자동 재시작** 후 재확인 |

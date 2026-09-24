@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,12 @@ from app.util.update_manager_health import (
     build_diagnostic_markdown,
     issue_title,
 )
+
+
+def _ts(hours_ago: float = 0.0) -> str:
+    """UM log timestamp prefix relative to now (freshness window is 48h)."""
+    t = datetime.now() - timedelta(hours=hours_ago)
+    return t.strftime("%Y-%m-%d %H:%M:%S") + ",000"
 
 
 def test_health_ok_when_no_problems() -> None:
@@ -25,9 +32,24 @@ def test_should_consider_skips_healthy() -> None:
     assert umr.should_consider_report(h) is False
 
 
-def test_should_consider_exe_missing() -> None:
+def test_should_consider_exe_missing_when_frozen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(umr, "_running_unpackaged", lambda: False)
     h = UpdateManagerHealth(problems=["exe_missing"])
     assert umr.should_consider_report(h) is True
+
+
+def test_should_skip_exe_missing_when_unpackaged_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """python main.py --tray must not toast UM missing (Setup not installed)."""
+    monkeypatch.setattr(umr, "_running_unpackaged", lambda: True)
+    h = UpdateManagerHealth(
+        problems=["exe_missing", "run_key_missing", "process_not_running"],
+        app_install_guess="",
+    )
+    assert umr.should_consider_report(h) is False
 
 
 def test_should_consider_soft_run_key_only() -> None:
@@ -58,8 +80,8 @@ def test_probe_soft_network_not_problem_when_running(
     log_dir.mkdir()
     log_path = log_dir / "update_manager.log"
     log_path.write_text(
-        "2026-09-09 01:00:00,000 WARNING github latest failed: ssl timeout\n"
-        "2026-09-09 01:00:01,000 INFO no usable release / network — skip\n",
+        f"{_ts(1)} WARNING github latest failed: ssl timeout\n"
+        f"{_ts(1)} INFO no usable release / network — skip\n",
         encoding="utf-8",
     )
     exe = tmp_path / "CloneUp_update_manager.exe"
@@ -78,6 +100,50 @@ def test_probe_soft_network_not_problem_when_running(
     assert h.log_error_hits  # still visible in UI log panel
 
 
+def test_stale_hard_log_does_not_set_log_errors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """GitHub #4–#10: days-old PermissionError must not keep re-filing."""
+    from app.util import update_manager_health as umh
+    from app.util.um_diag_report import should_consider_report
+
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    log_path = log_dir / "update_manager.log"
+    # 5 days ago — outside 48h freshness window
+    log_path.write_text(
+        f"{_ts(24 * 5)} ERROR apply failed: [Errno 13] Permission denied: 'x.tmp'\n"
+        f"{_ts(24 * 5)} ERROR tick crashed\n",
+        encoding="utf-8",
+    )
+    exe = tmp_path / "CloneUp_update_manager.exe"
+    exe.write_bytes(b"MZ")
+
+    monkeypatch.setattr(umh, "manager_exe_path", lambda: exe)
+    monkeypatch.setattr(umh, "manager_log_path", lambda: log_path)
+    monkeypatch.setattr(umh, "_process_running", lambda: True)
+    monkeypatch.setattr(umh, "_read_run_key", lambda: "")  # run key missing
+    monkeypatch.setattr(umh, "_guess_app_install", lambda: str(tmp_path))
+
+    h = umh.probe_update_manager(attempt_restart=False)
+    assert "log_errors" not in h.problems
+    assert h.problems == ["run_key_missing"]
+    # Running + only run_key_missing → soft, no auto-issue
+    assert should_consider_report(h) is False
+
+
+def test_signature_includes_username(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("USERNAME", "Alice")
+    sig_a = UpdateManagerHealth(
+        problems=["exe_missing"], process_running=False
+    ).signature
+    monkeypatch.setenv("USERNAME", "Bob")
+    sig_b = UpdateManagerHealth(
+        problems=["exe_missing"], process_running=False
+    ).signature
+    assert sig_a != sig_b
+
+
 def test_probe_hard_apply_failed_is_problem(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -87,7 +153,7 @@ def test_probe_hard_apply_failed_is_problem(
     log_dir.mkdir()
     log_path = log_dir / "update_manager.log"
     log_path.write_text(
-        "2026-09-09 03:11:55,041 ERROR apply failed: boom\n",
+        f"{_ts(1)} ERROR apply failed: boom\n",
         encoding="utf-8",
     )
     exe = tmp_path / "CloneUp_update_manager.exe"
@@ -115,8 +181,8 @@ def test_probe_apply_timeout_is_soft_when_running(
     log_dir.mkdir()
     log_path = log_dir / "update_manager.log"
     log_path.write_text(
-        "2026-09-09 04:05:54,259 ERROR apply failed: The read operation timed out\n"
-        "2026-09-08 20:48:20,548 WARNING github latest failed: ssl timeout\n",
+        f"{_ts(2)} ERROR apply failed: The read operation timed out\n"
+        f"{_ts(3)} WARNING github latest failed: ssl timeout\n",
         encoding="utf-8",
     )
     exe = tmp_path / "CloneUp_update_manager.exe"
@@ -143,8 +209,8 @@ def test_probe_apply_failed_superseded_by_success(
     log_dir.mkdir()
     log_path = log_dir / "update_manager.log"
     log_path.write_text(
-        "2026-09-03 12:19:19,696 ERROR apply failed: disk full somehow\n"
-        "2026-09-03 12:32:10,259 INFO success 0.1.9 → 0.1.10\n",
+        f"{_ts(2)} ERROR apply failed: disk full somehow\n"
+        f"{_ts(1)} INFO success 0.1.9 → 0.1.10\n",
         encoding="utf-8",
     )
     exe = tmp_path / "CloneUp_update_manager.exe"
@@ -283,10 +349,13 @@ def test_run_cycle_healthy_skips(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_cycle_saves_local_without_token(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    marked: list[str] = []
     monkeypatch.setattr(umr, "load_um_diag_report_enabled", lambda: True)
+    monkeypatch.setattr(umr, "_running_unpackaged", lambda: False)
     monkeypatch.setattr(umr, "load_um_diag_last_signature", lambda: None)
     monkeypatch.setattr(umr, "load_um_diag_last_sent_epoch", lambda: 0)
     monkeypatch.setattr(umr, "load_token", lambda: "")
+    monkeypatch.setattr(umr, "_mark_sent", lambda sig: marked.append(sig))
     bad = UpdateManagerHealth(
         exe_present=False,
         problems=["exe_missing"],
@@ -301,12 +370,14 @@ def test_run_cycle_saves_local_without_token(
     assert pending.is_file()
     assert "exe_missing" in pending.read_text(encoding="utf-8")
     assert "github.com/seongbin45/CloneUp/issues/new" in r.issue_url
+    assert marked == [bad.signature]
 
 
 def test_run_cycle_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     import time
 
     monkeypatch.setattr(umr, "load_um_diag_report_enabled", lambda: True)
+    monkeypatch.setattr(umr, "_running_unpackaged", lambda: False)
     bad = UpdateManagerHealth(problems=["exe_missing", "process_not_running"])
     monkeypatch.setattr(umr, "probe_update_manager", lambda **_k: bad)
     monkeypatch.setattr(umr, "load_um_diag_last_signature", lambda: bad.signature)
