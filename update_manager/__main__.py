@@ -15,7 +15,11 @@ import time
 from pathlib import Path
 
 from update_manager import __version__
-from update_manager.apply import install_staged_onedir
+from update_manager.apply import (
+    find_um_payload,
+    install_manager_payload,
+    install_staged_onedir,
+)
 from update_manager.config import INTERVAL_SEC
 from update_manager.github_release import fetch_latest_release
 from update_manager.lock_win import PendingLock
@@ -165,6 +169,19 @@ def run_once(log: logging.Logger) -> str:
                 return "killed_failed"
 
             install_staged_onedir(src, install_dir)
+
+            # Also refresh ProgramData/Local UpdateManager (exe+VBS+BAT) when
+            # the zip carries UpdateManager/ — closes the app-only deploy gap.
+            um_exit = False
+            um_src = find_um_payload(src)
+            if um_src is not None:
+                try:
+                    um_exit = install_manager_payload(um_src)
+                except Exception as e:
+                    log.exception("UM payload install failed: %s", e)
+            else:
+                log.info("zip has no UpdateManager/ payload — app-only update")
+
             delete_version_dir(pend)
 
             if is_tray_autostart_registered():
@@ -172,6 +189,10 @@ def run_once(log: logging.Logger) -> str:
 
             log.info("success %s → %s", local_s, remote_s)
             status_io.finish_run(run_id, "updated")
+            if um_exit:
+                # Running exe was renamed; replacement VBS already spawned.
+                log.info("exiting so replaced Update Manager can take over")
+                raise SystemExit(0)
             return "updated"
         finally:
             lock.release()

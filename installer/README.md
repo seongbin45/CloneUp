@@ -63,7 +63,7 @@ installer\Output\CloneUp-Setup.exe
 `CloneUp.iss` 파일 위쪽:
 
 ```iss
-#define MyAppVersion "0.1.16"
+#define MyAppVersion "0.1.17"
 ```
 
 올린 뒤 다시 `build_installer.ps1` 실행.

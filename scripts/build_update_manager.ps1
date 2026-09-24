@@ -49,11 +49,30 @@ if ($ZipApp) {
     if (Test-Path $verSrc) {
         Copy-Item -Force $verSrc (Join-Path $appDir "VERSION")
     }
+
+    # Stage zip root with BOTH app onedir and UpdateManager payload so apply
+    # can refresh ProgramData\CloneUp\UpdateManager (closes deploy gap).
+    $stage = Join-Path $Root "dist\_zip_stage"
+    if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+    New-Item -ItemType Directory -Path $stage | Out-Null
+    Copy-Item -Recurse -Force $appDir (Join-Path $stage "CloneUp")
+
+    $umDir = Join-Path $stage "UpdateManager"
+    New-Item -ItemType Directory -Path $umDir | Out-Null
+    Copy-Item -Force $out (Join-Path $umDir "CloneUp_update_manager.exe")
+    $launchSrc = Join-Path $Root "update_manager\launchers"
+    foreach ($name in @("CloneUp_update_manager.bat", "CloneUp_update_manager_hidden.vbs")) {
+        $src = Join-Path $launchSrc $name
+        if (-not (Test-Path $src)) { Write-Error "Missing launcher $src" }
+        Copy-Item -Force $src (Join-Path $umDir $name)
+    }
+
     $zip = Join-Path $Root "dist\CloneUp-win64.zip"
     if (Test-Path $zip) { Remove-Item -Force $zip }
-    Write-Host "== Zip onedir for GitHub Releases: $zip =="
-    # Top-level folder CloneUp\ so updater can find CloneUp\CloneUp.exe
-    Compress-Archive -Path $appDir -DestinationPath $zip -CompressionLevel Optimal
-    Write-Host "OK: $zip (attach this asset to the GitHub Release — not Setup.exe for auto-update)"
+    Write-Host "== Zip app+UM for GitHub Releases: $zip =="
+    # Top-level CloneUp\ + UpdateManager\ (not a single nested folder)
+    Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -CompressionLevel Optimal
+    Remove-Item -Recurse -Force $stage
+    Write-Host "OK: $zip (CloneUp\ + UpdateManager\ — attach to GitHub Release)"
     Get-Item $zip | Format-List FullName, Length, LastWriteTime
 }

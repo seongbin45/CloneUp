@@ -473,6 +473,132 @@ def install_staged_onedir(src_root: Path, install_dir: Path) -> None:
     copy_onedir_into(src_root, install_dir)
 
 
+def find_um_payload(onedir_root: Path) -> Path | None:
+    """
+    Locate ``UpdateManager/`` beside (or under) the extracted app onedir.
+
+    Expected zip layout (0.1.17+)::
+
+        CloneUp-win64.zip
+          CloneUp/                 # app onedir
+          UpdateManager/           # exe + hidden.vbs + .bat
+    """
+    from update_manager.paths import UM_EXE_NAME
+
+    for base in (onedir_root.parent, onedir_root):
+        cand = base / "UpdateManager"
+        try:
+            if (cand / UM_EXE_NAME).is_file():
+                return cand
+        except OSError:
+            continue
+    return None
+
+
+def install_manager_payload(src: Path) -> bool:
+    """
+    Copy UM exe/bat/vbs into ``manager_install_dir()`` (ProgramData / Local).
+
+    Returns True if this process replaced its own running exe and should
+    exit so a freshly started manager can take over (Windows rename-while-
+    running trick).
+    """
+    import subprocess
+    import sys
+
+    from update_manager.paths import (
+        UM_BAT_NAME,
+        UM_EXE_NAME,
+        UM_VBS_NAME,
+        manager_hidden_vbs_path,
+        manager_install_dir,
+    )
+
+    dest_dir = manager_install_dir()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    for name in (UM_BAT_NAME, UM_VBS_NAME):
+        s = src / name
+        if not s.is_file():
+            log.warning("UM payload missing launcher %s", name)
+            continue
+        shutil.copy2(s, dest_dir / name)
+        log.info("updated manager launcher → %s", dest_dir / name)
+
+    exe_src = src / UM_EXE_NAME
+    if not exe_src.is_file():
+        log.warning("UM payload missing %s", UM_EXE_NAME)
+        return False
+
+    dest_exe = dest_dir / UM_EXE_NAME
+    request_exit = False
+    if dest_exe.is_file():
+        old = dest_dir / f"{UM_EXE_NAME}.old"
+        try:
+            if old.is_file():
+                old.unlink(missing_ok=True)
+            dest_exe.rename(old)
+            request_exit = True
+            log.info("renamed running UM exe → %s", old.name)
+        except OSError as e:
+            # Cannot rename — stage for next start
+            staged = Path(str(dest_exe) + ".new")
+            shutil.copy2(exe_src, staged)
+            log.warning(
+                "UM self-replace deferred (%s) — wrote %s", e, staged.name
+            )
+            return False
+
+    shutil.copy2(exe_src, dest_exe)
+    log.info("updated manager exe → %s", dest_exe)
+    try:
+        (dest_dir / f"{UM_EXE_NAME}.old").unlink(missing_ok=True)
+    except OSError:
+        pass
+    try:
+        Path(str(dest_exe) + ".new").unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    try:
+        from update_manager import status_io
+
+        status_io.ensure_status_acl()
+    except Exception as e:
+        log.warning("status ACL after UM install: %s", e)
+
+    try:
+        from update_manager.task_migrate import migrate_update_manager_task
+
+        migrate_update_manager_task(log)
+    except Exception as e:
+        log.warning("task migrate after UM install: %s", e)
+
+    if request_exit and sys.platform == "win32":
+        vbs = manager_hidden_vbs_path()
+        if vbs.is_file():
+            windir = (
+                os.environ.get("SystemRoot")
+                or os.environ.get("WINDIR")
+                or r"C:\Windows"
+            )
+            wscript = str(Path(windir) / "System32" / "wscript.exe")
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            try:
+                subprocess.Popen(  # noqa: S603
+                    [wscript, "//B", "//Nologo", str(vbs)],
+                    cwd=str(dest_dir),
+                    close_fds=True,
+                    creationflags=flags
+                    | getattr(subprocess, "DETACHED_PROCESS", 0),
+                )
+                log.info("spawned replacement UM via hidden VBS")
+            except OSError as e:
+                log.warning("could not spawn replacement UM: %s", e)
+
+    return request_exit
+
+
 def apply_zip_update(release: LatestRelease, install_dir: Path) -> None:
     """Download zip and install (used by tests; production prefers stage-then-kill)."""
     with tempfile.TemporaryDirectory(prefix="cloneup_upd_") as tmp:

@@ -19,6 +19,7 @@ Inno Setup **GUI 마법사**가 뜰 수 있습니다. 자동 업데이트는 사
 |------|------|
 | 주기 | 약 **10분**마다 GitHub `releases/latest` 확인 |
 | 자산 | `CloneUp-win64.zip` (또는 `CloneUp.zip`) — **Setup.exe 제외** |
+| zip 레이아웃 (0.1.17+) | 최상위 `CloneUp\`(앱 onedir) + `UpdateManager\`(exe·vbs·bat). apply가 `{app}`과 `%PROGRAMDATA%\CloneUp\UpdateManager\`를 **함께** 교체 |
 | 가드 | 메인 창이 **보이면** zip은 pending에 두고 **적용만 미룸** (Tier 2) |
 | 적용 | pending zip → apply-gate 전체 sha256 → 추출 → CloneUp.exe 종료 → 파일 교체 (`unins*` 보존) |
 | 이후 | HKCU `CloneUpTray`가 있으면 `CloneUp.exe --tray` 재실행 |
